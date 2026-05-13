@@ -181,9 +181,17 @@ impl OpenAIResponsesProvider {
         }
 
         // Server-side history: continue from last response.
-        if let Ok(guard) = self.last_response_id.lock() {
-            if let Some(ref id) = *guard {
-                body["previous_response_id"] = json!(id);
+        // ChatGPT-subscription Codex rejects `previous_response_id` outright
+        // (server returns 400 "Unsupported parameter"). The subscription path
+        // sets `store: false` so cross-session continuation isn't supported
+        // anyway. themion uses previous_response_id only for in-stream
+        // continuation (response.completed end_turn:false) — a separate flow
+        // we don't implement in this initial port.
+        if self.chatgpt_account_id.is_none() {
+            if let Ok(guard) = self.last_response_id.lock() {
+                if let Some(ref id) = *guard {
+                    body["previous_response_id"] = json!(id);
+                }
             }
         }
 
