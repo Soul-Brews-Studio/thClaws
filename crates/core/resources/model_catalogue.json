@@ -3978,6 +3978,21 @@
         }
       }
     },
+    "chatgpt-codex": {
+      "default_context": 400000,
+      "models": {
+        "gpt-5.4": {
+          "context": 400000,
+          "source": "smoke-tested 2026-05-13 via thclaws -p; ChatGPT-subscription endpoint chatgpt.com/backend-api/codex/responses",
+          "verified_at": "2026-05-13"
+        },
+        "gpt-5.5": {
+          "context": 400000,
+          "source": "smoke-tested 2026-05-13 via thclaws -p; ChatGPT-subscription endpoint chatgpt.com/backend-api/codex/responses",
+          "verified_at": "2026-05-13"
+        }
+      }
+    },
     "anthropic": {
       "list_url": "https://api.anthropic.com/v1/models",
       "default_context": 200000,
