@@ -915,6 +915,15 @@ pub fn kind_has_credentials(kind: Option<ProviderKind>) -> bool {
     match kind {
         ProviderKind::AgentSdk => true,
         ProviderKind::Ollama | ProviderKind::OllamaAnthropic | ProviderKind::LMStudio => true,
+        // ChatGptCodex uses OAuth tokens via codex_auth_store, not env vars.
+        // Match the actual auth resolution path in repl.rs::build_provider so
+        // the GUI readiness check agrees with what the provider build will do.
+        ProviderKind::ChatGptCodex => {
+            crate::codex_auth_store::resolve_for_profile("default")
+                .ok()
+                .flatten()
+                .is_some()
+        }
         other => other
             .api_key_env()
             .and_then(|v| std::env::var(v).ok())
