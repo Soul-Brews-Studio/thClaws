@@ -38,10 +38,11 @@ config.json
 CLAUDE.md
 
 # Per-machine Claude Code hook wiring (contains absolute paths to local
-# tooling). The INCUBATED_BY breadcrumb is committable; settings.json isn't.
+# tooling). INCUBATED_BY is our private breadcrumb — don't leak upstream.
 .claude/settings.json
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+.claude/INCUBATED_BY
 
 # OS
 .DS_Store

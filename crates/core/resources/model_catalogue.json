@@ -6194,6 +6194,60 @@
           "verified_at": "2026-05-10"
         }
       }
+    },
+    "chatgpt-codex": {
+      "list_url": null,
+      "default_context": 272000,
+      "models": {
+        "gpt-5.5": {
+          "context": 272000,
+          "max_output": 65536,
+          "source": "codex-cli models.json",
+          "verified_at": "2026-05-18",
+          "free": false,
+          "chat": true
+        },
+        "gpt-5.4": {
+          "context": 272000,
+          "max_output": 65536,
+          "source": "codex-cli models.json",
+          "verified_at": "2026-05-18",
+          "free": false,
+          "chat": true
+        },
+        "gpt-5.4-mini": {
+          "context": 272000,
+          "max_output": 65536,
+          "source": "codex-cli models.json",
+          "verified_at": "2026-05-18",
+          "free": false,
+          "chat": true
+        },
+        "gpt-5.3-codex": {
+          "context": 272000,
+          "max_output": 65536,
+          "source": "codex-cli models.json",
+          "verified_at": "2026-05-18",
+          "free": false,
+          "chat": true
+        },
+        "gpt-5.2": {
+          "context": 272000,
+          "max_output": 65536,
+          "source": "codex-cli models.json",
+          "verified_at": "2026-05-18",
+          "free": false,
+          "chat": true
+        },
+        "codex-auto-review": {
+          "context": 272000,
+          "max_output": 65536,
+          "source": "codex-cli models.json (hidden model)",
+          "verified_at": "2026-05-18",
+          "free": false,
+          "chat": true
+        }
+      }
     }
   },
   "aliases": {},
