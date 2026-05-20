@@ -588,6 +588,15 @@ fn build_initial_state_payload() -> String {
         })
         .collect();
     let kmss = build_kms_initial_payload(&config);
+    // #95(c): on WS open the frontend's mount-time `team_enabled_get`
+    // request can be dropped if the socket is still CONNECTING — the
+    // wsSend guard logs and discards (frontend/src/hooks/useIPC.ts:114).
+    // Ship the flag here so every (re)connect-driven initial_state
+    // carries it and the Team tab heals automatically without the user
+    // having to open Settings to incidentally refire the get.
+    let team_enabled = crate::config::ProjectConfig::load()
+        .and_then(|c| c.team_enabled)
+        .unwrap_or(false);
     serde_json::json!({
         "type": "initial_state",
         "provider": provider_name,
@@ -596,6 +605,7 @@ fn build_initial_state_payload() -> String {
         "mcp_servers": mcp_servers,
         "sessions": sessions,
         "kmss": kmss,
+        "team_enabled": team_enabled,
         "version": crate::version::VERSION,
     })
     .to_string()

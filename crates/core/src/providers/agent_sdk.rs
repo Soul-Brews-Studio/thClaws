@@ -430,6 +430,7 @@ impl Provider for AgentSdkProvider {
                                 .and_then(Value::as_u64).map(|v| v as u32),
                             cache_read_input_tokens: u.get("cache_read_input_tokens")
                                 .and_then(Value::as_u64).map(|v| v as u32),
+                            reasoning_output_tokens: None,
                         });
                         yield ProviderEvent::MessageStop {
                             stop_reason: Some("end_turn".into()),

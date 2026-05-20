@@ -706,6 +706,7 @@ async fn run() -> Result<String, String> {
                     verified_at: Some(today.clone()),
                     free: None,
                     chat: None,
+                    ..Default::default()
                 },
             );
             stats.added.push(agent_id);
@@ -835,6 +836,7 @@ fn merge_openrouter(cat: &mut Catalogue, rows: Vec<OpenRouterModel>, today: &str
                 verified_at: Some(today.into()),
                 free: Some(is_free),
                 chat,
+                ..Default::default()
             },
         );
         stats.added.push(m.id);
@@ -901,6 +903,7 @@ fn merge_discovered(
                 verified_at: Some(today.into()),
                 free: None,
                 chat: None,
+                ..Default::default()
             },
         );
         stats.added.push(id);
@@ -943,6 +946,7 @@ fn merge_gemini(cat: &mut Catalogue, rows: Vec<GeminiModel>, today: &str) -> Mer
                 verified_at: Some(today.into()),
                 free: None,
                 chat: None,
+                ..Default::default()
             },
         );
         stats.added.push(id);

@@ -789,6 +789,15 @@ pub struct Usage {
     pub output_tokens: u32,
     pub cache_creation_input_tokens: Option<u32>,
     pub cache_read_input_tokens: Option<u32>,
+    /// dev-plan/24: hidden reasoning tokens for OpenAI o1/o3 family.
+    /// OpenAI surfaces these via `completion_tokens_details.
+    /// reasoning_tokens` on Chat Completions and `output_tokens_
+    /// details.reasoning_tokens` on Responses API. Anthropic's
+    /// extended-thinking tokens are folded into output and aren't
+    /// separately billed, so the Anthropic assembler leaves this
+    /// as `None`. `Some(0)` ⇒ provider explicitly reported zero
+    /// reasoning tokens (distinct from "didn't report").
+    pub reasoning_output_tokens: Option<u32>,
 }
 
 impl Default for Usage {
@@ -798,6 +807,7 @@ impl Default for Usage {
             output_tokens: 0,
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
+            reasoning_output_tokens: None,
         }
     }
 }

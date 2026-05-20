@@ -119,7 +119,7 @@ they're live too.
 From a `.zip`:
 
 ```
-❯ /plugin install --user https://agentic-press.com/plugins/deploy-v1.zip
+❯ /plugin install --user https://example.com/plugins/deploy-v1.zip
 ```
 
 Scope selection:

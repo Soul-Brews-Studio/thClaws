@@ -13,9 +13,23 @@ import { send, subscribe } from "./useIPC";
  *
  * contentEditable (tiptap) elements handle their own shortcuts —
  * we skip them so their undo stack stays authoritative.
+ *
+ * **`--serve` browser mode**: this hook is a no-op. `window.ipc` is
+ * undefined in the browser, so the `send({type:"clipboard_read"})`
+ * path silently fails (no handler on the WebSocket side, no arboard
+ * on the user's machine). Installing the listener anyway would
+ * `preventDefault` the Ctrl+V keydown and then drop the paste — the
+ * exact symptom reported in #104. Native browser clipboard handling
+ * works fine for `<input>` / `<textarea>` without our help, so we
+ * just don't get in the way. The xterm.js Terminal view has its own
+ * `navigator.clipboard` wiring (PR #97).
  */
 export function useEditingShortcuts() {
   useEffect(() => {
+    // Closes #104 — browser/--serve mode delegates to native browser
+    // clipboard handling. Only the wry desktop GUI needs the IPC bridge.
+    if (typeof window === "undefined" || !window.ipc) return;
+
     const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
     const onKey = (e: KeyboardEvent) => {

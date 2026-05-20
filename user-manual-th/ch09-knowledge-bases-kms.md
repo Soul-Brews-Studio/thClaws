@@ -125,6 +125,73 @@ Wrote pages/oauth-client-credentials.md, added entry to index.md, appended to lo
 
 ทำได้ผ่านภาษาธรรมชาติทั้งหมด slash command คือ shortcut
 
+## Self-improving AI Agent (auto-learn)
+
+ถ้าอยากให้ agent **เรียนรู้จากตัวเอง** อัตโนมัติทุก session โดยไม่ต้องสั่ง
+`/kms ingest` หรือ `/kms reconcile` ด้วยตัวเอง เปิด flag เดียวใน
+`.thclaws/settings.json`:
+
+```json
+{
+  "autoLearn": true
+}
+```
+
+เมื่อ flag นี้ on:
+
+1. **ปลายทุก session** (กดปุ่ม "new session" หรือปิด GUI) — thClaws
+   จะสรุปบทสนทนานั้นเป็น KMS page ใหม่ใน KMS ชื่อ `self_learn`
+   (สร้างให้อัตโนมัติครั้งแรก scope = project)
+2. **ตามรอบเวลา (default ทุก 6 ชั่วโมง)** — หลัง ingest เสร็จ จะรัน
+   `/kms reconcile self_learn --apply` แก้ contradictions ระหว่าง
+   page ใน KMS นั้น
+
+นั่นแค่นั้น — ใช้ปริมิทีฟที่เรียนรู้ไปแล้วในบทนี้ (`/kms ingest $`,
+`/kms reconcile`) อัตโนมัติ ไม่มี agent ใหม่ ไม่มี prompt ใหม่
+
+### ทำไม `self_learn` KMS เป็น KMS แยก
+
+auto-learn ไม่แตะ KMS ที่คุณ curate เอง (`notes`, `client-api`,
+อะไรก็ตามที่อยู่ใน `kms.active`) — เขียนเฉพาะ `self_learn` เท่านั้น
+เหตุผล:
+
+- **คุมเสียงรบกวน** — session บางอันไม่ได้มี insight ทุกครั้ง ไม่อยากให้
+  KMS หลักโดน pollute
+- **reset ง่าย** — เลิกชอบสิ่งที่ agent เรียนรู้? `rm -rf
+  .thclaws/kms/self_learn/` แล้วเริ่มใหม่
+- **review แยกได้** — `git diff .thclaws/kms/self_learn/` ดูเฉพาะที่
+  agent เรียนรู้จากตัวเอง, `git diff .thclaws/kms/notes/` ดูเฉพาะที่
+  คุณ curate เอง
+
+### Setting เพิ่มเติม
+
+| key | default | meaning |
+|---|---|---|
+| `autoLearn` | `false` | สวิตช์หลัก (opt-in) |
+| `autoLearnKms` | `"self_learn"` | เปลี่ยนชื่อ KMS ปลายทางได้ ถ้ามี KMS ชื่อนั้นอยู่แล้วใช้ตัวเดิม |
+| `autoLearnReconcileHours` | `6` | ระยะห่างขั้นต่ำระหว่าง reconcile (เซ็ต `0` = reconcile ทุก session) |
+
+### Quality gate
+
+session ที่สั้นกว่า **5 messages** จะถูกข้าม (ไม่ใช่ทุกการเปิด-ปิด app
+มี insight) คุณเห็น log ของแต่ละครั้งที่
+`~/.config/thclaws/auto-learn.log`:
+
+```
+2026-05-20T08:15:00Z ingest ok: session=sess-abc123 kms=self_learn page=auth-jwt-design
+2026-05-20T08:15:42Z reconcile ok: kms=self_learn (next due in 6h)
+2026-05-20T09:02:11Z skip ingest: session sess-def456 only had 3 messages (threshold 5)
+```
+
+### ใช้ได้ที่ไหน
+
+ตอนนี้ (v0.13.0) — **Desktop GUI** และ **Webapp** (`--serve` + browser)
+ทั้งสองใช้ worker เดียวกันที่ดูแล lifecycle ของ session ส่วน CLI REPL
+และ print mode (`-p`) ยังไม่ trigger อัตโนมัติ — ใช้ `session_end`
+hook ใน settings ผูกเองได้
+
+ดูบทถัด ๆ ไปสำหรับ `session_end` hook ใน [บทที่ 13](ch13-hooks.md)
+
 ## Multi-KMS: ผูก KMS ชุดใดก็ได้เข้ากับการสนทนา
 
 รายการ KMS ที่ active ของโปรเจกต์อยู่ใน `.thclaws/settings.json`:

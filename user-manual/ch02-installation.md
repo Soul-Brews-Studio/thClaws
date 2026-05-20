@@ -26,10 +26,12 @@ Pick the right macOS build:
 
 ## System requirements
 
-thClaws itself is small — the binary is ~20 MB unpacked and uses
-~250–400 MB of RAM at runtime, most of it the embedded webview
-supplied by the operating system (WKWebView on macOS, WebView2 on
-Windows, WebKit2GTK on Linux).
+thClaws itself is small — the download is ~17 MB per single-arch
+tarball (gzipped), expanding to ~25 MB for the `thclaws-cli` binary
+or ~40 MB for the GUI build (`thclaws`). At runtime it uses
+~250–400 MB of RAM, most of it the embedded webview supplied by the
+operating system (WKWebView on macOS, WebView2 on Windows,
+WebKit2GTK on Linux).
 
 | | Minimum | Recommended |
 |---|---|---|

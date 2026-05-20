@@ -81,6 +81,20 @@ type Props = {
   /// the widget after init handshake completes so its `ontoolresult`
   /// fires.
   toolResult: ToolResultContent;
+  /// Add `allow-same-origin` to the iframe sandbox. Opt-in for
+  /// first-party tools that need to load `<script src>` / images
+  /// from a localhost preview server (`GamedevPreview`). Untrusted
+  /// MCP-server widgets leave this `false` so they stay on an opaque
+  /// origin and can't reach back into host state.
+  allowSameOrigin?: boolean;
+  /// Per-widget opt-in for content-driven inline iframe height. When
+  /// `true`, `ui/notifications/size-changed` messages from the widget
+  /// resize the inline surface (capped at 85% of viewport). When
+  /// `false` (default), all such messages are silently dropped and
+  /// the iframe stays at the fixed `INLINE_HEIGHT`. Trust gate is
+  /// orthogonal to `allowSameOrigin` — a trusted widget can grant
+  /// same-origin without unlocking resize, and vice versa.
+  autoSize?: boolean;
 };
 
 type JsonRpcMessage = {
@@ -102,6 +116,13 @@ const AVAILABLE_MODES: DisplayMode[] = ["inline", "fullscreen", "pip"];
 /// lifts. A fixed 480px gives every widget a predictable canvas;
 /// content that needs more room can lift to fullscreen / PIP.
 const INLINE_HEIGHT = 480;
+/// Bounds for honored `ui/notifications/size-changed` requests. The
+/// floor avoids accidental collapse if a widget reports 0; the cap is
+/// fractional-of-viewport so an over-eager widget can't push the chat
+/// surface off-screen on a small window. Only applied when the widget
+/// opted in via `autoSize=true`.
+const AUTOSIZE_MIN = 200;
+const AUTOSIZE_MAX_FRAC = 0.85;
 
 const PIP_DEFAULT_W = 360;
 const PIP_DEFAULT_H = 260;
@@ -155,9 +176,17 @@ export function McpAppIframe({
   html,
   parentToolName,
   toolResult,
+  allowSameOrigin = false,
+  autoSize = false,
 }: Props) {
   const [mode, setMode] = useState<DisplayMode>("inline");
   const [pipRect, setPipRect] = useState<PipRect>(() => loadPipRect(uri));
+  // Honored only when autoSize === true. Falls back to the fixed
+  // INLINE_HEIGHT when null (widget didn't report, isn't opted in, or
+  // reported out-of-bounds). Persists across mode toggles so a lift
+  // to fullscreen + back lands the inline surface at the same height
+  // it last measured.
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
   const { resolved: themeMode } = useTheme();
 
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -486,11 +515,22 @@ export function McpAppIframe({
             });
             break;
           }
-          // ui/notifications/size-changed deliberately not handled
-          // — inline iframe height is fixed at INLINE_HEIGHT, and
-          // fullscreen / PIP have their own geometry. Falling
-          // through to the default arm is the JSON-RPC-correct
-          // response for an unhandled notification (silent drop).
+          case "ui/notifications/size-changed": {
+            // Per-widget opt-in. Untrusted / unannotated widgets keep
+            // the fixed INLINE_HEIGHT — this is the safety-by-default
+            // the autoSize flag is layered against. The pinn.ai
+            // image-viewer bug (reports spinner-state size before the
+            // image loads) is filtered out here because pinn.ai's
+            // widget meta doesn't carry autoSize.
+            if (!autoSize) break;
+            const params = msg.params as { height?: number } | undefined;
+            const h = params?.height;
+            if (typeof h !== "number" || !Number.isFinite(h)) break;
+            const cap = Math.floor(window.innerHeight * AUTOSIZE_MAX_FRAC);
+            const bounded = Math.max(AUTOSIZE_MIN, Math.min(cap, Math.ceil(h)));
+            setMeasuredHeight(bounded);
+            break;
+          }
           default:
             break;
         }
@@ -500,8 +540,10 @@ export function McpAppIframe({
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
     // themeMode is in deps so the init response uses the current theme;
-    // a re-bind is fine because we only re-bind when theme changes.
-  }, [stableResult, themeMode]);
+    // autoSize is in deps so the size-changed gate sees the current
+    // value if a future caller toggles the prop without remounting.
+    // a re-bind is fine because we only re-bind on those rare changes.
+  }, [stableResult, themeMode, autoSize]);
 
   // Clear any pending widget tool-call timers on unmount. Without
   // this, a 60s timeout could fire after the iframe is gone and
@@ -557,7 +599,11 @@ export function McpAppIframe({
       // with `allow-same-origin` would defeat the srcdoc origin
       // isolation, so we don't. The widget can still postMessage to
       // the parent and fetch its declared resourceDomains.
-      sandbox="allow-scripts allow-popups allow-forms"
+      sandbox={
+        allowSameOrigin
+          ? "allow-scripts allow-popups allow-forms allow-same-origin"
+          : "allow-scripts allow-popups allow-forms"
+      }
       style={{
         display: "block",
         flex: "1 1 auto",
@@ -583,7 +629,7 @@ export function McpAppIframe({
       <InlineSurface
         slotRef={inlineSlotRef}
         active={mode === "inline"}
-        height={INLINE_HEIGHT}
+        height={measuredHeight ?? INLINE_HEIGHT}
         onFullscreen={() => setMode("fullscreen")}
         onPip={() => setMode("pip")}
       />

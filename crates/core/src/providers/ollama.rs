@@ -517,6 +517,7 @@ pub fn parse_line(line: &str, state: &mut ParseState) -> Result<Vec<ProviderEven
                 output_tokens: v.get("eval_count").and_then(Value::as_u64).unwrap_or(0) as u32,
                 cache_creation_input_tokens: None,
                 cache_read_input_tokens: None,
+                reasoning_output_tokens: None,
             })
         } else {
             None

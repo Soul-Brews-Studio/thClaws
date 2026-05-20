@@ -34,7 +34,12 @@ use std::path::PathBuf;
 ///
 /// The loader hard-rejects mismatched schemas, so an outdated cache is
 /// ignored cleanly rather than silently serving stale rows.
-pub const CURRENT_SCHEMA: u32 = 3;
+/// Schema bumped to 4 in v0.11.0 (dev-plan/24) when ModelEntry gained
+/// the 5 optional `*_per_mtok` pricing fields. v3 catalogues load as
+/// `None` (the `from_json_str` guard rejects mismatched schemas), which
+/// falls through to compiled-in defaults — no panic, just no pricing
+/// available until the on-disk file is refreshed.
+pub const CURRENT_SCHEMA: u32 = 4;
 
 /// Remote URL the client fetches from when the user runs
 /// `/models refresh` or the daily auto-refresh fires. Expected to
@@ -93,6 +98,71 @@ pub struct ModelEntry {
     /// publish modality info — treat as chat-capable (legacy default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat: Option<bool>,
+
+    // ── pricing (dev-plan/24) ─────────────────────────────────────
+    // USD per million tokens. All fields optional so the catalogue can
+    // list a known id whose pricing hasn't been verified yet (`None`
+    // ⇒ `compute_cost_usd` returns `None` for that token type;
+    // partially-priced entries get `Some(partial)` with the missing
+    // type's contribution as zero — caller can log a warning).
+    //
+    // Currency convention: USD. Multi-currency belongs at the
+    // orchestrator's billing edge, not in the catalogue.
+    /// Per-million uncached prompt tokens. e.g. 3.00 for Claude Sonnet
+    /// 4.6 → $3 / 1M input tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_per_mtok: Option<f64>,
+    /// Per-million completion (output) tokens. e.g. 15.00 for Sonnet
+    /// 4.6.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_per_mtok: Option<f64>,
+    /// Per-million tokens READ from prompt cache. Anthropic's cache-
+    /// read rate (e.g. $0.30/M for Sonnet 4.6), OpenAI's cached-
+    /// input rate. When unset and the usage has cached tokens,
+    /// callers may fall back to `input_per_mtok` (no discount).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_input_per_mtok: Option<f64>,
+    /// Per-million tokens WRITTEN to prompt cache. Anthropic charges
+    /// extra for cache creation ($3.75/M for Sonnet 4.6 5m TTL). The
+    /// 5m vs 1h TTL distinction is collapsed into one field for v1
+    /// (per dev-plan/24); split if a real use case needs it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_per_mtok: Option<f64>,
+    /// Per-million reasoning tokens (OpenAI o1-series visible-thinking
+    /// billing, Claude extended thinking when separately billed).
+    /// Most providers fold these into output_per_mtok — leave unset
+    /// there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_per_mtok: Option<f64>,
+    /// `true` when this model is billed through a subscription tier
+    /// (ChatGPT Plus/Pro/Team for Codex models, enterprise contracts).
+    /// Per-token math doesn't reflect actual cost — surfaces should
+    /// show "tier-billed" instead of a $ amount. `compute_cost_usd`
+    /// returns `None` for these.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier_billed: Option<bool>,
+}
+
+/// Per-token-type usage counts for one agent run. Fed into
+/// [`Catalogue::compute_cost_usd`]. All fields default to 0 so callers
+/// can populate only what their provider surfaces (Anthropic, OpenAI's
+/// Responses API, and Gemini each expose a different subset).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TokenUsage {
+    /// Total prompt tokens INCLUDING cached portion. Subtract
+    /// `cached_input_tokens` before pricing to avoid double-counting.
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    /// Subset of `prompt_tokens` that hit a cache (cheap read).
+    pub cached_input_tokens: u32,
+    /// New tokens added to the cache this turn (expensive write).
+    /// Distinct from `cached_input_tokens` — that's READ, this is
+    /// WRITE.
+    pub cache_creation_tokens: u32,
+    /// OpenAI o1-style hidden reasoning tokens. Folded into output
+    /// pricing for most providers — leave 0 if your provider doesn't
+    /// distinguish.
+    pub reasoning_tokens: u32,
 }
 
 /// All models known for one provider, plus the provider-level metadata
@@ -177,6 +247,104 @@ impl Catalogue {
     /// matches at all — caller picks a safe default.
     pub fn lookup_max_output(&self, model: &str) -> Option<u32> {
         self.lookup_field(model, |e| e.max_output)
+    }
+
+    /// Resolve `model` (via alias + vendor-prefix stripping) to the
+    /// catalogue entry. Returns the FIRST matching entry: same lookup
+    /// order as `lookup_field` but returns the whole row instead of
+    /// one numeric field. Used by [`compute_cost_usd`] which needs
+    /// multiple fields atomically.
+    pub fn find_entry(&self, model: &str) -> Option<&ModelEntry> {
+        let canonical = self.resolve_alias(model);
+        if let Some(e) = self.find_entry_in_any_provider(canonical) {
+            return Some(e);
+        }
+        let mut remaining = canonical;
+        while let Some(idx) = remaining.find('/') {
+            remaining = &remaining[idx + 1..];
+            if let Some(e) = self.find_entry_in_any_provider(remaining) {
+                return Some(e);
+            }
+        }
+        None
+    }
+
+    fn find_entry_in_any_provider(&self, id: &str) -> Option<&ModelEntry> {
+        let kind_name = crate::providers::ProviderKind::detect(id).map(provider_kind_name);
+        if let Some(name) = kind_name {
+            if let Some(pc) = self.providers.get(name) {
+                if let Some(e) = pc.models.get(id) {
+                    return Some(e);
+                }
+            }
+        }
+        for pc in self.providers.values() {
+            if let Some(e) = pc.models.get(id) {
+                return Some(e);
+            }
+        }
+        None
+    }
+
+    /// Compute USD cost for a single agent run's token usage.
+    ///
+    /// Decision tree:
+    /// - Model not in catalogue ⇒ `None` (caller surfaces "Cost unavailable")
+    /// - Entry has `tier_billed: true` ⇒ `None` (caller surfaces
+    ///   "Tier-billed" — per-token math doesn't reflect actual billing)
+    /// - Entry has `free: true` ⇒ `Some(0.0)` (regardless of other prices)
+    /// - Otherwise sum contributions for whichever pricing fields are set;
+    ///   missing field for a non-zero usage count means that piece is
+    ///   priced at $0 (caller can detect "partial" by inspecting the
+    ///   entry beforehand if it cares).
+    ///
+    /// Cache math (Anthropic-style): `prompt_tokens` includes the cached
+    /// portion. Subtract `cached_input_tokens` so uncached input pays
+    /// `input_per_mtok`, cached portion pays `cached_input_per_mtok`,
+    /// and newly-written cache tokens pay `cache_creation_per_mtok` on
+    /// top. Reasoning tokens (OpenAI o1) are billed separately at
+    /// `reasoning_per_mtok` when set; otherwise folded into completion.
+    pub fn compute_cost_usd(&self, model: &str, usage: &TokenUsage) -> Option<f64> {
+        let entry = self.find_entry(model)?;
+        if entry.tier_billed == Some(true) {
+            return None;
+        }
+        if entry.free == Some(true) {
+            return Some(0.0);
+        }
+        let per_m = |count: u32, rate: Option<f64>| -> f64 {
+            rate.map_or(0.0, |r| (count as f64 / 1_000_000.0) * r)
+        };
+        // Cache math: prompt_tokens is the total (Anthropic convention).
+        // Uncached input = prompt_tokens - cached_input_tokens. Saturating
+        // subtract guards against a buggy provider sending cached > prompt.
+        let uncached_input = usage
+            .prompt_tokens
+            .saturating_sub(usage.cached_input_tokens);
+        let uncached = per_m(uncached_input, entry.input_per_mtok);
+        let cached = per_m(
+            usage.cached_input_tokens,
+            entry.cached_input_per_mtok.or(entry.input_per_mtok),
+        );
+        let cache_write = per_m(usage.cache_creation_tokens, entry.cache_creation_per_mtok);
+        let output = per_m(usage.completion_tokens, entry.output_per_mtok);
+        let reasoning = per_m(
+            usage.reasoning_tokens,
+            entry.reasoning_per_mtok.or(entry.output_per_mtok),
+        );
+        let total = uncached + cached + cache_write + output + reasoning;
+        // If nothing was priced (entry exists but every per-mtok field is
+        // None), return None rather than $0 — `Some(0.0)` is reserved
+        // for explicit `free: true`.
+        if entry.input_per_mtok.is_none()
+            && entry.output_per_mtok.is_none()
+            && entry.cached_input_per_mtok.is_none()
+            && entry.cache_creation_per_mtok.is_none()
+            && entry.reasoning_per_mtok.is_none()
+        {
+            return None;
+        }
+        Some(total)
     }
 
     fn lookup_field(
@@ -485,6 +653,18 @@ impl EffectiveCatalogue {
                             verified_at: e.verified_at.clone().or(baseline.verified_at),
                             free: e.free.or(baseline.free),
                             chat: e.chat.or(baseline.chat),
+                            input_per_mtok: e.input_per_mtok.or(baseline.input_per_mtok),
+                            output_per_mtok: e.output_per_mtok.or(baseline.output_per_mtok),
+                            cached_input_per_mtok: e
+                                .cached_input_per_mtok
+                                .or(baseline.cached_input_per_mtok),
+                            cache_creation_per_mtok: e
+                                .cache_creation_per_mtok
+                                .or(baseline.cache_creation_per_mtok),
+                            reasoning_per_mtok: e
+                                .reasoning_per_mtok
+                                .or(baseline.reasoning_per_mtok),
+                            tier_billed: e.tier_billed.or(baseline.tier_billed),
                         },
                         None => e.clone(),
                     };
@@ -518,6 +698,7 @@ impl EffectiveCatalogue {
                     verified_at: None,
                     free: entry.free,
                     chat: entry.chat,
+                    ..Default::default()
                 },
             };
             out.insert(id.to_string(), merged);
@@ -627,6 +808,7 @@ pub fn load_overrides_from_settings() -> HashMap<String, ModelEntry> {
                 verified_at: None,
                 free: None,
                 chat: None,
+                ..Default::default()
             };
             // Project (read second) wins per-key.
             out.insert(k.clone(), entry);
@@ -1059,7 +1241,7 @@ mod tests {
     fn cache_overrides_baseline() {
         let baseline = Catalogue::from_json_str(BASELINE_JSON).unwrap();
         let cache_json = r#"{
-            "schema": 3,
+            "schema": 4,
             "source": "test",
             "fetched_at": "2099-01-01T00:00:00Z",
             "providers": {
@@ -1093,6 +1275,7 @@ mod tests {
             verified_at: None,
             free: None,
             chat: None,
+            ..Default::default()
         }
     }
 
@@ -1103,7 +1286,7 @@ mod tests {
         let baseline = Catalogue::from_json_str(BASELINE_JSON).unwrap();
         let cache = Catalogue::from_json_str(
             r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "anthropic": {
                     "default_context": 200000,
@@ -1135,7 +1318,7 @@ mod tests {
         // is keyed against the alias (the form the user typed) and still
         // wins for the dated lookup.
         let json = r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "anthropic": {
                     "default_context": 200000,
@@ -1236,7 +1419,7 @@ mod tests {
     fn list_models_marks_override_rows() {
         let baseline = Catalogue::from_json_str(
             r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "ollama": {
                     "default_context": 8192,
@@ -1279,7 +1462,7 @@ mod tests {
     fn list_models_for_provider_merges_baseline_and_cache() {
         let baseline = Catalogue::from_json_str(
             r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "ollama": {
                     "default_context": 8192,
@@ -1293,7 +1476,7 @@ mod tests {
         .unwrap();
         let cache = Catalogue::from_json_str(
             r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "ollama": {
                     "default_context": 8192,
@@ -1335,7 +1518,7 @@ mod tests {
     fn list_models_for_provider_resolves_anthropic_agent() {
         let baseline = Catalogue::from_json_str(
             r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "anthropic-agent": {
                     "default_context": 200000,
@@ -1364,10 +1547,10 @@ mod tests {
     /// for users who haven't yet `/models refresh`'d.
     #[test]
     fn list_models_for_provider_legacy_agent_sdk_cache_falls_back() {
-        let baseline = Catalogue::from_json_str(r#"{"schema": 3, "providers": {}}"#).unwrap();
+        let baseline = Catalogue::from_json_str(r#"{"schema": 4, "providers": {}}"#).unwrap();
         let cache = Catalogue::from_json_str(
             r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "agent-sdk": {
                     "default_context": 200000,
@@ -1396,7 +1579,7 @@ mod tests {
         // "Free only" filter shows almost nothing.
         let baseline = Catalogue::from_json_str(
             r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "openrouter": {
                     "default_context": 8192,
@@ -1412,7 +1595,7 @@ mod tests {
         // Cache row mirrors the pre-`free` schema: no `free` key at all.
         let cache = Catalogue::from_json_str(
             r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "openrouter": {
                     "default_context": 8192,
@@ -1443,7 +1626,7 @@ mod tests {
         // A known id with `context: null` is visible in the catalogue
         // but triggers the provider-default fallback on lookup.
         let json = r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "dashscope": {
                     "default_context": 131072,
@@ -1474,7 +1657,7 @@ mod tests {
     #[test]
     fn aliases_resolve_to_canonical() {
         let json = r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "anthropic": {
                     "default_context": 200000,
@@ -1498,7 +1681,7 @@ mod tests {
     #[test]
     fn source_and_verified_at_round_trip() {
         let json = r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "anthropic": {
                     "default_context": 200000,
@@ -1527,7 +1710,7 @@ mod tests {
         assert_eq!(e.max_output, Some(8192));
         // Entries without the optional fields still parse.
         let sparse = r#"{
-            "schema": 3,
+            "schema": 4,
             "providers": {
                 "test": {"models": {"x": {"context": 100}}}
             }
@@ -1537,5 +1720,217 @@ mod tests {
         assert!(e2.source.is_none());
         assert!(e2.verified_at.is_none());
         assert!(e2.max_output.is_none());
+    }
+
+    // ── compute_cost_usd (dev-plan/24) ─────────────────────────────
+
+    fn pricing_catalogue() -> Catalogue {
+        Catalogue::from_json_str(
+            r#"{
+                "schema": 4,
+                "providers": {
+                    "anthropic": {
+                        "models": {
+                            "claude-sonnet-4-6": {
+                                "input_per_mtok": 3.0,
+                                "output_per_mtok": 15.0,
+                                "cached_input_per_mtok": 0.3,
+                                "cache_creation_per_mtok": 3.75
+                            }
+                        }
+                    },
+                    "openai": {
+                        "models": {
+                            "o1-mini": {
+                                "input_per_mtok": 3.0,
+                                "output_per_mtok": 12.0,
+                                "cached_input_per_mtok": 1.5,
+                                "reasoning_per_mtok": 12.0
+                            },
+                            "gpt-4o": {
+                                "input_per_mtok": 2.5,
+                                "output_per_mtok": 10.0
+                            }
+                        }
+                    },
+                    "openrouter": {
+                        "models": {
+                            "openrouter/free-tier-model": {
+                                "free": true
+                            }
+                        }
+                    },
+                    "openai-codex": {
+                        "models": {
+                            "chatgpt-codex/gpt-5.4": {
+                                "tier_billed": true
+                            }
+                        }
+                    },
+                    "google": {
+                        "models": {
+                            "gemini-context-only": {
+                                "context": 1000000
+                            }
+                        }
+                    }
+                }
+            }"#,
+        )
+        .expect("pricing catalogue parses")
+    }
+
+    #[test]
+    fn cost_anthropic_with_cache_tiers() {
+        // 1000 prompt (200 cached read, so 800 uncached), 500 completion,
+        // 100 cache writes.
+        //   uncached input  800/1M * $3.00 = $0.00240
+        //   cached read     200/1M * $0.30 = $0.00006
+        //   cache write     100/1M * $3.75 = $0.000375
+        //   completion      500/1M * $15.00 = $0.00750
+        //   sum             = $0.010335
+        let c = pricing_catalogue();
+        let cost = c
+            .compute_cost_usd(
+                "claude-sonnet-4-6",
+                &TokenUsage {
+                    prompt_tokens: 1000,
+                    completion_tokens: 500,
+                    cached_input_tokens: 200,
+                    cache_creation_tokens: 100,
+                    reasoning_tokens: 0,
+                },
+            )
+            .expect("priced");
+        assert!((cost - 0.010335).abs() < 1e-9, "got {cost}");
+    }
+
+    #[test]
+    fn cost_reasoning_tokens_billed_separately() {
+        let c = pricing_catalogue();
+        let cost = c
+            .compute_cost_usd(
+                "o1-mini",
+                &TokenUsage {
+                    prompt_tokens: 1000,
+                    completion_tokens: 500,
+                    cached_input_tokens: 0,
+                    cache_creation_tokens: 0,
+                    reasoning_tokens: 200,
+                },
+            )
+            .expect("priced");
+        // 1000 * 3.0/1M + 500 * 12.0/1M + 200 * 12.0/1M
+        // = 0.003 + 0.006 + 0.0024 = 0.0114
+        assert!((cost - 0.0114).abs() < 1e-9, "got {cost}");
+    }
+
+    #[test]
+    fn cost_falls_back_to_input_when_cached_rate_absent() {
+        // gpt-4o has only input + output prices. cached_input_tokens
+        // bills at input_per_mtok (no discount fallback).
+        let c = pricing_catalogue();
+        let cost = c
+            .compute_cost_usd(
+                "gpt-4o",
+                &TokenUsage {
+                    prompt_tokens: 1000,
+                    completion_tokens: 500,
+                    cached_input_tokens: 400,
+                    cache_creation_tokens: 0,
+                    reasoning_tokens: 0,
+                },
+            )
+            .expect("priced");
+        // 600 * 2.5/1M + 400 * 2.5/1M + 500 * 10.0/1M
+        // = 0.0015 + 0.001 + 0.005 = 0.0075
+        assert!((cost - 0.0075).abs() < 1e-9, "got {cost}");
+    }
+
+    #[test]
+    fn cost_free_tier_returns_zero() {
+        let c = pricing_catalogue();
+        let cost = c
+            .compute_cost_usd(
+                "openrouter/free-tier-model",
+                &TokenUsage {
+                    prompt_tokens: 1_000_000,
+                    completion_tokens: 1_000_000,
+                    ..Default::default()
+                },
+            )
+            .expect("free entry");
+        assert_eq!(cost, 0.0);
+    }
+
+    #[test]
+    fn cost_tier_billed_returns_none() {
+        let c = pricing_catalogue();
+        let result = c.compute_cost_usd(
+            "chatgpt-codex/gpt-5.4",
+            &TokenUsage {
+                prompt_tokens: 1000,
+                completion_tokens: 500,
+                ..Default::default()
+            },
+        );
+        assert!(
+            result.is_none(),
+            "tier-billed must return None so UI shows 'tier-billed' instead of $0"
+        );
+    }
+
+    #[test]
+    fn cost_unknown_model_returns_none() {
+        let c = pricing_catalogue();
+        let result = c.compute_cost_usd(
+            "not-in-catalogue/whatever-1.0",
+            &TokenUsage {
+                prompt_tokens: 100,
+                ..Default::default()
+            },
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn cost_entry_without_any_prices_returns_none() {
+        let c = pricing_catalogue();
+        let result = c.compute_cost_usd(
+            "gemini-context-only",
+            &TokenUsage {
+                prompt_tokens: 100,
+                ..Default::default()
+            },
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn cost_saturating_sub_guards_against_buggy_cached_gt_prompt() {
+        let c = pricing_catalogue();
+        let cost = c
+            .compute_cost_usd(
+                "claude-sonnet-4-6",
+                &TokenUsage {
+                    prompt_tokens: 100,
+                    cached_input_tokens: 200, // > prompt
+                    completion_tokens: 0,
+                    cache_creation_tokens: 0,
+                    reasoning_tokens: 0,
+                },
+            )
+            .expect("priced");
+        // uncached 0 + cached 200 * 0.3/1M = 0.00006
+        assert!((cost - 0.00006).abs() < 1e-9, "got {cost}");
+    }
+
+    #[test]
+    fn schema_v3_rejected_after_bump() {
+        let v3 = r#"{"schema": 3, "providers": {}}"#;
+        assert!(
+            Catalogue::from_json_str(v3).is_none(),
+            "v3 must not load against v4 binary — falls through to compiled-in baseline"
+        );
     }
 }

@@ -1127,6 +1127,13 @@ fn run_gui_inner(serve: Option<crate::server::ServeConfig>) {
                     }))
                     .collect();
                 let kms_update = build_kms_update_payload();
+                // #95(c): mirror server.rs's initial_state so GUI mode
+                // ships team_enabled too. wry IPC is synchronous (no
+                // CONNECTING race), but keeping the two builders in
+                // lockstep avoids drift across the GUI / --serve split.
+                let team_enabled = crate::config::ProjectConfig::load()
+                    .and_then(|c| c.team_enabled)
+                    .unwrap_or(false);
                 let state = serde_json::json!({
                     "type": "initial_state",
                     "provider": provider_name,
@@ -1135,6 +1142,7 @@ fn run_gui_inner(serve: Option<crate::server::ServeConfig>) {
                     "mcp_servers": mcp_servers,
                     "sessions": sessions,
                     "kmss": kms_update.get("kmss").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+                    "team_enabled": team_enabled,
                     "version": crate::version::VERSION,
                 });
                 let js = format!(

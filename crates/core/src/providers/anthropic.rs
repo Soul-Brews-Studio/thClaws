@@ -434,6 +434,9 @@ pub fn parse_sse_event(raw: &str) -> Result<Option<ProviderEvent>> {
                     .get("cache_read_input_tokens")
                     .and_then(Value::as_u64)
                     .map(|v| v as u32),
+                // Anthropic folds extended-thinking tokens into the
+                // standard output count — no separate reasoning rate.
+                reasoning_output_tokens: None,
             });
             Some(ProviderEvent::MessageStop { stop_reason, usage })
         }
@@ -514,6 +517,7 @@ mod tests {
                     output_tokens: 34,
                     cache_creation_input_tokens: None,
                     cache_read_input_tokens: None,
+                    reasoning_output_tokens: None,
                 }),
             }
         );

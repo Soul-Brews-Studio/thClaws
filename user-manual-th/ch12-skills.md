@@ -123,8 +123,8 @@ repo จะถูก clone ลง staging dir ก่อน เฉพาะ subpa
 ### จาก URL `.zip`
 
 ```
-❯ /skill install https://agentic-press.com/api/skills/deploy-v1.zip
-  downloaded https://agentic-press.com/...zip (4210 bytes) → extracted
+❯ /skill install https://example.com/api/skills/deploy-v1.zip
+  downloaded https://example.com/...zip (4210 bytes) → extracted
   installed skill 'deploy-v1' (single)
 ```
 

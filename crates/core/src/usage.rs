@@ -241,6 +241,7 @@ mod tests {
             output_tokens: 200,
             cache_creation_input_tokens: Some(50),
             cache_read_input_tokens: Some(300),
+            reasoning_output_tokens: None,
         };
         tracker.record("anthropic", "claude-sonnet-4-5", &usage);
         tracker.record("anthropic", "claude-sonnet-4-5", &usage);
@@ -266,6 +267,7 @@ mod tests {
                 output_tokens: 50,
                 cache_creation_input_tokens: None,
                 cache_read_input_tokens: None,
+                reasoning_output_tokens: None,
             },
         );
         tracker.record(
@@ -276,6 +278,7 @@ mod tests {
                 output_tokens: 100,
                 cache_creation_input_tokens: None,
                 cache_read_input_tokens: None,
+                reasoning_output_tokens: None,
             },
         );
 
@@ -310,6 +313,7 @@ mod tests {
                 output_tokens: 200,
                 cache_creation_input_tokens: None,
                 cache_read_input_tokens: None,
+                reasoning_output_tokens: None,
             },
         );
 

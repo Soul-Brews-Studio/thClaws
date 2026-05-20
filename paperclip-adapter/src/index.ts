@@ -92,6 +92,21 @@ adapter passes through unchanged.
 - \`timeoutSec\` (number, optional): run timeout in seconds.
   Defaults to 0 (no adapter timeout — Paperclip's job timeout
   still applies).
+- \`mode\` (\`"sync"\` | \`"async"\`, optional, default \`"sync"\`):
+  \`"async"\` opts the run into thClaws's \`x_callback\` extension —
+  the adapter returns as soon as thClaws ACKs (202), and the final
+  result lands at the orchestrator via webhook. Use this for long-
+  running agentic loops where holding an SSE connection for 30+
+  minutes risks idle timeouts or tenant pod restarts.
+
+  Requires the orchestrator to set three env vars before invoking:
+  \`PAPERCLIP_API_URL\` (callback origin or full URL),
+  \`PAPERCLIP_API_KEY\` (Bearer the receiver verifies), and
+  \`PAPERCLIP_RUN_ID\` (echoed in callback body for correlation).
+  Missing any of these ⇒ the adapter logs to stderr and silently
+  falls back to sync, so \`mode: "async"\` is never load-bearing.
+  See \`dev-plan/23-thclaws-async-callback.md\` for the full
+  end-to-end design.
 
 ## Notes
 

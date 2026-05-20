@@ -98,6 +98,13 @@ export function Sidebar({ onBrowseKms }: SidebarProps = {}) {
     { id: string; current: string } | null
   >(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
+  // #95(b): when empty, the sidebar shows only the top 10 most-recent
+  // sessions (matches the pre-fix layout the user is used to). When
+  // typing, we filter the full received list (backend caps at 200, see
+  // build_session_list) by title + id substring match, case-insensitive,
+  // and uncap up to 50 matches so search is usable for named sessions
+  // that fall outside the top-10 default view.
+  const [sessionFilter, setSessionFilter] = useState("");
   // Plan-07 Phase 2.4: LINE bridge status pill. The worker
   // broadcasts `line_status` envelopes on connect / disconnect;
   // the pill is rendered only while `state === "connected"`.
@@ -428,8 +435,20 @@ export function Sidebar({ onBrowseKms }: SidebarProps = {}) {
         action={
           <button
             className="p-0.5 rounded hover:bg-white/10"
-            title="New session (save current + clear)"
-            onClick={() => send({ type: "new_session" })}
+            title="New session (cancels active task + saves current + clears)"
+            onClick={() => {
+              // session_load / new_session are processed by the same
+              // single-threaded worker that runs agent turns; if a turn
+              // is in flight the swap message sits in the input queue
+              // until the turn finishes — issue #95(a): users expected
+              // the click to switch sessions immediately. Always fire
+              // shell_cancel first; it's idempotent on the backend
+              // (no-op when nothing is running) so it's safe to send
+              // even on an idle agent. Same reasoning as the Ctrl+C
+              // handler in TerminalView.tsx.
+              send({ type: "shell_cancel" });
+              send({ type: "new_session" });
+            }}
           >
             <Plus size={12} />
           </button>
@@ -439,8 +458,39 @@ export function Sidebar({ onBrowseKms }: SidebarProps = {}) {
           <div className="px-2 py-1" style={{ color: "var(--text-secondary)" }}>
             No saved sessions
           </div>
-        ) : (
-          sessions.slice(0, 10).map((s) => {
+        ) : (() => {
+          const q = sessionFilter.trim().toLowerCase();
+          const filtered = q.length === 0
+            ? sessions.slice(0, 10)
+            : sessions
+                .filter((s) =>
+                  (s.title?.toLowerCase().includes(q) ?? false) ||
+                  s.id.toLowerCase().includes(q),
+                )
+                .slice(0, 50);
+          return (
+            <>
+              <input
+                type="text"
+                value={sessionFilter}
+                onChange={(e) => setSessionFilter(e.target.value)}
+                placeholder={`Search ${sessions.length} session${sessions.length === 1 ? "" : "s"}…`}
+                aria-label="Filter sessions"
+                className="w-full mx-2 mb-1 px-1.5 py-0.5 rounded text-xs"
+                style={{
+                  width: "calc(100% - 1rem)",
+                  background: "var(--bg-secondary, rgba(255,255,255,0.04))",
+                  color: "var(--text-primary)",
+                  border: "1px solid var(--border, rgba(255,255,255,0.08))",
+                  outline: "none",
+                }}
+              />
+              {filtered.length === 0 ? (
+                <div className="px-2 py-1" style={{ color: "var(--text-secondary)", fontSize: "11px" }}>
+                  No matches for &ldquo;{sessionFilter.trim()}&rdquo;
+                </div>
+              ) : (
+                filtered.map((s) => {
             const label = s.title && s.title.trim().length > 0
               ? s.title
               : s.id;
@@ -474,7 +524,12 @@ export function Sidebar({ onBrowseKms }: SidebarProps = {}) {
                     color: "var(--text-primary)",
                     fontWeight: isCurrent ? 600 : 400,
                   }}
-                  onClick={() => send({ type: "session_load", id: s.id })}
+                  onClick={() => {
+                    // See "New session" button comment above for why
+                    // shell_cancel goes first — issue #95(a).
+                    send({ type: "shell_cancel" });
+                    send({ type: "session_load", id: s.id });
+                  }}
                   title={s.title ? `${s.title} (${s.id}) — ${s.messages} msg${isCurrent ? " — current" : ""}` : `${s.id} — ${s.messages} msg${isCurrent ? " — current" : ""}`}
                 >
                   <span
@@ -487,7 +542,10 @@ export function Sidebar({ onBrowseKms }: SidebarProps = {}) {
               </div>
             );
           })
-        )}
+              )}
+            </>
+          );
+        })()}
       </Section>
 
       {/* Knowledge bases */}

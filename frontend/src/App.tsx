@@ -418,6 +418,17 @@ export default function App() {
         typeof msg.enabled === "boolean"
       ) {
         setTeamEnabled(msg.enabled as boolean);
+      } else if (
+        msg.type === "initial_state" &&
+        typeof msg.team_enabled === "boolean"
+      ) {
+        // #95(c): the explicit `team_enabled_get` below races the WS
+        // CONNECTING state on first mount in --serve mode — wsSend
+        // drops the message if the socket isn't OPEN yet. initial_state
+        // fires on every WS (re)connect from the backend, so picking it
+        // up here heals the Team-tab-hidden race without requiring the
+        // user to open Settings to incidentally re-trigger the get.
+        setTeamEnabled(msg.team_enabled as boolean);
       }
     });
     send({ type: "team_enabled_get" });

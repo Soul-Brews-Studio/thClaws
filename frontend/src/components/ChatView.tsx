@@ -53,6 +53,12 @@ type ChatMessage = {
     uri: string;
     html: string;
     mime?: string;
+    allowSameOrigin?: boolean;
+    /// Per-widget opt-in for content-driven inline iframe height.
+    /// Mirrors `UiResource::auto_size` in Rust + `_meta.autoSize` in
+    /// the MCP-Apps resource envelope. False / absent for everything
+    /// except first-party widgets that explicitly opted in.
+    autoSize?: boolean;
   };
 };
 
@@ -398,7 +404,13 @@ export function ChatView({ active, modalOpen }: Props) {
           // `ui/notifications/tool-result` push can carry it as a
           // standard MCP text content block.
           const ui = msg.ui_resource as
-            | { uri: string; html: string; mime?: string }
+            | {
+                uri: string;
+                html: string;
+                mime?: string;
+                allow_same_origin?: boolean;
+                auto_size?: boolean;
+              }
             | undefined;
           const output = (msg.output as string | undefined) ?? "";
           // M6.38.9: parse `Source: <engine>` from the first line of
@@ -432,7 +444,15 @@ export function ChatView({ active, modalOpen }: Props) {
                     ...candidate,
                     toolDone: true,
                     content: ui ? output : candidate.content,
-                    uiResource: ui,
+                    uiResource: ui
+                      ? {
+                          uri: ui.uri,
+                          html: ui.html,
+                          mime: ui.mime,
+                          allowSameOrigin: ui.allow_same_origin === true,
+                          autoSize: ui.auto_size === true,
+                        }
+                      : undefined,
                     toolSource,
                   },
                   ...prev.slice(i + 1),
@@ -924,6 +944,8 @@ export function ChatView({ active, modalOpen }: Props) {
                     <McpAppIframe
                       uri={widget.uri}
                       html={widget.html}
+                      allowSameOrigin={widget.allowSameOrigin === true}
+                      autoSize={widget.autoSize === true}
                       parentToolName={msg.toolName ?? ""}
                       toolResult={{
                         content: [{ type: "text", text: msg.content }],

@@ -115,7 +115,7 @@ command และ agent definition อยู่ในไดเรกทอรี
 จากไฟล์ `.zip`
 
 ```
-❯ /plugin install --user https://agentic-press.com/plugins/deploy-v1.zip
+❯ /plugin install --user https://example.com/plugins/deploy-v1.zip
 ```
 
 การเลือก scope

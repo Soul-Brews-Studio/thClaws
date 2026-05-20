@@ -1587,6 +1587,10 @@ async fn run_worker(
                 .await;
             }
             ShellInput::NewSession => {
+                // dev-plan/27: auto-learn before we lose the session's
+                // history. The agent currently has it loaded; ingest
+                // depends on that.
+                run_auto_learn_pipeline(&mut state, &events_tx, &cancel, &input_tx_self).await;
                 save_history(&state.agent, &mut state.session, &state.session_store);
                 state.agent.clear_history();
                 state.session = Session::new(&state.config.model, state.cwd.to_string_lossy());
@@ -2388,6 +2392,13 @@ async fn run_worker(
         }
     }
 
+    // dev-plan/27: auto-learn on app-close path. Runs BEFORE the
+    // discard-on-exit check so an empty session doesn't trigger
+    // ingest (session_is_substantive guards too, but ordering keeps
+    // the discard log accurate). Same agent state the NewSession
+    // path uses — history still loaded.
+    run_auto_learn_pipeline(&mut state, &events_tx, &cancel, &input_tx_self).await;
+
     // Discard-on-exit for sessions the user never engaged with.
     // Every thclaws launch mints a fresh session and writes its
     // header to disk on the first event (`write_header_if_missing`
@@ -2433,6 +2444,103 @@ async fn run_worker(
     );
 }
 
+/// dev-plan/27: file the just-finished session into a dedicated KMS
+/// and (throttled) run reconcile. Gated on `config.auto_learn`.
+///
+/// Called from two places, both with the agent still holding the
+/// session's history:
+///   - `ShellInput::NewSession` handler — before the agent's history
+///     is cleared and the session reset.
+///   - End of `run_worker` — before the worker tears down on app
+///     close.
+///
+/// Best-effort: failures are appended to the auto-learn audit log
+/// (`~/.config/thclaws/auto-learn.log`) but never propagate. The
+/// pipeline blocks the calling path while it runs (ingest + reconcile
+/// can take 30s–2min); acceptable for an explicitly opt-in feature.
+async fn run_auto_learn_pipeline(
+    state: &mut WorkerState,
+    events_tx: &broadcast::Sender<ViewEvent>,
+    cancel: &crate::cancel::CancelToken,
+    input_tx: &mpsc::Sender<ShellInput>,
+) {
+    if !state.config.auto_learn {
+        return;
+    }
+    let message_count = state.session.messages.len();
+    if !crate::auto_learn::session_is_substantive(message_count) {
+        crate::auto_learn::log_event(&format!(
+            "skip ingest: session {} only had {} messages (threshold {})",
+            state.session.id,
+            message_count,
+            crate::auto_learn::MIN_TURNS_FOR_INGEST
+        ));
+        return;
+    }
+    let kms_name = state.config.auto_learn_kms.clone();
+    if kms_name.trim().is_empty() {
+        crate::auto_learn::log_event("skip: auto_learn_kms is empty");
+        return;
+    }
+
+    // Idempotent KMS bootstrap. Errors from `create` typically mean a
+    // name conflict (the KMS already exists) which is the happy path
+    // — `kms::resolve` confirms it.
+    if crate::kms::resolve(&kms_name).is_none() {
+        match crate::kms::create(&kms_name, crate::kms::KmsScope::Project) {
+            Ok(_) => crate::auto_learn::log_event(&format!(
+                "bootstrap: created project KMS `{kms_name}`"
+            )),
+            Err(e) => {
+                crate::auto_learn::log_event(&format!("skip: KmsCreate({kms_name}) failed: {e}"));
+                return;
+            }
+        }
+    }
+
+    // Run ingest synchronously through the main agent. The agent still
+    // has the session's history loaded, so `/kms ingest $` semantics
+    // work — the model summarizes the conversation and calls KmsWrite.
+    let (page, source) =
+        crate::repl::resolve_session_alias(None, state.session.title.as_deref(), &state.session.id);
+    let ingest_prompt =
+        crate::repl::build_kms_ingest_session_prompt(&kms_name, &page, source, false);
+    let _ = events_tx.send(ViewEvent::SlashOutput(format!(
+        "[auto-learn] filing session as `{kms_name}/{page}`…"
+    )));
+    let lead_mb = crate::team::Mailbox::new(crate::team::Mailbox::default_dir());
+    let _ = lead_mb.write_status("lead", "working", None);
+    let stream = Box::pin(state.agent.run_turn(ingest_prompt));
+    drive_turn_stream(stream, state, events_tx, cancel, &lead_mb, input_tx).await;
+    crate::auto_learn::mark_ingest_done();
+    crate::auto_learn::log_event(&format!(
+        "ingest ok: session={} kms={kms_name} page={page}",
+        state.session.id
+    ));
+
+    // Reconcile — throttled. The reconcile pass is expensive
+    // (multi-pass agent rewriting pages), so we cap frequency per
+    // `auto_learn_reconcile_hours`.
+    let hours = state.config.auto_learn_reconcile_hours;
+    if !crate::auto_learn::is_reconcile_due(hours) {
+        crate::auto_learn::log_event(&format!(
+            "skip reconcile: throttle window {hours}h not elapsed yet"
+        ));
+        return;
+    }
+    let reconcile_prompt =
+        crate::shell_dispatch::compose_kms_reconcile_prompt(&kms_name, None, true);
+    let _ = events_tx.send(ViewEvent::SlashOutput(format!(
+        "[auto-learn] reconciling `{kms_name}`…"
+    )));
+    let stream2 = Box::pin(state.agent.run_turn(reconcile_prompt));
+    drive_turn_stream(stream2, state, events_tx, cancel, &lead_mb, input_tx).await;
+    crate::auto_learn::mark_reconcile_done();
+    crate::auto_learn::log_event(&format!(
+        "reconcile ok: kms={kms_name} (next due in {hours}h)"
+    ));
+}
+
 pub(crate) fn save_history(agent: &Agent, session: &mut Session, store: &Option<SessionStore>) {
     let history = agent.history_snapshot();
     if history.is_empty() {
@@ -2459,12 +2567,20 @@ pub(crate) fn save_history(agent: &Agent, session: &mut Session, store: &Option<
 }
 
 pub(crate) fn build_session_list(store: &Option<SessionStore>, current_id: &str) -> String {
+    // Was capped at 20 — but the sidebar shows the top 10 in the default
+    // view and the rest are reachable only via the search box (#95 part
+    // b). Bumping to 200 gives heavy users a meaningful searchable
+    // window (each entry is ~100 bytes JSON ⇒ ~20KB payload, fine over
+    // WebSocket). For workspaces with >200 sessions, a future change can
+    // move filtering server-side; for now the on-disk list() ordering
+    // (most-recently-updated first; see SessionStore::list) keeps the
+    // newest 200 visible.
     let sessions: Vec<serde_json::Value> = store
         .as_ref()
         .and_then(|s| s.list().ok())
         .unwrap_or_default()
         .into_iter()
-        .take(20)
+        .take(200)
         .map(|s| {
             serde_json::json!({
                 "id": s.id,

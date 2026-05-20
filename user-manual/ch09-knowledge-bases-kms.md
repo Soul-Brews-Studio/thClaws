@@ -125,6 +125,76 @@ The conceptual model behind all of this:
 
 You can run all three via natural language. The slash commands are shortcuts.
 
+## Self-improving AI Agent (auto-learn)
+
+If you want the agent to **learn from itself** automatically — file
+every conversation into a KMS without ever running `/kms ingest` or
+`/kms reconcile` by hand — flip a single flag in
+`.thclaws/settings.json`:
+
+```json
+{
+  "autoLearn": true
+}
+```
+
+With this on:
+
+1. **At the end of every session** (clicking "new session" or closing
+   the GUI), thClaws summarises the conversation into a new page in a
+   KMS called `self_learn` (auto-created on first run; project scope).
+2. **On a schedule (default every 6 hours)**, after ingest, it runs
+   `/kms reconcile self_learn --apply` to resolve contradictions
+   across pages in that KMS.
+
+That's the whole thing — it's just the primitives from this chapter
+(`/kms ingest $`, `/kms reconcile`) wired into the session lifecycle.
+No new agents, no new prompts.
+
+### Why `self_learn` is a dedicated KMS
+
+Auto-learn never touches your hand-curated KMSes (`notes`,
+`client-api`, anything in `kms.active`). It writes only to
+`self_learn`. Three reasons:
+
+- **Noise control.** Not every session has an insight worth keeping.
+  Quarantining auto-ingest in its own KMS keeps your real vaults
+  clean.
+- **Easy reset.** Don't like what the agent learned? `rm -rf
+  .thclaws/kms/self_learn/` and start over. Your other vaults
+  unaffected.
+- **Reviewable separately.** `git diff .thclaws/kms/self_learn/`
+  shows only what the agent learned from itself; `git diff
+  .thclaws/kms/notes/` shows only what you curated by hand.
+
+### Settings
+
+| key | default | meaning |
+|---|---|---|
+| `autoLearn` | `false` | Master switch (opt-in) |
+| `autoLearnKms` | `"self_learn"` | Override the destination KMS name. Existing KMS by that name is reused; doesn't have to be empty. |
+| `autoLearnReconcileHours` | `6` | Minimum hours between reconcile passes (set `0` to reconcile every session) |
+
+### Quality gate
+
+Sessions shorter than **5 messages** are skipped — opening and
+closing the app doesn't trigger ingest. Every decision lands in a
+log at `~/.config/thclaws/auto-learn.log`:
+
+```
+2026-05-20T08:15:00Z ingest ok: session=sess-abc123 kms=self_learn page=auth-jwt-design
+2026-05-20T08:15:42Z reconcile ok: kms=self_learn (next due in 6h)
+2026-05-20T09:02:11Z skip ingest: session sess-def456 only had 3 messages (threshold 5)
+```
+
+### Where auto-learn runs
+
+As of v0.13.0, the auto-trigger fires from the **Desktop GUI** and
+the **Webapp** (`--serve` + browser) — both run the same worker that
+manages session lifecycle. CLI REPL and print mode (`-p`) don't yet
+auto-trigger; wire it via the `session_end` shell hook
+([Chapter 13](ch13-hooks.md)) until they do.
+
 ## Multi-KMS: attach any subset to a chat
 
 A project's active KMS list lives in `.thclaws/settings.json`:

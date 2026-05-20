@@ -519,6 +519,12 @@ fn parse_openai_usage(v: &Value) -> Option<Usage> {
     // contribution from a turn that actually consumed 5000 tokens.
     let cached_count = cached.unwrap_or(0);
     let uncached_input = input.saturating_sub(cached_count);
+    // dev-plan/24: o1/o3 hidden reasoning tokens via Chat Completions
+    // wire format. Lives at completion_tokens_details.reasoning_tokens
+    // (folded into completion_tokens total already).
+    let reasoning = u
+        .pointer("/completion_tokens_details/reasoning_tokens")
+        .and_then(Value::as_u64);
     Some(Usage {
         input_tokens: uncached_input as u32,
         output_tokens: output as u32,
@@ -527,6 +533,7 @@ fn parse_openai_usage(v: &Value) -> Option<Usage> {
         // cached → cache_read; leave cache_creation as None.
         cache_creation_input_tokens: None,
         cache_read_input_tokens: cached.map(|v| v as u32),
+        reasoning_output_tokens: reasoning.map(|v| v as u32),
     })
 }
 

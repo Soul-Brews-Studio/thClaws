@@ -6,9 +6,18 @@
 
 pub mod agent;
 pub mod agent_defs;
+/// Workspace-scoped agent runtime builder. Used by the HTTP
+/// `/agent/run` endpoint to construct a per-request `Agent` parameterized
+/// by an explicit workspace directory (see
+/// `dev-plan/25-thclaws-as-agent.md`).
+pub mod agent_runtime;
 /// OpenAI-compatible HTTP API surface mounted on `--serve` (see
 /// `dev-plan/19-thclaws-openai-compat.md`).
 pub mod api_v1;
+/// Self-improving AI Agent — auto-learn pipeline that files each
+/// ended session as a page in a dedicated KMS and periodically
+/// reconciles it. See `dev-plan/27-self-improving-agent.md`.
+pub mod auto_learn;
 pub mod branding;
 pub mod cancel;
 mod cli_completer;

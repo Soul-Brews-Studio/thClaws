@@ -774,10 +774,10 @@ mod tests {
     #[test]
     fn resolve_client_secret_reads_inline_literal() {
         let mut p = fixture_policy();
-        p.client_secret = Some("GOCSPX-abcXYZ123".into());
+        p.client_secret = Some("test-client-secret-xyz".into());
         assert_eq!(
             resolve_client_secret(&p).as_deref(),
-            Some("GOCSPX-abcXYZ123")
+            Some("test-client-secret-xyz")
         );
     }
 

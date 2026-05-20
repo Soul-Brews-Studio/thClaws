@@ -370,6 +370,7 @@ mod tests {
                     output_tokens: 2,
                     cache_creation_input_tokens: None,
                     cache_read_input_tokens: None,
+                    reasoning_output_tokens: None,
                 }),
             },
         ])

@@ -6,57 +6,63 @@ alongside Claude, Codex, Cursor, Gemini, and the other built-in adapters.
 
 ## What you get
 
-- A **`thclaws_local`** adapter type that wraps the thClaws Rust CLI
-  in print mode (`thclaws -p`).
+- A **`thclaws_local`** adapter type that drives a long-lived
+  `thclaws --serve` subprocess via its OpenAI-compatible Chat
+  Completions API — streaming text deltas, tool-use events, usage
+  tallies all surface in Paperclip's transcript.
 - All 21 thClaws providers reachable by model id alone:
   `claude-sonnet-4-6`, `gpt-4o`, `chatgpt-codex/gpt-5.4`,
   `openrouter/anthropic/…`, `gemini-2.5-flash`, `qwen-max`, etc.
-- thClaws's built-in MCP / KMS / skills / agent-team primitives
-  available inside every run, no extra Paperclip config.
-- ChatGPT Plus / Pro / Team subscription billing for Codex models
-  via the `chatgpt-codex/*` ids (auto-imports the Codex CLI's
-  `~/.codex/auth.json`).
-
-## Status
-
-**v0.1 (MVP).** Spawns `thclaws -p`, captures stdout, returns one
-transcript block per run. No multi-turn session continuation, no
-incremental tool-call rendering — those land once thClaws ships its
-`--output-format stream-json` wire format.
-
-## Prerequisites
-
-- Paperclip with external-adapter plugin support (the `adapter-plugin`
-  Phase 1 changes — see `paperclip/adapter-plugin.md`).
-- `thclaws` binary on `$PATH` (or set `command` in the adapter config
-  to its absolute path). Install via:
-  ```sh
-  # macOS / Linux (build from source)
-  git clone https://github.com/thClaws/thClaws
-  cd thClaws/crates/core && cargo install --path .
-  ```
-- At least one provider API key reachable to thClaws — either in your
-  shell env, in `~/.config/thclaws/.env`, or in the project's
-  `.thclaws/.env`. The adapter does NOT manage thClaws credentials.
+- Paperclip Skills tab works (`mode: ephemeral` — customer manages
+  the underlying `.thclaws/skills/` files via thClaws's own UI).
+- Paperclip Instructions bundle works (writes to a path thClaws
+  natively reads — `.claude/CLAUDE.md`, `.thclaws/system.md`, etc.).
+- Model profiles (`cheap` → Haiku-class).
+- Multi-turn session continuity via `sessionCodec` (pass-through
+  in v1; richer resume lands when thClaws adds resume-by-id over
+  the `/v1` API).
 
 ## Install
 
 ```sh
-# In your Paperclip instance:
-pnpm add @thclaws/paperclip-adapter
-# Then register via the Paperclip plugin store as documented in
-# paperclip/docs/adapters/external-adapters.md.
+npm install @thclaws/paperclip-adapter
 ```
 
-For local development against a Paperclip checkout, link the package
-directly:
+Then in your Paperclip server's adapter registry:
 
-```sh
-cd paperclip-adapter
-pnpm build
-# Inside Paperclip's adapter plugin store:
-pnpm add file:../paperclip-adapter
+```ts
+import { createServerAdapter } from "@thclaws/paperclip-adapter/server";
+
+registerAdapter(createServerAdapter());
 ```
+
+The transport-agnostic HTTP client is also exposed for callers that
+want to drive a remote `thclaws --serve` listener (e.g. a per-agent
+pod over a tenant subdomain — see thClaws's thcompany SaaS).
+
+## Runtime requirements
+
+- A `thclaws` binary on `$PATH` (or `command` in adapterConfig).
+  Releases at https://github.com/thClaws/thClaws/releases
+- An upstream LLM API key in the environment thClaws can read
+  (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) — thClaws's own
+  settings layering covers .env files, keychain, etc.
+- Node ≥18 for native `fetch` + `ReadableStream`.
+
+## How it works
+
+On first execute(), the adapter lazily spawns
+`thclaws --serve --bind 127.0.0.1 --port 0` as a process-wide
+singleton, discovers the OS-assigned port from the daemon's banner,
+polls `/healthz`, and caches the endpoint. Subsequent runs share
+that endpoint over the OpenAI Chat Completions API. SIGTERM cleanup
+is registered on the parent process.
+
+For multi-tenant deployments where per-agent isolation matters
+(separate `/workspace`, separate keychain, externally-reachable
+`/v1/*` for Cursor/Aider connection), Paperclip orchestrators can
+also drive a remote `thclaws --serve` pod over a public URL with
+the same HTTP client — see thClaws's `thclaws_pod` adapter pattern.
 
 ## Configuration
 
@@ -69,8 +75,20 @@ Minimum agent config:
 }
 ```
 
-Full field list — see the `agentConfigurationDoc` in `src/index.ts`
-or the description Paperclip's UI renders on the agent-hire page.
+Optional fields:
+
+| Field | Default | Notes |
+|---|---|---|
+| `command` | `thclaws` | Binary path or name on $PATH |
+| `cwd` | process.cwd() | Working dir the subprocess runs from. Determines where thClaws looks for `.claude/CLAUDE.md` + `.thclaws/skills/` |
+| `model` | `claude-sonnet-4-6` | Any id thClaws's `ProviderKind::detect` recognizes |
+| `systemPrompt` | none | Prepended as a `system` message |
+| `temperature` | none | Forwarded if set |
+| `maxTokens` | none | Forwarded if set |
+| `instructionsFilePath` | none | Set if Paperclip pushes an instructions bundle — write target |
+
+Full field list including the rich `agentConfigurationDoc` markdown
+also lives in `src/index.ts` (displayed on the Paperclip agent-hire UI).
 
 ## Building
 
@@ -79,6 +97,12 @@ pnpm install
 pnpm build
 # Outputs dist/{index.js, server/*.js, ui-parser.js}
 ```
+
+## Versioning
+
+Follows thClaws release versions where major thClaws features touch
+the adapter surface, otherwise independent patch versions for
+adapter-only fixes.
 
 ## License
 

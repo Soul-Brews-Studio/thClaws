@@ -28,6 +28,7 @@ deploy โปรเจกต์จริง ไม่ว่าจะเป็น
 | 17 | [ทีมของ Agent](ch17-agent-teams.md) |
 | 19 | [การตั้งเวลา (Scheduling)](ch19-scheduling.md) |
 | 20 | [Background research (`/research`)](ch20-research.md) |
+| 21 | [LINE chat & web browser bridge](ch21-line-and-browser-chat.md) |
 | 22 | [Paperclip adapter](ch22-paperclip-adapter.md) |
 
 > **ส่วนที่ 2 — กรณีศึกษา (บทที่ 23–26)** — walkthrough สำหรับสร้าง

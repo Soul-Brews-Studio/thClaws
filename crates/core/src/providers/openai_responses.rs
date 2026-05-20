@@ -481,11 +481,21 @@ fn parse_response_event(
                     .and_then(Value::as_u64);
                 let cached_count = cached.unwrap_or(0);
                 let uncached_input = total_input.saturating_sub(cached_count);
+                // dev-plan/24: o1/o3 hidden reasoning tokens are
+                // surfaced at output_tokens_details.reasoning_tokens.
+                // OpenAI counts them INSIDE the total output_tokens
+                // already, so consumers compute cost by either pricing
+                // them at a distinct reasoning_per_mtok rate or
+                // accepting fold-into-output. Pass through verbatim.
+                let reasoning = u
+                    .pointer("/output_tokens_details/reasoning_tokens")
+                    .and_then(Value::as_u64);
                 Usage {
                     input_tokens: uncached_input as u32,
                     output_tokens: output as u32,
                     cache_creation_input_tokens: None,
                     cache_read_input_tokens: cached.map(|v| v as u32),
+                    reasoning_output_tokens: reasoning.map(|v| v as u32),
                 }
             });
             let stop_reason = v

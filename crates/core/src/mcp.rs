@@ -828,7 +828,7 @@ impl McpClient {
     /// `text/html;profile=mcp-app` before mounting an iframe and
     /// avoid trusting arbitrary text the server might return for the
     /// same URI.
-    pub async fn read_resource(&self, uri: &str) -> Result<(String, Option<String>)> {
+    pub async fn read_resource(&self, uri: &str) -> Result<(String, Option<String>, bool, bool)> {
         let result = self
             .request("resources/read", json!({ "uri": uri }))
             .await?;
@@ -844,7 +844,28 @@ impl McpClient {
                     .get("mimeType")
                     .and_then(Value::as_str)
                     .map(str::to_string);
-                return Ok((text.to_string(), mime));
+                // MCP-Apps extension carried in the resource's `_meta`.
+                // A trusted server that needs to load `<script src>`
+                // from its own preview origin (e.g. GamedevPreview
+                // returning an iframe whose src is the loopback HTTP
+                // server it spawned) sets `_meta.allowSameOrigin: true`.
+                // `_meta.autoSize: true` is a separate opt-in: it tells
+                // the host's McpAppIframe to honour `size-changed`
+                // notifications from the widget so DOM-based content
+                // (board games) can grow past the default 480px. Both
+                // are surfaced here; the trust gate at the call site
+                // decides whether to honor them.
+                let allow_same_origin = entry
+                    .get("_meta")
+                    .and_then(|m| m.get("allowSameOrigin"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let auto_size = entry
+                    .get("_meta")
+                    .and_then(|m| m.get("autoSize"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                return Ok((text.to_string(), mime, allow_same_origin, auto_size));
             }
         }
         Err(Error::Provider(format!(
@@ -1052,10 +1073,15 @@ impl Tool for McpTool {
             return None;
         }
         match self.client.read_resource(uri).await {
-            Ok((html, mime)) => Some(crate::tools::UiResource {
+            Ok((html, mime, allow_same_origin, auto_size)) => Some(crate::tools::UiResource {
                 uri: uri.to_string(),
                 html,
                 mime,
+                // Honor the server's request — already gated by the
+                // trust check above. Untrusted servers never reach this
+                // arm so a third-party widget can never escalate.
+                allow_same_origin,
+                auto_size,
             }),
             Err(e) => {
                 eprintln!(
@@ -1603,7 +1629,7 @@ mod tests {
             .await;
         });
 
-        let (text, mime) = client
+        let (text, mime, allow_same_origin, auto_size) = client
             .read_resource("ui://pinn/image-viewer")
             .await
             .expect("read_resource");
@@ -1612,6 +1638,55 @@ mod tests {
 
         assert_eq!(text, "<html>widget</html>");
         assert_eq!(mime.as_deref(), Some("text/html;profile=mcp-app"));
+        // Defaults — server set neither `_meta.allowSameOrigin` nor
+        // `_meta.autoSize`. The strict sandbox + fixed 480px height
+        // stay on; these are the safety-by-default the opt-in flags
+        // are layered against.
+        assert!(!allow_same_origin);
+        assert!(!auto_size);
+    }
+
+    #[tokio::test]
+    async fn read_resource_propagates_allow_same_origin_when_meta_set() {
+        let (client, (s_read, s_write)) = paired_streams();
+
+        let server_task = tokio::spawn(async move {
+            run_mock_server(s_read, s_write, move |msg| {
+                let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
+                let id = msg.get("id").and_then(Value::as_u64);
+                match (method, id) {
+                    ("resources/read", Some(id)) => {
+                        let uri = msg
+                            .get("params")
+                            .and_then(|p| p.get("uri"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
+                        Some(jsonrpc_response(
+                            id,
+                            json!({
+                                "contents": [{
+                                    "uri": uri,
+                                    "mimeType": "text/html;profile=mcp-app",
+                                    "text": "<html>widget</html>",
+                                    "_meta": { "allowSameOrigin": true }
+                                }]
+                            }),
+                        ))
+                    }
+                    _ => None,
+                }
+            })
+            .await;
+        });
+
+        let (_text, _mime, allow_same_origin, _auto_size) = client
+            .read_resource("ui://pinn/preview")
+            .await
+            .expect("read_resource");
+        drop(client);
+        let _ = tokio::time::timeout(Duration::from_secs(2), server_task).await;
+
+        assert!(allow_same_origin);
     }
 
     #[tokio::test]

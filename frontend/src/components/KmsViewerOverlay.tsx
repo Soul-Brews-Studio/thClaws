@@ -283,7 +283,7 @@ function rewriteWikilinks(s: string): string {
 }
 
 function escapeMd(s: string): string {
-  return s.replace(/([\[\]])/g, "\\$1");
+  return s.replace(/([\\\[\]])/g, "\\$1");
 }
 
 /// Resolve a relative markdown link from the perspective of the

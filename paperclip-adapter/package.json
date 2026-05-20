@@ -1,7 +1,17 @@
 {
   "name": "@thclaws/paperclip-adapter",
-  "version": "0.1.0",
-  "description": "Paperclip adapter for thClaws — hire a thClaws agent inside a Paperclip company orchestration.",
+  "version": "1.0.0",
+  "description": "Paperclip adapter for thClaws — drives a thclaws --serve subprocess via the OpenAI Chat Completions API. Streaming, tool calls, skills, instructions, model profiles, sessions all surface in Paperclip's UI.",
+  "keywords": [
+    "paperclip",
+    "thclaws",
+    "ai-agent",
+    "adapter",
+    "openai-compatible"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "license": "MIT",
   "author": "thClaws contributors",
@@ -17,6 +27,7 @@
   "exports": {
     ".": "./dist/index.js",
     "./server": "./dist/server/index.js",
+    "./server/pricing": "./dist/server/pricing.js",
     "./ui-parser": "./dist/ui-parser.js"
   },
   "files": ["dist", "README.md"],

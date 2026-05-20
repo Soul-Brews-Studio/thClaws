@@ -105,6 +105,47 @@ pub struct AppConfig {
     #[serde(default)]
     pub kms_active: Vec<String>,
 
+    /// **Self-improving AI Agent (auto-learn).** Opt-in: when `true`,
+    /// each session-end automatically files the just-closed session as
+    /// a new page in a dedicated `self_learn` KMS (see
+    /// [`Self::auto_learn_kms`]) and periodically reconciles that KMS to
+    /// resolve contradictions. The dedicated KMS is separate from the
+    /// user's hand-curated active KMSes — auto-ingested pages never
+    /// touch them.
+    ///
+    /// Pipeline at session end (GUI / `--serve` only — CLI users wire
+    /// `session_end` hook manually):
+    ///
+    ///   1. `KmsCreate({name: auto_learn_kms, scope: "project"})` —
+    ///      idempotent bootstrap.
+    ///   2. `/kms ingest <kms> <session-id>` — one session → one page.
+    ///   3. `/kms reconcile <kms> --apply` — throttled per
+    ///      [`Self::auto_learn_reconcile_hours`].
+    ///
+    /// Default `false` so users opt in deliberately (token cost,
+    /// permission gate, predictability). See `dev-plan/27`.
+    #[serde(default, alias = "autoLearn")]
+    pub auto_learn: bool,
+
+    /// KMS name target for auto-learn. Project-scope. Auto-created on
+    /// first run. Default `self_learn` — dedicated audit-log-style KMS
+    /// for session pages, kept separate from
+    /// [`Self::kms_active`] vaults.
+    #[serde(default = "default_auto_learn_kms", alias = "autoLearnKms")]
+    pub auto_learn_kms: String,
+
+    /// Minimum hours between automatic reconcile passes on the
+    /// `self_learn` KMS. Session ingest runs every session-end;
+    /// reconcile is the expensive pass and runs at most once per this
+    /// many hours. Default `6` (≤ 4 reconciles / day even on heavy
+    /// usage). Set higher for quieter workspaces, lower if you want
+    /// faster contradiction resolution.
+    #[serde(
+        default = "default_auto_learn_reconcile_hours",
+        alias = "autoLearnReconcileHours"
+    )]
+    pub auto_learn_reconcile_hours: u32,
+
     /// M6.39.5: opt-in to loading user-level Claude Code memory
     /// (`~/.claude/CLAUDE.md` and `~/.claude/AGENTS.md`) into
     /// thClaws's system prompt. Default `false` — the user's Claude
@@ -174,6 +215,14 @@ fn default_stream_chunk_timeout_secs() -> u64 {
     120
 }
 
+fn default_auto_learn_kms() -> String {
+    "self_learn".to_string()
+}
+
+fn default_auto_learn_reconcile_hours() -> u32 {
+    6
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
@@ -206,6 +255,9 @@ impl Default for AppConfig {
             skills_listing_strategy: "full".to_string(),
             mcp_servers: Vec::new(),
             kms_active: Vec::new(),
+            auto_learn: false,
+            auto_learn_kms: default_auto_learn_kms(),
+            auto_learn_reconcile_hours: default_auto_learn_reconcile_hours(),
             claude_md_compat: false,
             openrouter_free_only: false,
             gateway_use_for: Vec::new(),
@@ -379,6 +431,20 @@ pub struct ProjectConfig {
     pub show_raw_response: Option<bool>,
     /// Knowledge-base settings — `{ "active": ["name1", ...] }`.
     pub kms: Option<KmsSettings>,
+    /// Auto-learn — file each ended session as a page in a dedicated
+    /// KMS and periodically reconcile it. See
+    /// [`AppConfig::auto_learn`] for the full design. Default off
+    /// (None ⇒ false).
+    #[serde(rename = "autoLearn")]
+    pub auto_learn: Option<bool>,
+    /// Override the default auto-learn KMS name (`self_learn`). See
+    /// [`AppConfig::auto_learn_kms`].
+    #[serde(rename = "autoLearnKms")]
+    pub auto_learn_kms: Option<String>,
+    /// Minimum hours between auto-learn reconcile passes. See
+    /// [`AppConfig::auto_learn_reconcile_hours`].
+    #[serde(rename = "autoLearnReconcileHours")]
+    pub auto_learn_reconcile_hours: Option<u32>,
     /// When set, applies to AppConfig.openrouter_free_only on load.
     /// Stored as Option so a missing field falls through to the
     /// compiled default (`false`).
@@ -421,6 +487,9 @@ impl Default for ProjectConfig {
             team_enabled: Some(false),
             show_raw_response: None,
             kms: None,
+            auto_learn: None,
+            auto_learn_kms: None,
+            auto_learn_reconcile_hours: None,
             openrouter_free_only: None,
             gateway_use_for: None,
         }
@@ -610,6 +679,18 @@ impl ProjectConfig {
         }
         if let Some(ref kms) = self.kms {
             config.kms_active = kms.active.clone();
+        }
+        if let Some(b) = self.auto_learn {
+            config.auto_learn = b;
+        }
+        if let Some(ref name) = self.auto_learn_kms {
+            let trimmed = name.trim();
+            if !trimmed.is_empty() {
+                config.auto_learn_kms = trimmed.to_string();
+            }
+        }
+        if let Some(h) = self.auto_learn_reconcile_hours {
+            config.auto_learn_reconcile_hours = h;
         }
         if let Some(ref spec) = self.extract_save_skill_models {
             config.extract_save_skill_models = Some(spec.clone());

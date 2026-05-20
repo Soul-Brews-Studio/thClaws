@@ -587,6 +587,8 @@ pub fn parse_sse_event(raw: &str, state: &mut ParseState) -> Result<Vec<Provider
                     .unwrap_or(0) as u32,
                 cache_creation_input_tokens: None,
                 cache_read_input_tokens: cached.map(|v| v as u32),
+                // Gemini doesn't surface reasoning-token counts.
+                reasoning_output_tokens: None,
             }
         });
         out.push(ProviderEvent::MessageStop {
