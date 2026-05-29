@@ -303,6 +303,16 @@ pub(crate) fn update_mcp_tool_count(server_name: &str, count: usize) {
     }
 }
 
+/// Wipe every stored MCP tool count. Used by `ChangeCwd` before the
+/// new project's MCP servers respawn — a same-named server in the
+/// new project would otherwise display the old project's tool count
+/// until its own `McpReady` event lands.
+pub(crate) fn clear_mcp_tool_counts() {
+    if let Ok(mut map) = mcp_tool_counts().lock() {
+        map.clear();
+    }
+}
+
 /// Build the `[{name, tools}]` array that the sidebar consumes for
 /// the MCP servers list. Shared by `build_mcp_update_payload` AND
 /// by both `initial_state` builders (`gui.rs` desktop bootstrap +
@@ -1108,6 +1118,13 @@ fn run_gui_inner(serve: Option<crate::server::ServeConfig>) {
                         .unwrap_or_default();
                     project.set_model(&new_model);
                     let _ = project.save();
+                    // The user's `--model X` choice has been deemed
+                    // unreachable; drop the CLI override so the reload
+                    // returns the fallback (Y), not X. Without this the
+                    // session would keep re-pinning to a model whose
+                    // provider has no credentials, defeating the entire
+                    // auto-fallback affordance.
+                    crate::config::clear_cli_model_override();
                     config = AppConfig::load().unwrap_or_default();
                 }
                 let provider_name = config.detect_provider().unwrap_or("unknown");
@@ -1217,7 +1234,8 @@ mod tool_coalesce_tests {
         assert!(out.contains("[tool: Ls]"));
         assert!(out.starts_with("\r\n"));
         let res = render_terminal_ansi(&mut s, &ok()).unwrap();
-        assert_eq!(res, " \x1b[32m✓\x1b[0m");
+        assert!(res.starts_with(" \x1b[32m✓"));
+        assert!(res.ends_with("\x1b[0m"));
     }
 
     #[test]
@@ -1263,9 +1281,9 @@ mod tool_coalesce_tests {
     #[test]
     fn chat_dispatch_carries_tool_name_and_input_for_todowrite() {
         // Frontend keys on `tool_name === "TodoWrite"` to render the
-        // checklist card. The IPC envelope must carry both the
-        // unmangled tool name and the raw input so the renderer has
-        // everything it needs without a follow-up round-trip.
+        // checklist card. The IPC envelope must carry the unmangled
+        // tool name and a redacted copy of the input so the renderer has
+        // everything it needs without leaking secrets.
         let ev = ViewEvent::ToolCallStart {
             name: "TodoWrite".to_string(),
             label: "TodoWrite".to_string(),
@@ -1273,7 +1291,8 @@ mod tool_coalesce_tests {
                 "todos": [
                     { "id": "1", "content": "Investigate bug", "status": "in_progress" },
                     { "id": "2", "content": "Write fix", "status": "pending" },
-                ]
+                ],
+                "note": "Authorization: Bearer sk-123",
             }),
         };
         let dispatches = render_chat_dispatches(&ev);
@@ -1289,5 +1308,9 @@ mod tool_coalesce_tests {
         assert!(todos.is_array(), "todos array missing in input: {envelope}");
         assert_eq!(todos[0]["content"], "Investigate bug");
         assert_eq!(todos[0]["status"], "in_progress");
+        assert_eq!(
+            envelope["input"]["note"],
+            "Authorization: Bearer <redacted>"
+        );
     }
 }

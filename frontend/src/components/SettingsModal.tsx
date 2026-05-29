@@ -283,6 +283,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
         <div className="flex flex-col gap-3">
           <GatewaySettingsSection />
+          <DeployTargetSection />
+          <AutoLearnSection />
 
           {llmEntries.map(([provider, row]) =>
             renderProviderCard(
@@ -779,6 +781,272 @@ function FlashLine({ flash }: { flash?: { ok: boolean; msg: string } }) {
       style={{ color: flash.ok ? "var(--accent)" : "var(--danger, #e06c75)" }}
     >
       {flash.msg}
+    </div>
+  );
+}
+
+// ── Deploy target (dev-plan/28) ──────────────────────────────────────
+// Pairs with /deploy slash command. URL persists to settings.json;
+// token persists to the OS keychain bundle (same as provider API keys).
+// Either can be set independently. Token-set shows ••••• and a Clear
+// button.
+interface RemoteAgentConfig {
+  url: string | null;
+  has_token: boolean;
+  token_length: number;
+  env_var_set: boolean;
+  keychain_writable: boolean;
+}
+
+function DeployTargetSection() {
+  const [cfg, setCfg] = useState<RemoteAgentConfig>({
+    url: null,
+    has_token: false,
+    token_length: 0,
+    env_var_set: false,
+    keychain_writable: true,
+  });
+  const [urlDraft, setUrlDraft] = useState("");
+  const [tokenDraft, setTokenDraft] = useState("");
+  const [flash, setFlash] = useState<{ ok: boolean; msg: string } | undefined>(undefined);
+
+  useEffect(() => {
+    const unsub = subscribe((msg) => {
+      if (msg.type === "remote_agent_config") {
+        const next = msg as unknown as RemoteAgentConfig & { type: string };
+        setCfg({
+          url: next.url ?? null,
+          has_token: !!next.has_token,
+          token_length: typeof next.token_length === "number" ? next.token_length : 0,
+          env_var_set: !!next.env_var_set,
+          keychain_writable: !!next.keychain_writable,
+        });
+      } else if (msg.type === "remote_agent_result") {
+        const r = msg as {
+          url_ok?: boolean;
+          url_error?: string;
+          token_ok?: boolean;
+          token_error?: string;
+        };
+        if (r.url_ok === false || r.token_ok === false) {
+          const parts: string[] = [];
+          if (r.url_ok === false) parts.push(`URL: ${r.url_error ?? "failed"}`);
+          if (r.token_ok === false) parts.push(`Token: ${r.token_error ?? "failed"}`);
+          setFlash({ ok: false, msg: parts.join(" · ") });
+        } else {
+          setFlash({ ok: true, msg: "saved" });
+          // Reset drafts so the URL field re-pre-fills with the saved
+          // value and the token field re-shows the sentinel — matches
+          // the post-save state of the provider rows.
+          setUrlDraft("");
+          setTokenDraft("");
+          setTimeout(() => setFlash(undefined), 2500);
+        }
+        send({ type: "remote_agent_get" });
+      }
+    });
+    send({ type: "remote_agent_get" });
+    return unsub;
+  }, []);
+
+  const onSaveUrl = () => {
+    const trimmed = urlDraft.trim();
+    if (!trimmed) return;
+    send({ type: "remote_agent_set", url: trimmed });
+  };
+  const onClearUrl = () => {
+    send({ type: "remote_agent_set", url: "" });
+    setUrlDraft("");
+  };
+  const onSaveToken = () => {
+    const trimmed = tokenDraft.trim();
+    if (!trimmed || isSentinel(trimmed)) return;
+    send({ type: "remote_agent_set", token: trimmed });
+  };
+  const onClearToken = () => {
+    send({ type: "remote_agent_set", token: "" });
+    setTokenDraft("");
+  };
+
+  // URL field pre-fills with the saved value so the user can edit in
+  // place; Save is "dirty when draft != saved" (mirrors UrlRow).
+  const urlValue = urlDraft || cfg.url || "";
+  const urlDirty = urlValue.trim() !== (cfg.url ?? "").trim() && urlValue.trim().length > 0;
+
+  // Token field shows a ••••• sentinel sized to match other rows when
+  // stored. Save is "dirty when the user typed a new non-sentinel
+  // value." Mirrors KeyRow.
+  const tokenSentinel = cfg.has_token
+    ? cfg.token_length > 0
+      ? sentinelFor(cfg.token_length)
+      : FALLBACK_SENTINEL
+    : "";
+  const tokenValue = tokenDraft || tokenSentinel;
+  const tokenDirty = tokenDraft.trim().length > 0 && !isSentinel(tokenDraft.trim());
+
+  return (
+    <div
+      className="rounded-lg p-3"
+      style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)" }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <LinkIcon size={12} style={{ color: "var(--accent)" }} />
+        <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+          Deploy target
+        </span>
+      </div>
+      <p className="text-xs mb-2" style={{ color: "var(--text-secondary)" }}>
+        Default pod for the <span className="font-mono">/deploy</span> slash command.
+        Ship <span className="font-mono">.thclaws/</span> to a remote
+        <span className="font-mono"> thclaws --serve</span> instance with one word.
+      </p>
+
+      <FieldLabel
+        icon={<LinkIcon size={11} />}
+        text="Pod URL"
+        env="remoteAgentUrl in settings.json"
+      />
+      <div className="flex gap-1.5 mb-2">
+        <input
+          type="text"
+          placeholder="https://agent-name.thcompany.ai"
+          className="flex-1 px-2.5 py-1.5 rounded text-xs font-mono outline-none"
+          style={{
+            background: "var(--bg-primary)",
+            color: "var(--text-primary)",
+            border: "1px solid var(--border)",
+          }}
+          value={urlValue}
+          onChange={(e) => setUrlDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSaveUrl();
+          }}
+          autoComplete="off"
+        />
+        <SaveButton onClick={onSaveUrl} disabled={!urlDirty} />
+        <ClearButton
+          onClick={onClearUrl}
+          disabled={!cfg.url}
+          title="Clear configured URL"
+        />
+      </div>
+
+      <FieldLabel
+        icon={<KeyRound size={11} />}
+        text="Bearer token"
+        env="THCLAWS_REMOTE_AGENT_TOKEN"
+      />
+      <div className="flex gap-1.5">
+        <input
+          // Same trick as KeyRow: while the sentinel is showing we use
+          // `text` so the literal asterisks render at the actual token
+          // length; once the user starts typing a real value we flip
+          // to `password` so the new characters mask.
+          type={isSentinel(tokenValue) ? "text" : "password"}
+          placeholder="Paste pod's API token"
+          className="flex-1 px-2.5 py-1.5 rounded text-xs font-mono outline-none"
+          style={{
+            background: "var(--bg-primary)",
+            color: "var(--text-primary)",
+            border: "1px solid var(--border)",
+          }}
+          value={tokenValue}
+          onChange={(e) => setTokenDraft(e.target.value)}
+          onFocus={(e) => {
+            // Clicking the sentinel selects it so typing replaces it
+            // in one go (matches KeyRow's UX — no manual select-all).
+            if (isSentinel(e.currentTarget.value)) e.currentTarget.select();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSaveToken();
+          }}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <SaveButton onClick={onSaveToken} disabled={!tokenDirty} />
+        <ClearButton
+          onClick={onClearToken}
+          disabled={!cfg.has_token}
+          title="Clear stored token"
+        />
+      </div>
+      <FlashLine flash={flash} />
+    </div>
+  );
+}
+
+/// Project-scope toggle for `auto_learn` (dev-plan/27). The setting
+/// drives session-end ingestion into the project's KMS plus the
+/// throttled reconcile pass. Reading via `auto_learn_get` returns
+/// the effective AppConfig value (project overlay wins over user
+/// settings); writing via `auto_learn_set` updates the project's
+/// `.thclaws/settings.json`. The shell reloads its AppConfig
+/// immediately so the next session-end pass sees the new state
+/// without a restart.
+function AutoLearnSection() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [flash, setFlash] = useState<{ ok: boolean; msg: string } | undefined>(undefined);
+
+  useEffect(() => {
+    const unsub = subscribe((msg) => {
+      if (msg.type === "auto_learn") {
+        setEnabled(Boolean((msg as { enabled?: boolean }).enabled));
+      } else if (msg.type === "auto_learn_result") {
+        const r = msg as { ok?: boolean; error?: string; enabled?: boolean };
+        if (r.ok === false) {
+          setFlash({ ok: false, msg: r.error ?? "failed" });
+        } else {
+          setEnabled(Boolean(r.enabled));
+          setFlash({ ok: true, msg: r.enabled ? "auto-learn enabled" : "auto-learn disabled" });
+          setTimeout(() => setFlash(undefined), 2500);
+        }
+      }
+    });
+    send({ type: "auto_learn_get" });
+    return unsub;
+  }, []);
+
+  const onToggle = (next: boolean) => {
+    // Optimistic update — the `auto_learn_result` reply will
+    // overwrite this with the canonical value if the save failed.
+    setEnabled(next);
+    send({ type: "auto_learn_set", enabled: next });
+  };
+
+  return (
+    <div
+      className="rounded p-3"
+      style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)" }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+          Auto-learn
+        </span>
+        <span className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
+          project-scope · saved to .thclaws/settings.json
+        </span>
+      </div>
+      <p className="text-xs mb-2" style={{ color: "var(--text-secondary)" }}>
+        At the end of each session, ingest the conversation into the project's KMS
+        (one page per session) and reconcile the index periodically. The model
+        can search and cite prior sessions on later turns. Token cost applies on
+        ingest + reconcile.
+      </p>
+      <label
+        className="flex items-center gap-2 text-xs select-none cursor-pointer"
+        style={{ color: "var(--text-primary)" }}
+      >
+        <input
+          type="checkbox"
+          checked={enabled === true}
+          disabled={enabled === null}
+          onChange={(e) => onToggle(e.target.checked)}
+        />
+        <span>
+          Enable auto-learn for this project
+        </span>
+      </label>
+      <FlashLine flash={flash} />
     </div>
   );
 }

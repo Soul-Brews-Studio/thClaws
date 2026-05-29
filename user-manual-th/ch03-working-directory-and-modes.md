@@ -136,11 +136,49 @@ git diff | thclaws -p "summarise this diff for a commit message"
 
 ![thClaws Non-Interactive Mode](../user-manual-img/ch-03/thclaws-non-interactive.png)
 
+### `--serve` (HTTP/WebSocket server)
+
+```bash
+thclaws --serve                       # listen on 127.0.0.1:8443
+thclaws --serve --port 7878           # custom port
+thclaws --serve --bind 0.0.0.0        # bind all interfaces (auth required)
+thclaws --serve --gui                 # plus open desktop window on same engine
+```
+
+![thClaws --serve mode](../user-manual-img/ch-03/thclaws-serve-mode.png)
+
+engine ตัวเดียวกันถูก expose ผ่าน HTTP + WebSocket — เปิดได้สอง use case:
+
+- **Webapp surface** — เปิดเบราว์เซอร์ไปที่ `http://127.0.0.1:8443/`
+  จะได้ React frontend ตัวเดียวกับ GUI หน้าเดียวกัน เหมาะกับ
+  remote access ผ่าน SSH tunnel หรือ Cloudflare Tunnel (ไม่ต้อง
+  เปิด port ออกสาธารณะ)
+- **AI Agent (API Server) surface** — `--serve` มาพร้อม
+  `/v1/chat/completions` (OpenAI-compatible — ให้ Cursor, Aider,
+  n8n, openai-python เรียกใช้ได้เลย) และ `/agent/run` +
+  `/v1/agent/info` (thClaws-native สำหรับ orchestrator เช่น
+  thcompany หรือ Paperclip) — agent ตัวเดียวให้บริการได้ทั้งคน
+  และซอฟต์แวร์พร้อมกัน
+
+ค่าเริ่มต้น bind ที่ `127.0.0.1` เท่านั้น (single-user, localhost
+loopback) ถ้าจะเปิดกว้างใช้ `--bind 0.0.0.0` แล้ว set
+`THCLAWS_API_TOKEN` ในสิ่งแวดล้อม — request ทุก request ต้องมี
+header `Authorization: Bearer <token>` ไม่งั้น 401
+
+`--serve` กับ `--cli` / `--print` ใช้ร่วมกันไม่ได้ (mutually
+exclusive) แต่ใช้ร่วมกับ `--gui` ได้ — desktop window กับ
+browser tab จะ attach session เดียวกัน ดู[บทที่ 21](ch21-line-and-browser-chat.md)
+สำหรับ LINE / browser bridge ที่ build บน `--serve`
+
 ### Flag ที่ใช้บ่อย
 
 ```
     --cli                    run the CLI REPL instead of the GUI
 -p, --print                  non-interactive: run prompt and exit (implies --cli)
+    --serve                  expose engine over HTTP/WebSocket (default bind 127.0.0.1:8443)
+    --port N                 port for --serve mode (default 8443)
+    --bind ADDR              bind address for --serve (default 127.0.0.1; 0.0.0.0 needs auth)
+    --gui                    open desktop window (compose with --serve to attach to same engine)
 -m, --model MODEL            override the model (e.g. claude-sonnet-4-6, ap/gemma4-26b)
     --accept-all             auto-approve every tool call (dangerous — see ch5)
     --permission-mode MODE   auto | ask
@@ -190,15 +228,117 @@ root ของ sandbox ยังใช้เก็บ config และ runtime s
 ส่วนของระดับผู้ใช้ทั้งระบบจะอยู่ใต้ `~/.config/thclaws/` (และมี
 `~/.claude/` เป็น fallback ของ Claude Code)
 
-### `settings.json` คือปุ่มปรับของ runtime ทุกตัว
+### `settings.json` reference
 
-runtime toggle ทั้งหมด — permission mode, thinking budget, รายการ tool
-ที่อนุญาต/ห้าม, endpoint ของ provider, KMS ที่แนบไว้, `teamEnabled`,
-ขนาดหน้าต่าง GUI — อยู่รวมกันในไฟล์ JSON ไฟล์เดียว โหลดตามลำดับ
-ความสำคัญ: CLI flag > `.thclaws/settings.json` (ระดับโปรเจกต์ commit
-ลง repo ได้) > `~/.config/thclaws/settings.json` (ระดับผู้ใช้ทั้งระบบ)
-> `~/.claude/settings.json` (fallback ของ Claude Code) > default ที่
-compile มาใน binary
+runtime toggle ทั้งหมดอยู่รวมกันในไฟล์ JSON ไฟล์เดียว โหลดตามลำดับ
+ความสำคัญ:
+
+1. CLI flag (สูงสุด)
+2. `.thclaws/settings.json` (ระดับโปรเจกต์ — commit ลง repo ได้)
+3. `~/.config/thclaws/settings.json` (ระดับผู้ใช้ทั้งระบบ)
+4. `~/.claude/settings.json` (fallback ของ Claude Code)
+5. compile-time default ใน binary (ต่ำสุด)
 
 `settings.json` ไม่เก็บ API key — key อยู่ใน OS keychain หรือไฟล์
 `.env` ตามที่คุณเลือกตอนเปิดใช้ครั้งแรก (ดูข้างบน)
+
+ครั้งแรกที่เปิด thClaws ในโปรเจกต์ใหม่ จะ bootstrap ไฟล์ template
+ที่ list ทุก field พร้อม default ไว้ให้ — เปิด `.thclaws/settings.json`
+แล้วแก้ค่าตามต้องการ ลบ field หรือเซ็ตเป็น `null` คือใช้ default
+
+#### Model + การคุม turn
+
+| Key | Type | Default | ดูเพิ่ม |
+|---|---|---|---|
+| `model` | string | `"claude-sonnet-4-6"` | [บทที่ 6](ch06-providers-models-api-keys.md) |
+| `maxTokens` | number | `32000` | (max output tokens ต่อ turn) |
+| `maxIterations` | number | `50` | (cap ของ tool-call loop ต่อ turn) |
+| `thinkingBudget` | number | `10000` | [บทที่ 6](ch06-providers-models-api-keys.md) (Anthropic extended-thinking) |
+| `searchEngine` | string | `"auto"` | (`auto` / `tavily` / `brave` / `duckduckgo`) |
+
+#### Permissions + tools
+
+| Key | Type | Default | ดูเพิ่ม |
+|---|---|---|---|
+| `permissions` | `"auto"` / `"ask"` หรือ `{allow, deny}` | `"auto"` | [บทที่ 5](ch05-permissions.md) |
+| `allowedTools` | string[] | `null` | [บทที่ 5](ch05-permissions.md) |
+| `disallowedTools` | string[] | `null` | [บทที่ 5](ch05-permissions.md) |
+
+#### Knowledge bases + memory
+
+| Key | Type | Default | ดูเพิ่ม |
+|---|---|---|---|
+| `kms` | `{active: string[]}` | `{active: []}` | [บทที่ 9](ch09-knowledge-bases-kms.md) |
+| `autoLearn` | bool | `false` | [บทที่ 9 §Self-improving](ch09-knowledge-bases-kms.md#self-improving-ai-agent-auto-learn) |
+| `autoLearnKms` | string | `"self_learn"` | [บทที่ 9 §Self-improving](ch09-knowledge-bases-kms.md#self-improving-ai-agent-auto-learn) |
+| `autoLearnReconcileHours` | number | `6` | [บทที่ 9 §Self-improving](ch09-knowledge-bases-kms.md#self-improving-ai-agent-auto-learn) |
+
+#### Plan mode + skills + subagents
+
+| Key | Type | Default | ดูเพิ่ม |
+|---|---|---|---|
+| `planContextStrategy` | `"compact"` / `"clear"` | `"compact"` | [บทที่ 18](ch18-plan-mode.md) |
+| `skillsListingStrategy` | `"full"` / `"names-only"` / `"discover-tool-only"` | `"full"` | [บทที่ 12](ch12-skills.md) |
+| `extract_save_skill_models` | string / string[] | `null` | [บทที่ 12](ch12-skills.md) (override built-in skill model) |
+| `translator_subagent_model` | string | `null` | [บทที่ 15](ch15-subagents.md) |
+
+#### Agent Teams
+
+| Key | Type | Default | ดูเพิ่ม |
+|---|---|---|---|
+| `teamEnabled` | bool | `false` | [บทที่ 17](ch17-agent-teams.md) |
+
+#### Provider routing
+
+| Key | Type | Default | ดูเพิ่ม |
+|---|---|---|---|
+| `openrouterFreeOnly` | bool | `false` | [บทที่ 6](ch06-providers-models-api-keys.md) |
+| `gatewayUseFor` | string[] | `[]` | [บทที่ 6](ch06-providers-models-api-keys.md) (เช่น `["openai", "anthropic"]`) |
+
+#### GUI
+
+| Key | Type | Default | ดูเพิ่ม |
+|---|---|---|---|
+| `windowWidth` | number | `null` (auto จาก monitor) | [บทที่ 4](ch04-desktop-gui-tour.md) |
+| `windowHeight` | number | `null` (auto จาก monitor) | [บทที่ 4](ch04-desktop-gui-tour.md) |
+| `guiScale` | number | `null` (1.0) | [บทที่ 4](ch04-desktop-gui-tour.md) (clamp 0.5–3.0) |
+| `showRawResponse` | bool | `false` | (debug: dump raw text ของ assistant ลง stderr) |
+
+#### ไฟล์พี่น้องของ `settings.json`
+
+settings ที่ schema ใหญ่หรือเปลี่ยนบ่อยอยู่แยกไฟล์ ไม่ปนใน
+`settings.json`:
+
+- **`.thclaws/mcp.json`** — registry ของ MCP server ที่จะ spawn
+  ตอน start (รูปแบบ `{"mcpServers": {...}}` เดียวกับที่ Claude
+  Code ใช้) — ดู[บทที่ 14](ch14-mcp.md)
+- **`.thclaws/hooks/<event>.sh`** — shell script รัน lifecycle
+  event 8 ตัว (pre_tool_use, post_tool_use, session_start ฯลฯ)
+  — ดู[บทที่ 13](ch13-hooks.md)
+- **`.thclaws/AGENTS.md`** หรือ `CLAUDE.md` — instruction ระดับ
+  โปรเจกต์ที่ฉีดเข้า system prompt — ดู[บทที่ 8](ch08-memory-and-agents-md.md)
+- **`.env` ในโปรเจกต์ หรือ OS keychain** — API key (ไม่อยู่ใน
+  settings.json) — ดู[บทที่ 6](ch06-providers-models-api-keys.md)
+
+#### ตัวอย่าง
+
+```json
+{
+  "model": "claude-sonnet-4-6",
+  "permissions": "auto",
+  "maxTokens": 32000,
+  "maxIterations": 50,
+  "thinkingBudget": 10000,
+  "searchEngine": "auto",
+  "planContextStrategy": "compact",
+  "skillsListingStrategy": "full",
+  "kms": { "active": ["project-notes"] },
+  "autoLearn": true,
+  "openrouterFreeOnly": false,
+  "gatewayUseFor": [],
+  "teamEnabled": false,
+  "windowWidth": null,
+  "windowHeight": null,
+  "guiScale": null
+}
+```

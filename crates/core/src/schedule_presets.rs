@@ -188,6 +188,7 @@ pub fn add_from_preset_with_store(
     let schedule = Schedule {
         id: format!("{}-{kms}", preset.id),
         cron: preset.cron.into(),
+        run_at: None,
         cwd,
         prompt: render_prompt(preset, kms),
         model: None,

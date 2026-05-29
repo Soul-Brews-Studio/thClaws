@@ -10,6 +10,28 @@ Shipped in v0.9.5 as an external npm package — the adapter lives at
 [`@thclaws/paperclip-adapter`](https://www.npmjs.com/package/@thclaws/paperclip-adapter),
 not bundled with the desktop binary.
 
+## Self-hosted sandbox / in-process sandbox
+
+[Anthropic's Managed Agents](https://platform.claude.com/docs/en/managed-agents/self-hosted-sandboxes)
+calls this pattern a *self-hosted sandbox*: the orchestrator runs the
+agent loop upstream while tool execution happens inside the
+customer's perimeter. thClaws fits the same shape — with two
+deployment modes that map cleanly to Anthropic's terminology:
+
+| Mode | What it is | Anthropic-equivalent term |
+|---|---|---|
+| **`thclaws_local`** (Employee) | A `thclaws -p` subprocess spawned per Paperclip run, sharing the host's filesystem + `.thclaws/`. | In-process sandbox |
+| **`thclaws_pod`** (Freelancer) | A standalone `thclaws --serve` running on a VPS, k3s pod, or thcompany.ai instance. Orchestrator calls `/agent/run` over HTTPS. | Self-hosted sandbox |
+
+Either way, **the agent loop runs inside *your* infrastructure** —
+no model traffic is proxied through Paperclip / Anthropic infra
+beyond what the upstream LLM provider would have seen anyway. The
+distinction is whether tool execution shares the orchestrator's host
+(Employee) or runs in a separate process / pod / cloud you control
+(Freelancer). For the multi-tenant case, **Freelancer (`thclaws_pod`)
+deployed to thcompany.ai is the turn-key option** — you don't bring
+your own k3s, but you still own the per-tenant sandbox boundary.
+
 ## Why bother
 
 - **Provider-flexible agent inside Paperclip.** Switch between
@@ -32,10 +54,8 @@ not bundled with the desktop binary.
   (use `codex_local`). thClaws's tool registry doesn't cross
   subprocess boundaries from those wrappers — they're separate
   execution paths.
-- You need **persistent multi-turn sessions across runs**. The
-  v0.1 MVP wraps thClaws's one-shot print mode (`thclaws -p`); each
-  Paperclip run is independent. Session continuation lands once
-  thClaws ships its `--output-format stream-json` wire format.
+- (Session continuation is supported as of the `/agent/run` adapter
+  path — see "Multi-turn sessions" below.)
 
 ## Prerequisites
 
@@ -116,18 +136,38 @@ Output is captured from stdout / stderr verbatim. thClaws prints
 the assistant text plus a one-line `[tokens: …]` summary at the
 end; both flow back to Paperclip as the run transcript.
 
-## Limitations (v0.1 MVP)
+## Multi-turn sessions
 
-- **No multi-turn session continuation.** Each Paperclip run is
-  one shot of `thclaws -p`; there's no `--resume` between runs.
-- **No incremental tool-call rendering.** Stdout buffers until the
-  process exits, then surfaces as a single transcript block.
+The `/agent/run` path supports session continuation. On the first
+turn omit `sessionId` — thClaws mints a fresh id and returns it:
+
+- **Sync / streaming responses:** the first SSE event is
+  `event: session\ndata: {"id": "sess-…"}`, emitted before any
+  text deltas.
+- **Async (`x_callback`) responses:** the 202 ACK carries
+  `session_id` alongside `run_id`.
+
+On subsequent turns pass that id back as `config.sessionId` (the
+adapter forwards it to thClaws as `session_id`). The server loads
+`<workspaceDir>/.thclaws/sessions/<id>.jsonl`, hydrates the agent's
+history from it, runs the new turn, and persists the updated
+history back to the same file. The same id is returned again so
+the caller can keep feeding it forward.
+
+If `sessionId` is supplied but no JSONL exists at that path,
+thClaws returns 404 `session_not_found` rather than silently
+minting a fresh session under your id — that prevents a typo from
+masking as "the agent forgot everything."
+
+## Limitations
+
+- **No incremental tool-call rendering on the legacy `thclaws -p`
+  path.** Stdout buffers until the process exits, then surfaces as
+  a single transcript block. The `/agent/run` adapter path streams
+  tool calls live via SSE.
 - **The adapter doesn't manage thClaws credentials.** API keys
   come from env vars, `.env` files, or the OS keychain — whatever
   thClaws's normal lookup chain finds.
-
-Both rendering and resume land once thClaws ships `--output-format
-stream-json`. Track progress at the [adapter's repo](https://github.com/thClaws/paperclip-adapter).
 
 ## See also
 

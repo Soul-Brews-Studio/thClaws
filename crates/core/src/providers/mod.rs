@@ -842,6 +842,23 @@ pub struct ModelInfo {
     pub display_name: Option<String>,
 }
 
+/// Display-only progress signal from the provider layer.
+/// Never accumulated into messages or persisted — renderers use it to
+/// drive spinners and tool-activity indicators.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProgressKind {
+    /// Provider is idle / waiting for first response chunk.
+    Thinking,
+    /// A tool started within the provider (agent-SDK internal execution).
+    ToolStart { id: String, label: String },
+    /// A tool finished within the provider.
+    ToolDone {
+        id: String,
+        label: String,
+        is_error: bool,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProviderEvent {
     MessageStart {
@@ -866,6 +883,11 @@ pub enum ProviderEvent {
         stop_reason: Option<String>,
         usage: Option<Usage>,
     },
+    /// Display-only progress signal — not content, never persisted.
+    /// Providers emit this instead of sending spinner frames as
+    /// [`TextDelta`] so animation never leaks into logs, session
+    /// JSONL, GUI adapters, or accumulated assistant text.
+    Progress(ProgressKind),
 }
 
 pub type EventStream = BoxStream<'static, Result<ProviderEvent>>;
@@ -918,13 +940,25 @@ pub fn provider_has_credentials(cfg: &crate::config::AppConfig) -> bool {
     kind_has_credentials(cfg.detect_provider_kind().ok())
 }
 
-/// True when `kind` has credentials available (env var, or no-auth
-/// local provider). Same logic the GUI's auto-fallback path uses.
+/// True when `kind` has credentials available (env var, auth file, or
+/// no-auth local provider). Same logic the GUI's auto-fallback path uses.
 pub fn kind_has_credentials(kind: Option<ProviderKind>) -> bool {
     let Some(kind) = kind else { return false };
     match kind {
         ProviderKind::AgentSdk => true,
         ProviderKind::Ollama | ProviderKind::OllamaAnthropic | ProviderKind::LMStudio => true,
+        // ChatGptCodex auths via a file-based OAuth token, not an env
+        // var, so the generic api_key_env() probe below always misses.
+        ProviderKind::ChatGptCodex => {
+            match crate::codex_auth_store::resolve_for_profile("default") {
+                Ok(Some(auth)) => !auth.is_expired(60),
+                Ok(None) => false,
+                Err(e) => {
+                    eprintln!("\x1b[33m[codex-auth] credential check failed: {e}\x1b[0m");
+                    false
+                }
+            }
+        }
         other => other
             .api_key_env()
             .and_then(|v| std::env::var(v).ok())
@@ -1033,30 +1067,29 @@ pub async fn build_all_models_payload() -> String {
 }
 
 /// If `cfg.model`'s provider has no credentials, pick the first
-/// provider that does and return its default model. Returns `None`
-/// when the current model is already fine or nothing else is usable.
+/// **local / free** provider that's usable and return its default
+/// model. Returns `None` when the current model is already fine or
+/// no free fallback is available.
 ///
-/// Called by the GUI at startup and after `api_key_set` so the
-/// sidebar's active-provider indicator + persisted settings.json land
-/// on whatever the user actually has configured. Same logic now
-/// callable from the WS transport's settings handlers.
+/// Paid providers are deliberately excluded from the fallback list:
+/// silently swapping a user's openrouter (or other) configuration to
+/// Anthropic / OpenAI when their key check momentarily fails has
+/// caused real bill surprises. Better UX: surface the error, let the
+/// user fix the credential or pick a provider explicitly via
+/// `/model …`. Free fallbacks (Ollama variants) stay on so a user
+/// running entirely local still gets a sane default at first launch.
 pub fn auto_fallback_model(cfg: &crate::config::AppConfig) -> Option<String> {
     if provider_has_credentials(cfg) {
         return None;
     }
+    // Only no-cost providers are eligible. Each kind's
+    // `kind_has_credentials` enforces its own reachability check
+    // (Ollama variants return true unconditionally; the GUI layer
+    // probes the daemon before persisting the swap).
     const ORDER: &[ProviderKind] = &[
-        ProviderKind::Anthropic,
-        ProviderKind::OpenAI,
-        ProviderKind::AgenticPress,
-        ProviderKind::OpenRouter,
-        ProviderKind::Gemini,
-        ProviderKind::DashScope,
-        ProviderKind::QwenCloud,
-        ProviderKind::ZAi,
-        ProviderKind::DeepSeek,
-        ProviderKind::ThaiLLM,
-        ProviderKind::Minimax,
-        ProviderKind::OpenCodeGo,
+        ProviderKind::Ollama,
+        ProviderKind::OllamaAnthropic,
+        ProviderKind::LMStudio,
     ];
     for kind in ORDER {
         if kind_has_credentials(Some(*kind)) {

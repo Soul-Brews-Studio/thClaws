@@ -133,6 +133,49 @@ pub fn shell_command_sync(command: &str) -> std::process::Command {
     c
 }
 
+/// Re-execute the current thclaws binary in place. Used by the
+/// `/reload` slash command to drop in-memory state (MCP handles,
+/// system prompt, skill caches, etc.) without needing an external
+/// supervisor — on-disk sessions survive, so the user can resume.
+///
+/// Behaviour by platform:
+/// - **Unix**: `execv` the same binary with the same argv. The
+///   process keeps its PID, all in-memory state is replaced. Only
+///   returns on error.
+/// - **Windows**: no `execv`; spawn a fresh process with the same
+///   command line, then exit. The new process gets a new PID.
+///
+/// Mostly equivalent to a `/v1/restart` on the pod side, but
+/// without involving Kubernetes — useful on a laptop where there's
+/// no supervisor to bring the process back.
+pub fn reexec_self() -> std::io::Error {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let mut c = std::process::Command::new(&exe);
+        c.args(&args);
+        // exec() only returns on failure; on success the current
+        // process image is replaced.
+        c.exec()
+    }
+    #[cfg(not(unix))]
+    {
+        let res = std::process::Command::new(&exe).args(&args).spawn();
+        match res {
+            Ok(_) => {
+                std::process::exit(0);
+            }
+            Err(e) => e,
+        }
+    }
+}
+
 /// Async variant for tokio-based call sites (currently the Bash
 /// tool). Same shell-resolution logic as [`shell_command_sync`].
 pub fn shell_command_async(command: &str) -> tokio::process::Command {

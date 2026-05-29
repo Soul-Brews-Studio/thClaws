@@ -38,9 +38,18 @@ struct Cli {
     #[arg(short, long)]
     print: bool,
 
-    /// Override model (e.g. claude-sonnet-4-5, gpt-4o, ollama/llama3.2)
+    /// Override model for this run only — applies to CLI, GUI, and --serve.
+    /// One-shot, in-memory. Pair with --set-model to persist instead.
     #[arg(short, long)]
     model: Option<String>,
+
+    /// Persist a model to `.thclaws/settings.json` as the project
+    /// default, then use it for this run. Unlike --model (one-shot),
+    /// subsequent invocations without --model will pick up this value.
+    /// Refuses to overwrite an unreadable settings file to avoid
+    /// clobbering sibling fields (maxTokens, allowedTools, etc.).
+    #[arg(long, value_name = "MODEL")]
+    set_model: Option<String>,
 
     /// Never ask for tool-call approval (alias: --dangerously-skip-permissions)
     #[arg(long, alias = "dangerously-skip-permissions")]
@@ -124,6 +133,21 @@ struct Cli {
     #[arg(long)]
     no_scheduler: bool,
 
+    /// Run the Telegram bot headless (no GUI window). Reads the bot token
+    /// from TELEGRAM_BOT_TOKEN or ~/.config/thclaws/telegram.json; set
+    /// TELEGRAM_OWNER_ID=<your id> for instant DM access. The agent runs
+    /// locally; Telegram is just the chat surface. dev-plan/29.
+    #[arg(long)]
+    telegram: bool,
+
+    /// Run the Facebook Page Messenger bridge headless (no GUI window).
+    /// Connects to the relay using the binding JWT in
+    /// ~/.config/thclaws/messenger.json (pair via the GUI first). The
+    /// agent runs locally; Messenger is just the chat surface.
+    /// dev-plan/31.
+    #[arg(long)]
+    messenger: bool,
+
     /// Prompt (positional args joined with spaces)
     prompt: Vec<String>,
 }
@@ -138,6 +162,78 @@ enum Command {
     /// manually to test schedules without installing the supervisor
     /// (Ctrl-C to stop).
     Daemon,
+    /// Deploy the current project's `.thclaws/` (skills, MCP, plugins,
+    /// KMS, AGENTS.md, settings.json) to a running `thclaws --serve`
+    /// pod. Sessions / memory / team-runtime on the pod side are
+    /// preserved across deploys. See dev-plan/28 for the contract.
+    Deploy {
+        /// Pod base URL (e.g. https://co-test.thcompany.ai). Required.
+        #[arg(long)]
+        pod: String,
+        /// Bearer token for the pod's /v1/* API. Falls back to
+        /// $THCLAWS_DEPLOY_TOKEN if unset.
+        #[arg(long)]
+        token: Option<String>,
+        /// Include `.thclaws/memory/` in the upload (private agent
+        /// notes — opt-in).
+        #[arg(long)]
+        include_memory: bool,
+        /// Don't reject stdio MCP entries. They'll fail to start on
+        /// the pod side; useful only for iterating on the cloud config.
+        #[arg(long)]
+        allow_stdio_mcp: bool,
+        /// Print what would upload (file list + bytes) without sending.
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip the diff handshake and always upload the full bundle.
+        /// Default is to query /v1/deploy/manifest first and only ship
+        /// changed files (Phase 2 from dev-plan/28).
+        #[arg(long)]
+        full: bool,
+        /// Skip the auto-restart after a successful deploy. By
+        /// default the client POSTs /v1/restart so the pod
+        /// re-initialises MCP servers, plugin runtimes, skill caches,
+        /// and the system prompt. Pass --no-restart to keep the
+        /// running --serve process up across the deploy (rare: hot
+        /// config edits the snapshot doesn't read).
+        #[arg(long = "no-restart")]
+        no_restart: bool,
+    },
+    /// Manage the Telegram adapter (dev-plan/29). `status` prints the
+    /// resolved config; `pair` prints setup instructions. Connecting a
+    /// bot is done from the GUI Telegram Connect modal (or auto-loads on
+    /// launch when `~/.config/thclaws/telegram.json` is present + enabled).
+    Telegram {
+        #[command(subcommand)]
+        cmd: TelegramCmd,
+    },
+    /// Manage the Facebook Page Messenger adapter (dev-plan/31).
+    /// `status` prints the resolved binding config; `pair` prints setup
+    /// instructions. Connecting a Page is done from the GUI Messenger
+    /// Connect modal.
+    Messenger {
+        #[command(subcommand)]
+        cmd: MessengerCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum TelegramCmd {
+    /// Print the resolved Telegram config: whether a token is present
+    /// (redacted), DM/group policy, allowlist size, output ceiling.
+    Status,
+    /// Print step-by-step instructions for creating a bot with
+    /// @BotFather and connecting it.
+    Pair,
+}
+
+#[derive(Subcommand)]
+enum MessengerCmd {
+    /// Print the resolved Messenger binding config: relay URL, whether
+    /// a binding token is present (redacted), cached Page name/id.
+    Status,
+    /// Print step-by-step instructions for connecting a Facebook Page.
+    Pair,
 }
 
 #[derive(Subcommand)]
@@ -146,9 +242,20 @@ enum ScheduleCmd {
     Add {
         /// Stable id for the schedule (used as the lookup key and log dir name).
         id: String,
-        /// Standard 5-field POSIX cron expression (e.g. "30 8 * * MON-FRI").
+        /// Standard 5-field POSIX cron expression for a recurring job
+        /// (e.g. "30 8 * * MON-FRI"). Mutually exclusive with --at/--in.
         #[arg(long)]
-        cron: String,
+        cron: Option<String>,
+        /// One-shot: fire once at this absolute RFC 3339 time
+        /// (e.g. "2026-05-24T15:30:00Z"), then auto-disable. Mutually
+        /// exclusive with --cron and --in.
+        #[arg(long, conflicts_with_all = ["cron", "in_delay"])]
+        at: Option<String>,
+        /// One-shot: fire once after this relative delay (e.g. 15m, 2h,
+        /// 90s, 1d), then auto-disable. Mutually exclusive with --cron
+        /// and --at.
+        #[arg(long = "in", conflicts_with_all = ["cron", "at"])]
+        in_delay: Option<String>,
         /// Prompt text to feed `thclaws --print` when this schedule fires.
         #[arg(long)]
         prompt: String,
@@ -216,6 +323,68 @@ fn detach_console_for_gui() {
 #[cfg(not(windows))]
 fn detach_console_for_gui() {}
 
+/// Windows-only: when about to launch the GUI from a console (cmd.exe /
+/// PowerShell), respawn ourselves as a detached child and exit the parent
+/// so the shell prompt returns immediately. Issue #109.
+///
+/// Background: `thclaws.exe` is built as a **console-subsystem** binary
+/// (PR #60 / issue #48) so that `--cli`'s rustyline gets working stdio.
+/// The side effect is that cmd.exe / PowerShell `WaitForSingleObject` on
+/// every console-subsystem child until exit — `notepad.exe` returns the
+/// prompt instantly only because it's a windows-subsystem binary, and
+/// `FreeConsole()` in the child doesn't change cmd's wait. Result: typing
+/// `thclaws.exe` from a shell blocks the prompt until the GUI window closes.
+///
+/// Workaround: at the GUI dispatch entry, respawn `current_exe()` with
+/// `THCLAWS_GUI_DETACHED=1` and `DETACHED_PROCESS`, then `exit(0)`. The
+/// child sees the env var, skips the respawn, runs the GUI in-process,
+/// and survives parent / terminal closure because `DETACHED_PROCESS`
+/// breaks the parent process group. The parent exits in microseconds,
+/// so cmd's wait returns and the next prompt appears.
+///
+/// Called before the in-process scheduler and `/v1` loopback bind so
+/// neither runs in the doomed parent (avoiding a port-bind race on
+/// 18443). No-op on macOS / Linux — terminals there don't block on
+/// GUI children.
+#[cfg(all(windows, feature = "gui"))]
+fn respawn_detached_for_gui_if_needed(cli: &Cli) {
+    // Skip in the detached child itself.
+    if std::env::var_os("THCLAWS_GUI_DETACHED").is_some() {
+        return;
+    }
+    // Only respawn when the dispatch is actually GUI: not --cli/--print/
+    // --telegram/--messenger, and either plain GUI (no --serve) or the
+    // --serve --gui combo.
+    let use_cli = cli.cli || cli.print || cli.telegram || cli.messenger;
+    let is_gui_dispatch = !use_cli && (!cli.serve || cli.gui);
+    if !is_gui_dispatch {
+        return;
+    }
+
+    use std::os::windows::process::CommandExt;
+    // DETACHED_PROCESS (0x00000008) — child has no console, no process-
+    // group ties to the parent shell.
+    const DETACHED_PROCESS: u32 = 0x00000008;
+
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let spawn = std::process::Command::new(exe)
+        .args(std::env::args_os().skip(1))
+        .env("THCLAWS_GUI_DETACHED", "1")
+        .creation_flags(DETACHED_PROCESS)
+        .spawn();
+    if spawn.is_ok() {
+        std::process::exit(0);
+    }
+    // Spawn failed (antivirus quarantine, ENOMEM, etc.): fall through
+    // and run the GUI in-process. User loses the prompt-return but
+    // keeps a working app.
+}
+
+#[cfg(not(all(windows, feature = "gui")))]
+fn respawn_detached_for_gui_if_needed(_cli: &Cli) {}
+
 #[tokio::main]
 async fn main() {
     secrets::load_into_env();
@@ -268,16 +437,76 @@ async fn main() {
                 }
             }
         }
+        Some(Command::Deploy {
+            pod,
+            token,
+            include_memory,
+            allow_stdio_mcp,
+            dry_run,
+            full,
+            no_restart,
+        }) => {
+            let code = thclaws_core::deploy_client::run(thclaws_core::deploy_client::DeployArgs {
+                pod,
+                token,
+                include_memory,
+                allow_stdio_mcp,
+                dry_run,
+                full,
+                restart: !no_restart,
+            })
+            .await;
+            std::process::exit(code);
+        }
+        Some(Command::Telegram { cmd }) => {
+            let code = run_telegram_subcommand(cmd);
+            std::process::exit(code);
+        }
+        Some(Command::Messenger { cmd }) => {
+            let code = run_messenger_subcommand(cmd);
+            std::process::exit(code);
+        }
         None => {}
     }
 
-    let use_cli = cli.cli || cli.print;
+    let use_cli = cli.cli || cli.print || cli.telegram || cli.messenger;
+
+    // Issue #109: on Windows, respawn detached so cmd.exe / PowerShell
+    // return the prompt instead of waiting on the GUI window. Runs
+    // before the scheduler + /v1 loopback so they don't bind ports in
+    // the doomed parent. See `respawn_detached_for_gui_if_needed`.
+    respawn_detached_for_gui_if_needed(&cli);
 
     // First-run bootstrap: drop a `.thclaws/settings.json` with model +
     // permissions defaults into the project so users get a working
     // config the first time they `cd` in. Skipped if a config already
     // exists or if a Claude Code `.claude/settings.json` is present.
     thclaws_core::config::ProjectConfig::ensure_default_exists();
+
+    // Wire up `--set-model` / `--model` before any AppConfig::load runs.
+    // `--set-model` persists to `.thclaws/settings.json` (refusing to
+    // overwrite an unreadable file so we don't clobber sibling settings)
+    // and also takes effect this run; `--model` is in-memory only. Both
+    // route through `set_cli_model_override`, which `AppConfig::load`
+    // applies last — so every surface (CLI, GUI, --serve) sees the same
+    // model without each path re-implementing the override step.
+    if let Some(ref m) = cli.set_model {
+        let resolved = thclaws_core::providers::ProviderKind::resolve_alias(m);
+        match thclaws_core::config::persist_model_to_project_settings(&resolved) {
+            Ok(path) => eprintln!(
+                "\x1b[32m--set-model: persisted model={resolved} to {}\x1b[0m",
+                path.display()
+            ),
+            Err(e) => {
+                eprintln!("\x1b[31m--set-model: {e}\x1b[0m");
+                std::process::exit(1);
+            }
+        }
+        thclaws_core::config::set_cli_model_override(resolved);
+    } else if let Some(ref m) = cli.model {
+        let resolved = thclaws_core::providers::ProviderKind::resolve_alias(m);
+        thclaws_core::config::set_cli_model_override(resolved);
+    }
 
     // In-process scheduler (Step 2): spawn a background tokio task
     // that polls `~/.config/thclaws/schedules.json` every 30s and
@@ -386,10 +615,10 @@ async fn main() {
         }
     };
 
-    // CLI overrides.
-    if let Some(m) = cli.model {
-        config.model = thclaws_core::providers::ProviderKind::resolve_alias(&m);
-    }
+    // CLI overrides. `--model` / `--set-model` already routed through
+    // `set_cli_model_override` above, so `AppConfig::load` has applied
+    // them. The rest of these flags are CLI/REPL-only knobs that the
+    // GUI and --serve don't honor today.
     if cli.accept_all {
         config.permissions = "auto".to_string();
     }
@@ -417,7 +646,21 @@ async fn main() {
         std::env::set_var("THCLAWS_TEAM_DIR", team_dir);
     }
 
-    if cli.print {
+    if cli.telegram {
+        // Headless Telegram bot — its own agent loop (the GUI worker is
+        // gui-gated). Runs until Ctrl-C. dev-plan/29 Tier 1.
+        if let Err(e) = thclaws_core::telegram::headless::run(config).await {
+            eprintln!("\n\x1b[31m[telegram] error: {e}\x1b[0m");
+            std::process::exit(1);
+        }
+    } else if cli.messenger {
+        // Headless Facebook Page Messenger bridge — its own agent loop.
+        // Runs until Ctrl-C. dev-plan/31 Tier 1.
+        if let Err(e) = thclaws_core::messenger::headless::run(config).await {
+            eprintln!("\n\x1b[31m[messenger] error: {e}\x1b[0m");
+            std::process::exit(1);
+        }
+    } else if cli.print {
         let prompt = cli.prompt.join(" ");
         if prompt.is_empty() {
             eprintln!("\x1b[31m--print requires a prompt argument\x1b[0m");
@@ -439,11 +682,119 @@ async fn main() {
 /// process should report. `run` returns the child's exit code (or 124
 /// on timeout, mirroring GNU `timeout(1)`); the management subcommands
 /// return 0 on success and 1 on user error.
+fn run_telegram_subcommand(cmd: TelegramCmd) -> i32 {
+    use thclaws_core::telegram::{config::redact_token, TelegramConfig};
+    match cmd {
+        TelegramCmd::Status => {
+            let cfg = match TelegramConfig::load() {
+                Ok(Some(c)) => c,
+                Ok(None) => TelegramConfig::default(),
+                Err(e) => {
+                    eprintln!("\x1b[31m[telegram] failed to read config: {e}\x1b[0m");
+                    return 1;
+                }
+            };
+            let token = cfg.resolved_token();
+            println!("Telegram adapter status");
+            println!("  enabled:        {}", cfg.enabled);
+            match token {
+                Some(t) => println!("  bot token:      {} (present)", redact_token(&t)),
+                None => println!(
+                    "  bot token:      <none> (set TELEGRAM_BOT_TOKEN or connect via the GUI)"
+                ),
+            }
+            println!("  dm policy:      {:?}", cfg.dm_policy);
+            println!("  group policy:   {:?}", cfg.group_policy);
+            println!("  allow_from:     {} user(s)", cfg.allow_from.len());
+            println!("  groups:         {} allowlisted", cfg.groups.len());
+            println!("  output ceiling: {} chars", cfg.output_ceiling);
+            0
+        }
+        TelegramCmd::Pair => {
+            println!(
+                "Connect a Telegram bot to thClaws\n\
+                 \n\
+                 1. In Telegram, message @BotFather and send /newbot. Follow the\n\
+                    prompts to pick a name and username; it replies with a bot token\n\
+                    that looks like 123456789:AA…\n\
+                 2. Either:\n\
+                    • paste the token into the GUI \u{2192} Settings \u{2192} Telegram Connect, or\n\
+                    • export TELEGRAM_BOT_TOKEN=<token> and relaunch thClaws.\n\
+                 3. DM your bot. The first message mints a 6-digit pairing code;\n\
+                    approve it in the Telegram Connect modal. You're then chatting\n\
+                    with thClaws over Telegram.\n\
+                 \n\
+                 Run `thclaws telegram status` to confirm the token is detected."
+            );
+            0
+        }
+    }
+}
+
+/// `thclaws messenger …` — print binding status or setup help.
+fn run_messenger_subcommand(cmd: MessengerCmd) -> i32 {
+    use thclaws_core::messenger::MessengerConfig;
+    match cmd {
+        MessengerCmd::Status => {
+            let cfg = match MessengerConfig::load() {
+                Ok(Some(c)) => c,
+                Ok(None) => MessengerConfig::default(),
+                Err(e) => {
+                    eprintln!("\x1b[31m[messenger] failed to read config: {e}\x1b[0m");
+                    return 1;
+                }
+            };
+            println!("Messenger adapter status");
+            println!("  relay:          {}", cfg.resolved_server_url());
+            if cfg.binding_token.trim().is_empty() {
+                println!("  binding token:  <none> (pair a Page via the GUI Messenger Connect)");
+            } else {
+                let shown = cfg.binding_token.chars().take(6).collect::<String>();
+                println!("  binding token:  {shown}… (present)");
+            }
+            println!(
+                "  page:           {}",
+                cfg.page_name.as_deref().unwrap_or("<unknown>")
+            );
+            println!(
+                "  page id:        {}",
+                cfg.page_id.as_deref().unwrap_or("<unknown>")
+            );
+            0
+        }
+        MessengerCmd::Pair => {
+            println!(
+                "Connect a Facebook Page to thClaws (Messenger)\n\
+                 \n\
+                 1. In Meta for Developers, create an app (type: Business) and add the\n\
+                    Messenger product. Generate a Page Access Token for your Page and\n\
+                    note your App Secret.\n\
+                 2. Configure the relay (operator step) with MESSENGER_PAGE_ACCESS_TOKEN,\n\
+                    MESSENGER_APP_SECRET, MESSENGER_VERIFY_TOKEN, MESSENGER_PAGE_ID, and\n\
+                    point the app's webhook at https://<relay>/messenger/webhook\n\
+                    subscribed to the `messages` field.\n\
+                 3. Message your Page. The relay DMs a pairing code; paste it into the\n\
+                    GUI \u{2192} Messenger Connect modal to bind this machine.\n\
+                 4. Run `thclaws --messenger` (or connect from the GUI) to start the\n\
+                    bridge. You're then chatting with thClaws from the Page inbox.\n\
+                 \n\
+                 Note: messaging users beyond your app's admins/testers needs Meta App\n\
+                 Review + Business Verification for the pages_messaging permission.\n\
+                 \n\
+                 Run `thclaws messenger status` to confirm the binding is detected."
+            );
+            0
+        }
+    }
+}
+
 fn run_schedule_subcommand(cmd: ScheduleCmd) -> i32 {
     match cmd {
         ScheduleCmd::Add {
             id,
             cron,
+            at,
+            in_delay,
             prompt,
             cwd,
             model,
@@ -452,6 +803,34 @@ fn run_schedule_subcommand(cmd: ScheduleCmd) -> i32 {
             disabled,
             watch,
         } => {
+            // Resolve the trigger: one-shot (--at absolute / --in
+            // relative) vs recurring (--cron). clap already enforces
+            // mutual exclusion; here we require exactly one and turn
+            // --in into an absolute run_at.
+            let run_at = match (at, in_delay) {
+                (Some(ts), _) => match schedule::parse_run_at(&ts) {
+                    Ok(dt) => Some(dt.to_rfc3339()),
+                    Err(e) => {
+                        eprintln!("\x1b[31merror: {e}\x1b[0m");
+                        return 1;
+                    }
+                },
+                (_, Some(dur)) => match schedule::parse_relative_duration(&dur) {
+                    Ok(d) => Some((chrono::Utc::now() + d).to_rfc3339()),
+                    Err(e) => {
+                        eprintln!("\x1b[31merror: {e}\x1b[0m");
+                        return 1;
+                    }
+                },
+                (None, None) => None,
+            };
+            if run_at.is_none() && cron.is_none() {
+                eprintln!(
+                    "\x1b[31merror: a schedule needs a trigger — pass --cron \
+                     for recurring, or --at/--in for a one-shot\x1b[0m"
+                );
+                return 1;
+            }
             let cwd_path = match cwd {
                 Some(p) => std::path::PathBuf::from(p),
                 None => match std::env::current_dir() {
@@ -478,7 +857,8 @@ fn run_schedule_subcommand(cmd: ScheduleCmd) -> i32 {
             };
             let entry = schedule::Schedule {
                 id: id.clone(),
-                cron,
+                cron: cron.unwrap_or_default(),
+                run_at,
                 cwd: cwd_path,
                 prompt,
                 model,
@@ -530,10 +910,23 @@ fn run_schedule_subcommand(cmd: ScheduleCmd) -> i32 {
                     Some(_) => " err",
                     None => "    ",
                 };
+                // Trigger column: cron expression for recurring jobs,
+                // or "once@<run_at> (pending|fired)" for one-shots.
+                let trigger = match &s.run_at {
+                    Some(run_at) => {
+                        let state = if s.last_run.is_some() {
+                            "fired"
+                        } else {
+                            "pending"
+                        };
+                        format!("once@{run_at} ({state})")
+                    }
+                    None => s.cron.clone(),
+                };
                 println!(
-                    "{status} {exit} {watch}  {:24}  {:20}  {}  {}",
+                    "{status} {exit} {watch}  {:24}  {:30}  {}  {}",
                     s.id,
-                    s.cron,
+                    trigger,
                     last,
                     s.cwd.display()
                 );

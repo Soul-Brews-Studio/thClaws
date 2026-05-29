@@ -56,8 +56,17 @@ pub struct AgentRunRequest {
     /// config carries.
     #[serde(default)]
     pub model: Option<String>,
-    /// Reserved for session resume across turns. Phase A does not
-    /// implement persistence yet — the field is accepted but ignored.
+    /// Session id for multi-turn continuation. When set, the handler
+    /// loads the session JSONL from
+    /// `<workspace_dir>/.thclaws/sessions/<session_id>.jsonl`,
+    /// hydrates the agent's history from it, runs the new turn, and
+    /// persists the updated history back to the same file. When unset,
+    /// a fresh session is created and the new id is returned in the
+    /// response (`session_id` JSON field on sync, `session` SSE event
+    /// on stream, `session_id` in the 202 ACK on async). Pass the
+    /// returned id on the next call to continue the conversation.
+    /// Returns 404 (`session_not_found`) if the id is supplied but no
+    /// JSONL exists at that path.
     #[serde(default)]
     pub session_id: Option<String>,
     /// `true` (default) → SSE stream of native agent events.
@@ -138,19 +147,23 @@ async fn agent_run_sync(
     workspace_dir: std::path::PathBuf,
 ) -> Result<Response, Response> {
     let model = effective_config(&req).model;
-    let outcome = run_outcome(&req, &workspace_dir).await.map_err(|e| {
-        let msg = format!("{e}");
-        eprintln!("[api_v1] agent_run sync failure: {msg}");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(OpenAiError::server_error(msg)),
-        )
-            .into_response()
-    })?;
+    let (session, store) = resolve_session(&workspace_dir, req.session_id.as_deref(), &model)?;
+    let (outcome, session_id) = run_outcome_with_session(&req, &workspace_dir, session, &store)
+        .await
+        .map_err(|e| {
+            let msg = format!("{e}");
+            eprintln!("[api_v1] agent_run sync failure: {msg}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(OpenAiError::server_error(msg)),
+            )
+                .into_response()
+        })?;
     let usage = outcome.usage.unwrap_or_default();
     Ok(Json(json!({
         "model": model,
         "workspace_dir": workspace_dir.display().to_string(),
+        "session_id": session_id,
         "summary": outcome.text,
         "stop_reason": outcome.stop_reason,
         "iterations": outcome.iterations,
@@ -172,6 +185,9 @@ async fn agent_run_stream(
     workspace_dir: std::path::PathBuf,
 ) -> Result<Response, Response> {
     let config = effective_config(&req);
+    let (session, store) =
+        resolve_session(&workspace_dir, req.session_id.as_deref(), &config.model)?;
+    let session_id_for_event = session.id.clone();
     let runtime = build_runtime_for_workspace(&config, &workspace_dir, req.system.as_deref())
         .await
         .map_err(|e| {
@@ -183,6 +199,7 @@ async fn agent_run_stream(
             )
                 .into_response()
         })?;
+    runtime.agent.set_history(session.messages.clone());
 
     let model_for_stream = config.model.clone();
     let prompt = req.prompt;
@@ -191,6 +208,15 @@ async fn agent_run_stream(
         // until the stream finishes. Move it into the generator body
         // so its Drop happens after the last yield.
         let runtime = runtime;
+        let mut session = session;
+        let store = store;
+
+        // Surface the session id up-front so the client knows which id
+        // to pass on the next call (continuation or fresh-id echo).
+        yield Ok::<_, Infallible>(named_event(
+            "session",
+            json!({ "id": session_id_for_event }),
+        ));
 
         let mut turn = Box::pin(runtime.agent.run_turn(prompt));
         let mut emitted_error = false;
@@ -238,6 +264,10 @@ async fn agent_run_stream(
                     })));
                 }
                 Ok(AgentEvent::IterationStart { .. }) => {}
+                Ok(AgentEvent::Progress(_)) => {}
+                Ok(AgentEvent::UserMessageInjected { text }) => {
+                    yield Ok(named_event("user_message_injected", json!({ "text": text })));
+                }
                 Ok(AgentEvent::Done { stop_reason, usage }) => {
                     yield Ok(named_event("usage", json!({
                         "prompt_tokens": usage.input_tokens,
@@ -259,6 +289,16 @@ async fn agent_run_stream(
                     break;
                 }
             }
+        }
+
+        // Persist the turn's updated history before the terminal
+        // sentinel so a client that disconnects on `[DONE]` and then
+        // reconnects with the same session_id sees the just-finished
+        // turn. Save errors are logged but never abort the stream —
+        // the response already reached the client.
+        session.sync(runtime.agent.history_snapshot());
+        if let Err(e) = store.save(&mut session) {
+            eprintln!("[api_v1] session save failed for {}: {e}", session.id);
         }
 
         if !emitted_error {
@@ -287,6 +327,15 @@ async fn agent_run_async(
             .into_response()
     })?;
 
+    // Resolve the session BEFORE the 202 so the ACK can include the
+    // id. The task below takes ownership; we keep a clone of the id
+    // for the response. 404 surfaces here on a stale session id rather
+    // than disappearing into the callback path.
+    let effective_model = effective_config(&req).model;
+    let (session, store) =
+        resolve_session(&workspace_dir, req.session_id.as_deref(), &effective_model)?;
+    let session_id_for_ack = session.id.clone();
+
     let run_id = target.run_id.clone();
     let model = req.model.clone().unwrap_or_default();
     let started_at = chrono::Utc::now();
@@ -297,7 +346,9 @@ async fn agent_run_async(
     let workspace_for_task = workspace_dir.clone();
     let req_for_task = req;
     let handle = tokio::spawn(async move {
-        let outcome = run_outcome(&req_for_task, &workspace_for_task).await;
+        let outcome = run_outcome_with_session(&req_for_task, &workspace_for_task, session, &store)
+            .await
+            .map(|(o, _id)| o);
         let payload =
             CallbackPayload::from_outcome(&run_id_for_task, &model_for_task, started_at, outcome);
         deliver(&target_for_task, &payload).await;
@@ -329,6 +380,7 @@ async fn agent_run_async(
         StatusCode::ACCEPTED,
         Json(json!({
             "run_id": run_id,
+            "session_id": session_id_for_ack,
             "status": "accepted",
             "model": model,
             "workspace_dir": workspace_dir.display().to_string(),
@@ -339,15 +391,63 @@ async fn agent_run_async(
 
 // ── shared internals ──────────────────────────────────────────────────
 
-async fn run_outcome(
+/// Resolve the session for this turn — either load an existing one
+/// (when `session_id` is supplied) or mint a new one. Sessions live at
+/// `<workspace_dir>/.thclaws/sessions/<id>.jsonl` (project-scoped so a
+/// pod / employee instance keeps its conversation history alongside
+/// the workspace it serves). 404 when an id is supplied but no file
+/// exists — never silently creates a new session under the caller's
+/// id, since that would mask a typo as "agent forgot everything."
+fn resolve_session(
+    workspace_dir: &std::path::Path,
+    session_id: Option<&str>,
+    model: &str,
+) -> Result<(crate::session::Session, crate::session::SessionStore), Response> {
+    let store_root = workspace_dir.join(".thclaws").join("sessions");
+    let store = crate::session::SessionStore::new(store_root);
+    match session_id.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(id) => match store.load(id) {
+            Ok(session) => Ok((session, store)),
+            Err(e) => Err((
+                StatusCode::NOT_FOUND,
+                Json(OpenAiError::invalid_request(
+                    format!("session '{id}' not found in workspace: {e}"),
+                    "session_not_found",
+                )),
+            )
+                .into_response()),
+        },
+        None => Ok((
+            crate::session::Session::new(model.to_string(), workspace_dir.display().to_string()),
+            store,
+        )),
+    }
+}
+
+/// One turn against an already-resolved session. Sets the session's
+/// history onto the agent, runs the turn, then syncs new messages back
+/// onto the session and persists. Save failures are logged but don't
+/// fail the request — the turn already produced a response and the
+/// caller has it in hand. Returns the session id the caller should
+/// pass on the next call (same id either way; surfaced here so each
+/// handler can echo it without re-resolving).
+async fn run_outcome_with_session(
     req: &AgentRunRequest,
     workspace_dir: &std::path::Path,
-) -> crate::error::Result<AgentTurnOutcome> {
+    mut session: crate::session::Session,
+    store: &crate::session::SessionStore,
+) -> crate::error::Result<(AgentTurnOutcome, String)> {
     let config = effective_config(req);
     let runtime =
         build_runtime_for_workspace(&config, workspace_dir, req.system.as_deref()).await?;
+    runtime.agent.set_history(session.messages.clone());
     let turn = runtime.agent.run_turn(req.prompt.clone());
-    collect_agent_turn(turn).await
+    let outcome = collect_agent_turn(turn).await?;
+    session.sync(runtime.agent.history_snapshot());
+    if let Err(e) = store.save(&mut session) {
+        eprintln!("[api_v1] session save failed for {}: {e}", session.id);
+    }
+    Ok((outcome, session.id))
 }
 
 fn effective_config(req: &AgentRunRequest) -> AppConfig {
@@ -458,5 +558,44 @@ mod tests {
         let supplied = "relative/path";
         let err = crate::agent_runtime::validate_workspace_dir(supplied).unwrap_err();
         assert!(err.contains("must be absolute"), "got: {err}");
+    }
+
+    #[test]
+    fn resolve_session_mints_new_when_id_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let (session, _store) = resolve_session(dir.path(), None, "claude-sonnet-4-6")
+            .expect("fresh session creation should succeed");
+        assert!(session.id.starts_with("sess-"));
+        assert_eq!(session.model, "claude-sonnet-4-6");
+        assert!(session.messages.is_empty());
+    }
+
+    #[test]
+    fn resolve_session_loads_existing_jsonl() {
+        // Seed a session JSONL on disk under <workspace>/.thclaws/sessions/
+        // then resolve with that id — should return the persisted session,
+        // not mint a fresh one.
+        let dir = tempfile::tempdir().unwrap();
+        let store_root = dir.path().join(".thclaws").join("sessions");
+        std::fs::create_dir_all(&store_root).unwrap();
+        let store = crate::session::SessionStore::new(store_root);
+        let mut seed =
+            crate::session::Session::new("claude-sonnet-4-6", dir.path().display().to_string());
+        let seed_id = seed.id.clone();
+        store.save(&mut seed).unwrap();
+
+        let (session, _store) = resolve_session(dir.path(), Some(&seed_id), "claude-sonnet-4-6")
+            .expect("existing session should load");
+        assert_eq!(session.id, seed_id);
+    }
+
+    #[tokio::test]
+    async fn resolve_session_returns_404_for_unknown_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = resolve_session(dir.path(), Some("sess-does-not-exist"), "gpt-4o")
+            .expect_err("unknown id should not silently create a fresh session");
+        // Map back through axum's Response — we only need to verify the
+        // status; OpenAiError shape is covered by the chat tests.
+        assert_eq!(err.status(), StatusCode::NOT_FOUND);
     }
 }

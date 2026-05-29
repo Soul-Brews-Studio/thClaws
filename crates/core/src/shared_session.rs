@@ -130,6 +130,13 @@ pub enum ShellInput {
     /// worker keeps holding the stale one — the exact mismatch users
     /// see as "sidebar says openai but error mentions anthropic."
     ReloadConfig,
+    /// The user just saved an AGENTS.md / CLAUDE.md (folder or global
+    /// scope) via the GUI's instructions editor. Rebuild the running
+    /// session's system prompt in place so the next turn sees the
+    /// updated instructions — no restart, no `/new` required.
+    /// Lighter than [`Self::ReloadConfig`] (no provider rebuild) — only
+    /// touches `state.system_prompt`.
+    InstructionsChanged,
     /// Widget-initiated tool call from an embedded MCP App. The
     /// originating widget called `app.callServerTool({name, arguments})`;
     /// we look up the qualified tool in the registry, run it, and
@@ -178,6 +185,55 @@ pub enum ShellInput {
         text: String,
         respond: tokio::sync::oneshot::Sender<String>,
     },
+    /// dev-plan/29 Tier 1: connect the Telegram bridge from a saved
+    /// `TelegramConfig` (GUI Connect modal, or boot auto-reconnect). The
+    /// worker validates the token via `getMe`, spawns the polling
+    /// session, stashes the `TelegramSessionHandle`, swaps the approver
+    /// to `TelegramApprover`, and broadcasts `ViewEvent::TelegramStatus`.
+    TelegramConnect(crate::telegram::TelegramConfig),
+    /// dev-plan/29: IPC `telegram_disconnect`. Worker cancels the
+    /// session, restores the pre-connect mode/approver, deletes the
+    /// on-disk config, and broadcasts the disconnected status.
+    TelegramDisconnect,
+    /// dev-plan/29: a Telegram user sent text; the polling sink pushes it
+    /// here so the worker drives the real `Agent::run_turn`. `respond`
+    /// is filled with the captured final assistant text — the session
+    /// then chunks + sends it back via `sendMessage`.
+    TelegramMessage {
+        text: String,
+        respond: tokio::sync::oneshot::Sender<String>,
+    },
+    /// dev-plan/29: owner approved a pairing code in the GUI. Worker
+    /// appends the user id to `allow_from`, persists, and DMs the user.
+    TelegramPairingApprove { code: String },
+    /// dev-plan/29: owner rejected a pairing code in the GUI.
+    TelegramPairingReject { code: String },
+    /// dev-plan/29: GUI requested a live status snapshot (pending
+    /// pairings + approvals + chat counts live in the worker's in-memory
+    /// handle, not on disk). The worker answers by broadcasting a
+    /// `ViewEvent::TelegramStatus`. Polled by the connect modal.
+    TelegramStatusRequest,
+    /// dev-plan/31: connect the Facebook Page Messenger bridge from a
+    /// saved `MessengerConfig` (GUI Connect modal after `/pair`, or boot
+    /// auto-reconnect). The worker spawns the relay WS session, stashes
+    /// the `MessengerSessionHandle`, swaps the approver to
+    /// `MessengerApprover`, and broadcasts `ViewEvent::MessengerStatus`.
+    MessengerConnect(crate::messenger::MessengerConfig),
+    /// dev-plan/31: IPC `messenger_disconnect`. Worker cancels the
+    /// session, restores the pre-connect mode/approver, deletes the
+    /// on-disk config, and broadcasts the disconnected status.
+    MessengerDisconnect,
+    /// dev-plan/31: a Messenger user sent text; the relay WS sink pushes
+    /// it here so the worker drives the real `Agent::run_turn`. `respond`
+    /// is filled with the captured final assistant text — the session
+    /// then chunks + sends it back via the relay's Send API.
+    MessengerMessage {
+        text: String,
+        respond: tokio::sync::oneshot::Sender<String>,
+    },
+    /// dev-plan/31: GUI requested a live status snapshot. The worker
+    /// answers by broadcasting a `ViewEvent::MessengerStatus`.
+    MessengerStatusRequest,
 }
 
 /// What both tabs render. Each variant maps to a UI affordance:
@@ -237,6 +293,17 @@ pub enum ViewEvent {
     /// server_url: "...", pending_approvals: N}`. Emitted on pair /
     /// disconnect and whenever the bridge crosses a state boundary.
     LineStatus(String),
+    /// Telegram bridge status (dev-plan/29). Pre-built JSON shaped like
+    /// `{type: "telegram_status", state, bot_username, pending_approvals,
+    /// pending_pairings, active_chats, pairings: [{code, display, …}]}`.
+    /// Emitted on connect / disconnect / pairing change and in response
+    /// to `TelegramStatusRequest`.
+    TelegramStatus(String),
+    /// Messenger bridge status (dev-plan/31). Pre-built JSON shaped like
+    /// `{type: "messenger_status", state, server_url, pending_approvals}`.
+    /// Emitted on connect / disconnect and in response to
+    /// `MessengerStatusRequest`.
+    MessengerStatus(String),
     /// Goal-state sidebar refresh (Phase A). Carries the latest snapshot
     /// of the active /goal — `None` means the goal was cleared. Frontend
     /// renders a compact indicator (objective, iterations, tokens
@@ -486,6 +553,13 @@ pub struct SharedSessionHandle {
     /// deferred startup (MCP spawn, etc.) can start making user-facing
     /// prompts. Calling `signal()` multiple times is fine.
     pub ready_gate: Arc<ReadyGate>,
+    /// Mid-turn user input queue (issue #106). IPC pushes messages
+    /// here while the agent is busy; the agent drains them at the
+    /// next tool_result boundary. The same Arc is wired into the
+    /// agent via `Agent::use_injection_queue` on every agent
+    /// construction so a queue submission survives a session reload
+    /// or cwd change.
+    pub injection_queue: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
 }
 
 impl SharedSessionHandle {
@@ -579,6 +653,40 @@ pub struct WorkerState {
     /// session is active.
     pub line_pre_mode: Option<crate::permissions::PermissionMode>,
     pub line_pre_approver: Option<std::sync::Arc<dyn crate::permissions::ApprovalSink>>,
+    /// dev-plan/29 Tier 1: active Telegram-bridge session. `Some` only
+    /// while the polling task is running; `telegram_disconnect` cancels
+    /// + clears it. Mirrors `line_session`. Running LINE and Telegram
+    /// simultaneously isn't a Tier 1 goal — last-connect wins the
+    /// approver routing.
+    pub telegram_session: Option<crate::telegram::TelegramSessionHandle>,
+    /// Pre-Telegram-connect snapshot of the agent's permission mode +
+    /// approver, restored on disconnect. Mirrors `line_pre_*`.
+    pub telegram_pre_mode: Option<crate::permissions::PermissionMode>,
+    pub telegram_pre_approver: Option<std::sync::Arc<dyn crate::permissions::ApprovalSink>>,
+    /// dev-plan/31: active Facebook Page Messenger bridge session. `Some`
+    /// only while the relay WS task is running; `messenger_disconnect`
+    /// cancels + clears it. Mirrors `line_session`.
+    pub messenger_session: Option<crate::messenger::MessengerSessionHandle>,
+    /// Pre-Messenger-connect snapshot of the agent's permission mode +
+    /// approver, restored on disconnect. Mirrors `line_pre_*`.
+    pub messenger_pre_mode: Option<crate::permissions::PermissionMode>,
+    pub messenger_pre_approver: Option<std::sync::Arc<dyn crate::permissions::ApprovalSink>>,
+    /// Externally-held mid-turn injection queue (issue #106). Kept on
+    /// the state so `rebuild_agent` can re-wire it onto the new agent
+    /// — without this, a `/model` swap or other rebuild would orphan
+    /// the queue and any pending message would be lost.
+    pub injection_queue: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
+    /// Running USD cost accumulator. Updated after each AgentEvent::Done
+    /// via `EffectiveCatalogue::compute_cost_usd`; surfaced through the
+    /// `/cost` slash command and pushed to the Cardputer display via
+    /// `cost_bridge`. Zeroed by `/cost reset` or by a buddy-side reset.
+    pub session_cost_usd: f64,
+    /// Optional BLE bridge to a thClaws-Cost Cardputer. `Some` whenever
+    /// the worker spawned a bridge at startup (default for both CLI and
+    /// GUI modes when the `cost_bridge` feature is on); `None` when the
+    /// feature is compiled out so the field is harmless to reference.
+    #[cfg(feature = "cost_bridge")]
+    pub cost_bridge: Option<crate::cost_bridge::CostBridge>,
 }
 
 /// M6.29: handle to a running `/loop` task.
@@ -626,6 +734,10 @@ impl WorkerState {
         self.agent = new_agent;
         self.agent.permission_mode = prev_perm;
         self.agent.thinking_budget = prev_thinking;
+        // Re-wire the externally-held injection queue (#106) so
+        // anything queued during the rebuild doesn't get orphaned on
+        // the old agent's Vec.
+        self.agent.use_injection_queue(self.injection_queue.clone());
         if let Some(h) = prev_history {
             self.agent.set_history(h);
         }
@@ -633,11 +745,16 @@ impl WorkerState {
     }
 
     /// Recompute the system prompt from the current `config` (picks up
-    /// updated `kms_active`, `team_enabled`, memory, skills, etc.).
-    /// Call after any dispatcher mutation that should land in the next
-    /// turn's system prompt.
+    /// updated `kms_active`, `team_enabled`, memory, skills, etc.) AND
+    /// push it into the live Agent so the next provider.stream call
+    /// sees it. Pre-fix this only updated `self.system_prompt`; the
+    /// Agent's captured `system` was stale until a full rebuild
+    /// (`/reload` or a model swap). Saving folder instructions from
+    /// the Settings menu emitted "system prompt rebuilt" but the new
+    /// content didn't actually reach the model until a restart.
     pub fn rebuild_system_prompt(&mut self) {
         self.system_prompt = build_system_prompt(&self.config, &self.cwd, &self.skill_store);
+        self.agent.set_system(self.system_prompt.clone());
     }
 }
 
@@ -939,11 +1056,16 @@ pub fn spawn_with_approver(
     let (events_tx, _) = broadcast::channel::<ViewEvent>(256);
     let cancel = crate::cancel::CancelToken::new();
     let ready_gate = Arc::new(ReadyGate::new());
+    // Mid-turn injection queue (issue #106) — shared between the IPC
+    // layer (push) and the agent inside the worker (drain).
+    let injection_queue: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
 
     let events_tx_for_thread = events_tx.clone();
     let cancel_for_thread = cancel.clone();
     let input_tx_for_poller = input_tx.clone();
     let gate_for_thread = ready_gate.clone();
+    let injection_queue_for_worker = injection_queue.clone();
     std::thread::spawn(move || {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
@@ -954,6 +1076,7 @@ pub fn spawn_with_approver(
                 cancel_for_thread,
                 approver,
                 gate_for_thread,
+                injection_queue_for_worker,
             ));
         }));
         if let Err(payload) = result {
@@ -974,7 +1097,55 @@ pub fn spawn_with_approver(
         events_tx,
         cancel,
         ready_gate,
+        injection_queue,
     }
+}
+
+/// Build the live `telegram_status` JSON for the GUI from an active
+/// bridge handle. Counts are read from the in-memory approver / pairing
+/// manager / chat registry (dev-plan/29).
+fn telegram_status_payload(handle: &crate::telegram::TelegramSessionHandle) -> serde_json::Value {
+    serde_json::json!({
+        "type": "telegram_status",
+        "state": handle.status.state,
+        "bot_username": handle.status.bot_username,
+        "pending_approvals": handle.approver.pending_count(),
+        "pending_pairings": handle.pairing.pending_list().len(),
+        "active_chats": handle.registry.active_count(),
+        "pairings": handle.pairing.pending_list(),
+    })
+}
+
+fn telegram_disconnected_payload() -> serde_json::Value {
+    serde_json::json!({
+        "type": "telegram_status",
+        "state": "disconnected",
+        "bot_username": serde_json::Value::Null,
+        "pending_approvals": 0,
+        "pending_pairings": 0,
+        "active_chats": 0,
+        "pairings": [],
+    })
+}
+
+fn messenger_status_payload(
+    handle: &crate::messenger::MessengerSessionHandle,
+) -> serde_json::Value {
+    serde_json::json!({
+        "type": "messenger_status",
+        "state": handle.status.state,
+        "server_url": handle.status.server_url,
+        "pending_approvals": handle.approver.pending_count(),
+    })
+}
+
+fn messenger_disconnected_payload() -> serde_json::Value {
+    serde_json::json!({
+        "type": "messenger_status",
+        "state": "disconnected",
+        "server_url": "",
+        "pending_approvals": 0,
+    })
 }
 
 async fn run_worker(
@@ -984,6 +1155,7 @@ async fn run_worker(
     cancel: crate::cancel::CancelToken,
     approver: std::sync::Arc<dyn crate::permissions::ApprovalSink>,
     ready_gate: Arc<ReadyGate>,
+    injection_queue: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<String>>>,
 ) {
     let cwd = std::env::current_dir().unwrap_or_default();
     let config = AppConfig::load().unwrap_or_default();
@@ -1363,6 +1535,13 @@ async fn run_worker(
         .with_approver(approver.clone())
         .with_cancel(cancel.clone())
         .with_hooks(hooks_arc.clone());
+    // Wire the externally-held injection queue (issue #106). The
+    // handle hands the same Arc to the IPC layer; the agent drains
+    // from it at every tool_result boundary. Doing this BEFORE the
+    // first turn (and on every subsequent rebuild — see ChangeCwd
+    // and similar paths) means a queued message can't be lost to
+    // an agent reconstruction.
+    agent.use_injection_queue(injection_queue.clone());
     // Respect the user's configured permission mode (project
     // `.thclaws/settings.json` can set it to "ask"). Without this the
     // GUI's Ask mode flag had no effect because the Agent was built
@@ -1501,6 +1680,7 @@ async fn run_worker(
         lead_log,
         cancel: cancel.clone(),
         active_loop: None,
+        injection_queue: injection_queue.clone(),
         // Init true: the very first /loop /goal continue firing
         // happens before any turn has run, so the suppression check
         // would otherwise gate the loop forever on iteration 0.
@@ -1510,6 +1690,15 @@ async fn run_worker(
         line_session: None,
         line_pre_mode: None,
         line_pre_approver: None,
+        telegram_session: None,
+        telegram_pre_mode: None,
+        telegram_pre_approver: None,
+        messenger_session: None,
+        messenger_pre_mode: None,
+        messenger_pre_approver: None,
+        session_cost_usd: 0.0,
+        #[cfg(feature = "cost_bridge")]
+        cost_bridge: Some(crate::cost_bridge::spawn()),
     };
 
     // M6.35 HOOK2: fire session_start hook now that WorkerState is
@@ -1533,6 +1722,27 @@ async fn run_worker(
         }
         Ok(None) => {}
         Err(e) => eprintln!("[line] failed to load on-disk config: {e}"),
+    }
+
+    // dev-plan/29 Tier 1: auto-reconnect the Telegram bridge on boot
+    // when a runtime config is on disk, enabled, and a token resolves
+    // (file or `TELEGRAM_BOT_TOKEN`). Mirrors the LINE block above.
+    match crate::telegram::TelegramConfig::load() {
+        Ok(Some(cfg)) if cfg.enabled && cfg.resolved_token().is_some() => {
+            let _ = input_tx_self.send(ShellInput::TelegramConnect(cfg));
+        }
+        Ok(_) => {}
+        Err(e) => eprintln!("[telegram] failed to load on-disk config: {e}"),
+    }
+
+    // dev-plan/31: auto-reconnect the Messenger bridge on boot when a
+    // binding token is already on disk. Mirrors the LINE block above.
+    match crate::messenger::MessengerConfig::load() {
+        Ok(Some(cfg)) if !cfg.binding_token.trim().is_empty() => {
+            let _ = input_tx_self.send(ShellInput::MessengerConnect(cfg));
+        }
+        Ok(_) => {}
+        Err(e) => eprintln!("[messenger] failed to load on-disk config: {e}"),
     }
 
     // Lead inbox poller — parity with repl.rs:1524. Without this, teammates
@@ -2052,6 +2262,302 @@ async fn run_worker(
                 let final_text = collector.await.unwrap_or_default();
                 let _ = respond.send(final_text);
             }
+            ShellInput::TelegramConnect(tg_cfg) => {
+                // Validate the token via getMe before committing — a bad
+                // token gets clear feedback instead of a silent dead
+                // poller. Resolves env-first (TELEGRAM_BOT_TOKEN).
+                let Some(token) = tg_cfg.resolved_token() else {
+                    let payload = serde_json::json!({
+                        "type": "telegram_status",
+                        "state": "disconnected",
+                        "error": "no bot token (set TELEGRAM_BOT_TOKEN or paste one in the modal)",
+                    });
+                    let _ = events_tx.send(ViewEvent::TelegramStatus(payload.to_string()));
+                    continue;
+                };
+                let probe = crate::telegram::TelegramClient::new(token);
+                let bot_username = match probe.get_me().await {
+                    Ok(me) => me.username.map(|u| format!("@{u}")),
+                    Err(e) => {
+                        let payload = serde_json::json!({
+                            "type": "telegram_status",
+                            "state": "disconnected",
+                            "error": format!("token rejected by Telegram: {e}"),
+                        });
+                        let _ = events_tx.send(ViewEvent::TelegramStatus(payload.to_string()));
+                        let _ = events_tx.send(ViewEvent::ErrorText(format!(
+                            "[telegram] connect failed: {e}"
+                        )));
+                        continue;
+                    }
+                };
+
+                // New connect always wins — cancel any prior session.
+                if let Some(prev) = state.telegram_session.take() {
+                    prev.cancel.cancel();
+                }
+                let handle =
+                    crate::telegram::bootstrap::spawn(tg_cfg, bot_username, input_tx_self.clone());
+
+                // Swap permission posture so approvals route through
+                // Telegram while connected. Stash the AGENT's mode +
+                // approver (not just the global) so disconnect restores
+                // exactly — same C3 fix the LINE path documents.
+                if state.telegram_pre_mode.is_none() {
+                    state.telegram_pre_mode = Some(state.agent.permission_mode);
+                    state.telegram_pre_approver = Some(state.approver.clone());
+                }
+                crate::permissions::set_current_mode_and_broadcast(
+                    crate::permissions::PermissionMode::TelegramGated,
+                );
+                state.approver =
+                    handle.approver.clone() as std::sync::Arc<dyn crate::permissions::ApprovalSink>;
+                if let Err(e) = state.rebuild_agent(true) {
+                    eprintln!("[telegram] rebuild_agent after mode swap failed: {e}");
+                }
+                state.agent.permission_mode = crate::permissions::PermissionMode::TelegramGated;
+
+                let payload = telegram_status_payload(&handle);
+                state.telegram_session = Some(handle);
+                let _ = events_tx.send(ViewEvent::TelegramStatus(payload.to_string()));
+                let _ = events_tx.send(ViewEvent::SlashOutput(
+                    "[telegram] bridge connected · permissions routed to Telegram".into(),
+                ));
+            }
+            ShellInput::TelegramDisconnect => {
+                if let Some(handle) = state.telegram_session.take() {
+                    handle.cancel.cancel();
+                }
+                // Restore pre-connect mode + approver (same C3 fix as
+                // LINE — restore on the agent's mode, not just global).
+                if let Some(prev_mode) = state.telegram_pre_mode.take() {
+                    crate::permissions::set_current_mode_and_broadcast(prev_mode);
+                    state.agent.permission_mode = prev_mode;
+                }
+                if let Some(prev_approver) = state.telegram_pre_approver.take() {
+                    state.approver = prev_approver;
+                    if let Err(e) = state.rebuild_agent(true) {
+                        eprintln!("[telegram] rebuild_agent after restore failed: {e}");
+                    }
+                }
+                // Delete on-disk config so the next boot doesn't
+                // auto-reconnect.
+                if let Err(e) = crate::telegram::TelegramConfig::delete() {
+                    eprintln!("[telegram] delete on-disk config: {e}");
+                }
+                let _ = events_tx.send(ViewEvent::TelegramStatus(
+                    telegram_disconnected_payload().to_string(),
+                ));
+                let _ = events_tx.send(ViewEvent::SlashOutput(
+                    "[telegram] bridge disconnected".into(),
+                ));
+            }
+            ShellInput::TelegramMessage { text, respond } => {
+                // Drive the live agent for an inbound Telegram message.
+                // Subscribe before the turn, accumulate the FINAL
+                // assistant text (cleared on each ToolCallStart so only
+                // post-last-tool narration survives), answer via the
+                // oneshot. The session sink chunks + sends it back.
+                let mut event_rx = events_tx.subscribe();
+                let collector = tokio::spawn(async move {
+                    let mut buf = String::new();
+                    while let Ok(ev) = event_rx.recv().await {
+                        match ev {
+                            ViewEvent::AssistantTextDelta(s) => buf.push_str(&s),
+                            ViewEvent::ToolCallStart { .. } => buf.clear(),
+                            ViewEvent::TurnDone => break,
+                            ViewEvent::ErrorText(s) => {
+                                if buf.is_empty() {
+                                    buf.push_str(&s);
+                                } else {
+                                    buf.push_str("\n\n");
+                                    buf.push_str(&s);
+                                }
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    buf
+                });
+                // Remote-driven turn: AskUserQuestion short-circuits to a
+                // "please ask in your reply" text instead of a GUI modal
+                // the Telegram user can't see (reuses the LINE flag).
+                crate::tools::ask::set_line_driven_turn(true);
+                handle_line(text, &mut state, &events_tx, &cancel, &input_tx_self).await;
+                crate::tools::ask::set_line_driven_turn(false);
+                let final_text = collector.await.unwrap_or_default();
+                let _ = respond.send(final_text);
+            }
+            ShellInput::TelegramPairingApprove { code } => {
+                if let Some(handle) = state.telegram_session.as_ref() {
+                    if let Some(pair) = handle.pairing.approve(&code) {
+                        // Append to allow_from on the shared config and
+                        // persist so the approval survives restart.
+                        let persisted = {
+                            let mut cfg = handle.config.lock().ok();
+                            cfg.as_mut().map(|c| {
+                                c.add_allowed_user(pair.user_id);
+                                (*c).clone()
+                            })
+                        };
+                        if let Some(cfg) = persisted {
+                            if let Err(e) = cfg.save() {
+                                eprintln!("[telegram] save after pairing approve failed: {e}");
+                            }
+                        }
+                        let client = handle.client.clone();
+                        let chat_id = pair.chat_id;
+                        tokio::spawn(async move {
+                            let _ = client
+                                .send_text(
+                                    chat_id,
+                                    "✅ You're approved! Send a message to start chatting with thClaws.",
+                                )
+                                .await;
+                        });
+                        let _ = events_tx.send(ViewEvent::SlashOutput(format!(
+                            "[telegram] paired {}",
+                            pair.display
+                        )));
+                    }
+                    let payload = telegram_status_payload(handle);
+                    let _ = events_tx.send(ViewEvent::TelegramStatus(payload.to_string()));
+                }
+            }
+            ShellInput::TelegramPairingReject { code } => {
+                if let Some(handle) = state.telegram_session.as_ref() {
+                    if let Some(pair) = handle.pairing.reject(&code) {
+                        let client = handle.client.clone();
+                        let chat_id = pair.chat_id;
+                        tokio::spawn(async move {
+                            let _ = client
+                                .send_text(chat_id, "🚫 Your pairing request was declined.")
+                                .await;
+                        });
+                    }
+                    let payload = telegram_status_payload(handle);
+                    let _ = events_tx.send(ViewEvent::TelegramStatus(payload.to_string()));
+                }
+            }
+            ShellInput::TelegramStatusRequest => {
+                let payload = match state.telegram_session.as_ref() {
+                    Some(handle) => telegram_status_payload(handle),
+                    None => telegram_disconnected_payload(),
+                };
+                let _ = events_tx.send(ViewEvent::TelegramStatus(payload.to_string()));
+            }
+            ShellInput::MessengerConnect(msgr_cfg) => {
+                // New connect always wins — cancel any prior session.
+                if let Some(prev) = state.messenger_session.take() {
+                    prev.cancel.cancel();
+                }
+                let handle = crate::messenger::bootstrap::spawn(msgr_cfg, input_tx_self.clone());
+
+                // Swap permission posture so approvals route through
+                // Messenger while connected. Stash the AGENT's mode +
+                // approver (not just the global) so disconnect restores
+                // exactly — same C3 fix the LINE/Telegram paths document.
+                if state.messenger_pre_mode.is_none() {
+                    state.messenger_pre_mode = Some(state.agent.permission_mode);
+                    state.messenger_pre_approver = Some(state.approver.clone());
+                }
+                crate::permissions::set_current_mode_and_broadcast(
+                    crate::permissions::PermissionMode::MessengerGated,
+                );
+                state.approver =
+                    handle.approver.clone() as std::sync::Arc<dyn crate::permissions::ApprovalSink>;
+                if let Err(e) = state.rebuild_agent(true) {
+                    eprintln!("[messenger] rebuild_agent after mode swap failed: {e}");
+                }
+                state.agent.permission_mode = crate::permissions::PermissionMode::MessengerGated;
+
+                let payload = messenger_status_payload(&handle);
+                state.messenger_session = Some(handle);
+                let _ = events_tx.send(ViewEvent::MessengerStatus(payload.to_string()));
+                let _ = events_tx.send(ViewEvent::SlashOutput(
+                    "[messenger] bridge connected · permissions routed to Messenger".into(),
+                ));
+            }
+            ShellInput::MessengerDisconnect => {
+                // Tell the relay to drop our binding before local cleanup
+                // so the next inbound message re-issues a pairing code
+                // instead of routing into a dead WS. Best-effort.
+                if let Ok(Some(cfg)) = crate::messenger::MessengerConfig::load() {
+                    let client = crate::messenger::MessengerClient::new(cfg);
+                    tokio::spawn(async move {
+                        if let Err(e) = client.unpair().await {
+                            eprintln!("[messenger] /unpair failed (continuing): {e}");
+                        }
+                    });
+                }
+                if let Some(handle) = state.messenger_session.take() {
+                    handle.cancel.cancel();
+                }
+                // Restore pre-connect mode + approver (same C3 fix).
+                if let Some(prev_mode) = state.messenger_pre_mode.take() {
+                    crate::permissions::set_current_mode_and_broadcast(prev_mode);
+                    state.agent.permission_mode = prev_mode;
+                }
+                if let Some(prev_approver) = state.messenger_pre_approver.take() {
+                    state.approver = prev_approver;
+                    if let Err(e) = state.rebuild_agent(true) {
+                        eprintln!("[messenger] rebuild_agent after restore failed: {e}");
+                    }
+                }
+                if let Err(e) = crate::messenger::MessengerConfig::delete() {
+                    eprintln!("[messenger] delete on-disk config: {e}");
+                }
+                let _ = events_tx.send(ViewEvent::MessengerStatus(
+                    messenger_disconnected_payload().to_string(),
+                ));
+                let _ = events_tx.send(ViewEvent::SlashOutput(
+                    "[messenger] bridge disconnected".into(),
+                ));
+            }
+            ShellInput::MessengerMessage { text, respond } => {
+                // Drive the live agent for an inbound Messenger message.
+                // Subscribe before the turn, accumulate the FINAL
+                // assistant text (cleared on each ToolCallStart), answer
+                // via the oneshot. The session sink chunks + sends it
+                // back through the relay's Send API.
+                let mut event_rx = events_tx.subscribe();
+                let collector = tokio::spawn(async move {
+                    let mut buf = String::new();
+                    while let Ok(ev) = event_rx.recv().await {
+                        match ev {
+                            ViewEvent::AssistantTextDelta(s) => buf.push_str(&s),
+                            ViewEvent::ToolCallStart { .. } => buf.clear(),
+                            ViewEvent::TurnDone => break,
+                            ViewEvent::ErrorText(s) => {
+                                if buf.is_empty() {
+                                    buf.push_str(&s);
+                                } else {
+                                    buf.push_str("\n\n");
+                                    buf.push_str(&s);
+                                }
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    buf
+                });
+                // Remote-driven turn: AskUserQuestion short-circuits to a
+                // text prompt instead of a GUI modal (reuses the LINE flag).
+                crate::tools::ask::set_line_driven_turn(true);
+                handle_line(text, &mut state, &events_tx, &cancel, &input_tx_self).await;
+                crate::tools::ask::set_line_driven_turn(false);
+                let final_text = collector.await.unwrap_or_default();
+                let _ = respond.send(final_text);
+            }
+            ShellInput::MessengerStatusRequest => {
+                let payload = match state.messenger_session.as_ref() {
+                    Some(handle) => messenger_status_payload(handle),
+                    None => messenger_disconnected_payload(),
+                };
+                let _ = events_tx.send(ViewEvent::MessengerStatus(payload.to_string()));
+            }
             ShellInput::McpAppCallTool {
                 request_id,
                 qualified_name,
@@ -2274,6 +2780,23 @@ async fn run_worker(
                     }
                 }
             }
+            ShellInput::InstructionsChanged => {
+                // The Settings menu's AGENTS.md editor (global or folder
+                // scope) just saved. ProjectContext::discover re-runs
+                // on rebuild and picks up the new file content. No
+                // provider rebuild needed — only the system prompt
+                // changes. Subsequent turns use the fresh prompt; an
+                // already in-flight turn keeps the snapshot it
+                // captured (per the agent loop's `let system =
+                // self.system.clone();` pattern), which is the right
+                // behavior — don't yank context out from under the
+                // model mid-thought.
+                state.rebuild_system_prompt();
+                let _ = events_tx.send(ViewEvent::SlashOutput(
+                    "[instructions] system prompt rebuilt — new content applies on next turn"
+                        .into(),
+                ));
+            }
             ShellInput::ChangeCwd(new_cwd) => {
                 // No-op short-circuit: the StartupModal's "Start"
                 // button sends `set_cwd` even when the path is
@@ -2388,6 +2911,90 @@ async fn run_worker(
                     state.config.model,
                     prev_model
                 )));
+
+                // Tear down the OLD project's MCP servers and spawn
+                // the NEW project's. Pre-fix the cwd-change reloaded
+                // config (so the sidebar listed the new project's
+                // mcp.json entries) but never re-ran the startup
+                // spawn loop — entries showed up with "(0) tools"
+                // forever. Hits anyone who launches thClaws from
+                // the macOS Dock and then picks a project that has
+                // MCP servers, since the initial cwd has no MCP and
+                // the project switch is the user's first chance to
+                // see them.
+                let prefixes_to_drop: Vec<String> = state
+                    .mcp_clients
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "{}{}",
+                            crate::mcp::sanitize_tool_name_segment(c.name()),
+                            crate::mcp::MCP_NAME_SEPARATOR
+                        )
+                    })
+                    .collect();
+                let tool_names_to_remove: Vec<String> = state
+                    .tool_registry
+                    .names()
+                    .iter()
+                    .filter(|n| prefixes_to_drop.iter().any(|p| n.starts_with(p)))
+                    .map(|n| n.to_string())
+                    .collect();
+                for name in tool_names_to_remove {
+                    state.tool_registry.remove(&name);
+                }
+                // Dropping the Arc<McpClient>s here releases the
+                // last refs the worker holds; the subprocesses
+                // exit shortly after as their stdio is closed.
+                state.mcp_clients.clear();
+                crate::gui::clear_mcp_tool_counts();
+
+                // Spawn each MCP server in the new project — same
+                // `tokio::spawn` + ShellInput::McpReady fan-out as
+                // worker startup, so the McpReady handler does the
+                // registry + rebuild + sidebar update.
+                for server_cfg in state.config.mcp_servers.clone() {
+                    let approver_for_spawn = state.approver.clone();
+                    let input_tx_for_spawn = input_tx_self.clone();
+                    tokio::spawn(async move {
+                        let server_name = server_cfg.name.clone();
+                        match crate::mcp::McpClient::spawn_with_approver(
+                            server_cfg,
+                            Some(approver_for_spawn),
+                        )
+                        .await
+                        {
+                            Ok(client) => match client.list_tools().await {
+                                Ok(tool_infos) => {
+                                    let _ = input_tx_for_spawn.send(ShellInput::McpReady {
+                                        server_name,
+                                        client,
+                                        tools: tool_infos,
+                                    });
+                                }
+                                Err(e) => {
+                                    let _ = input_tx_for_spawn.send(ShellInput::McpFailed {
+                                        server_name,
+                                        error: format!("list_tools failed: {e}"),
+                                    });
+                                }
+                            },
+                            Err(e) => {
+                                let _ = input_tx_for_spawn.send(ShellInput::McpFailed {
+                                    server_name,
+                                    error: e.to_string(),
+                                });
+                            }
+                        }
+                    });
+                }
+
+                // Push the empty-counts payload now so the sidebar
+                // immediately reflects the new project's server
+                // list. McpReady → McpUpdate will overwrite with
+                // real counts as each spawn completes.
+                let payload = crate::gui::build_mcp_update_payload();
+                let _ = events_tx.send(ViewEvent::McpUpdate(payload.to_string()));
             }
         }
     }
@@ -3070,12 +3677,20 @@ async fn drive_turn_stream(
             Ok(AgentEvent::Thinking(s)) => {
                 let _ = events_tx.send(ViewEvent::AssistantThinkingDelta(s));
             }
+            Ok(AgentEvent::UserMessageInjected { text }) => {
+                // Surface the drained mid-turn user message as a
+                // normal user-bubble event (issue #106). The
+                // frontend's optimistic queued bubble matches by
+                // content and flips its badge from "queued" to
+                // "delivered" on this event.
+                let _ = events_tx.send(ViewEvent::UserPrompt(text));
+            }
             Ok(AgentEvent::ToolCallStart { name, input, .. }) => {
                 state.last_turn_made_tool_calls = true;
-                let label = format_tool_label(&name, &input);
+                let label = crate::tool_display::tool_label(&name, &input);
                 write_lead_log(
                     &state.lead_log,
-                    &format!("\x1b[0m\n\x1b[90m[tool: {name}]\x1b[0m "),
+                    &format!("\x1b[0m\n\x1b[90m[tool: {label}]\x1b[0m "),
                 );
                 let _ = events_tx.send(ViewEvent::ToolCallStart { name, label, input });
             }
@@ -3104,6 +3719,33 @@ async fn drive_turn_stream(
                 let tracker =
                     crate::usage::UsageTracker::new(crate::usage::UsageTracker::default_path());
                 tracker.record(provider_name, &state.config.model, &usage);
+
+                // Cost accounting (GUI parity with the CLI REPL). Drain
+                // any pending buddy resets first so a mid-turn Backspace
+                // on the Cardputer takes effect before this turn's
+                // contribution lands. Then accumulate, then push the new
+                // total to the buddy if a bridge is attached.
+                #[cfg(feature = "cost_bridge")]
+                if let Some(ref mut bridge) = state.cost_bridge {
+                    while bridge.rx_reset.try_recv().is_ok() {
+                        state.session_cost_usd = 0.0;
+                    }
+                }
+                let token_usage = crate::model_catalogue::TokenUsage {
+                    prompt_tokens: usage.input_tokens,
+                    completion_tokens: usage.output_tokens,
+                    cached_input_tokens: usage.cache_read_input_tokens.unwrap_or(0),
+                    cache_creation_tokens: usage.cache_creation_input_tokens.unwrap_or(0),
+                    reasoning_tokens: usage.reasoning_output_tokens.unwrap_or(0),
+                };
+                let catalogue = crate::model_catalogue::EffectiveCatalogue::load();
+                if let Some(c) = catalogue.compute_cost_usd(&state.config.model, &token_usage) {
+                    state.session_cost_usd += c;
+                }
+                #[cfg(feature = "cost_bridge")]
+                if let Some(ref bridge) = state.cost_bridge {
+                    let _ = bridge.tx_cost.send(state.session_cost_usd);
+                }
 
                 // If a skill applied a model override this turn, emit
                 // a revert chat note so the user sees the active
@@ -3438,11 +4080,19 @@ async fn handle_team_messages(
             Ok(AgentEvent::Thinking(s)) => {
                 let _ = events_tx.send(ViewEvent::AssistantThinkingDelta(s));
             }
+            Ok(AgentEvent::UserMessageInjected { text }) => {
+                // Surface the drained mid-turn user message as a
+                // normal user-bubble event (issue #106). The
+                // frontend's optimistic queued bubble matches by
+                // content and flips its badge from "queued" to
+                // "delivered" on this event.
+                let _ = events_tx.send(ViewEvent::UserPrompt(text));
+            }
             Ok(AgentEvent::ToolCallStart { name, input, .. }) => {
-                let label = format_tool_label(&name, &input);
+                let label = crate::tool_display::tool_label(&name, &input);
                 write_lead_log(
                     &state.lead_log,
-                    &format!("\x1b[0m\n\x1b[90m[tool: {name}]\x1b[0m "),
+                    &format!("\x1b[0m\n\x1b[90m[tool: {label}]\x1b[0m "),
                 );
                 let _ = events_tx.send(ViewEvent::ToolCallStart { name, label, input });
             }
@@ -3669,14 +4319,6 @@ fn format_provider_model(provider: &str, model: &str) -> String {
     }
 }
 
-fn sanitize_label_field(s: &str) -> String {
-    let cleaned: String = s
-        .chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .collect();
-    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 /// Translate the worker's `ViewEvent` into the chat envelope
 /// shape the plan-10 browser SPA expects. Subset of all events —
 /// only the ones that drive the user-visible chat (text deltas,
@@ -3729,72 +4371,6 @@ fn view_event_to_chat_envelope(ev: &ViewEvent) -> Option<serde_json::Value> {
     }
 }
 
-fn format_tool_label(name: &str, input: &serde_json::Value) -> String {
-    let detail = match name {
-        "Skill" => input
-            .get("name")
-            .and_then(|v| v.as_str())
-            .map(|n| format!("({n})")),
-        "Task" => input
-            .get("agent")
-            .and_then(|v| v.as_str())
-            .map(|a| format!("(agent={a})")),
-        "Bash" => input.get("command").and_then(|v| v.as_str()).map(|c| {
-            // Same control-char strip as AskUserQuestion — bash
-            // commands often contain heredocs (`<<'PY' ... PY`) whose
-            // newlines break the single-line label.
-            let cleaned = sanitize_label_field(c);
-            let first: String = cleaned.chars().take(40).collect();
-            format!(
-                "({first}{})",
-                if cleaned.chars().count() > 40 {
-                    "…"
-                } else {
-                    ""
-                }
-            )
-        }),
-        "Read" | "Write" | "Edit" => input
-            .get("path")
-            .and_then(|v| v.as_str())
-            .map(|p| format!("({p})")),
-        "Grep" | "Glob" => input
-            .get("pattern")
-            .and_then(|v| v.as_str())
-            .map(|p| format!("({p})")),
-        "WebFetch" => input
-            .get("url")
-            .and_then(|v| v.as_str())
-            .map(|u| format!("({})", u.chars().take(60).collect::<String>())),
-        "WebSearch" => input
-            .get("query")
-            .and_then(|v| v.as_str())
-            .map(|q| format!("({q})")),
-        "AskUserQuestion" => input.get("question").and_then(|v| v.as_str()).map(|q| {
-            // Strip newlines / control chars first — agents often pass
-            // multi-line prompts here, and the raw text breaks the
-            // single-line tool label in xterm.
-            let cleaned = sanitize_label_field(q);
-            let first: String = cleaned.chars().take(60).collect();
-            format!(
-                "({first}{})",
-                if cleaned.chars().count() > 60 {
-                    "..."
-                } else {
-                    ""
-                }
-            )
-        }),
-        _ => None,
-    }
-    .unwrap_or_default();
-    if detail.is_empty() {
-        name.to_string()
-    } else {
-        format!("{name} {detail}")
-    }
-}
-
 /// Placeholder provider used when the worker starts without any usable
 /// LLM credentials. `stream()` immediately errors with a
 /// configure-a-key message so the user sees actionable feedback on the
@@ -3821,18 +4397,11 @@ impl Provider for NoopProvider {
 /// True if this provider is usable without further setup — either
 /// because the env var holding its API key is set, or because it
 /// doesn't need one (Ollama variants, Agent SDK using Claude Code's
-/// own auth). Mirrors `gui::kind_has_credentials` without the
-/// `#[cfg(feature = "gui")]` gate so the shared worker can call it.
+/// own auth). Delegates to the canonical `providers::kind_has_credentials`
+/// so the shared worker, GUI, and CLI all agree (incl. file-based
+/// ChatGptCodex auth).
 fn kind_has_credentials(kind: crate::providers::ProviderKind) -> bool {
-    use crate::providers::ProviderKind;
-    match kind {
-        ProviderKind::AgentSdk => true,
-        ProviderKind::Ollama | ProviderKind::OllamaAnthropic => true,
-        other => other
-            .api_key_env()
-            .map(|v| std::env::var(v).is_ok())
-            .unwrap_or(false),
-    }
+    crate::providers::kind_has_credentials(Some(kind))
 }
 
 /// Auto-compact at 80% of `agent.budget_tokens`. Cheap drop-oldest

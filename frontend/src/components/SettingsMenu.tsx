@@ -9,6 +9,7 @@ import {
   Check,
   Users,
   MessageCircle,
+  Send,
 } from "lucide-react";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import { send, subscribe } from "../hooks/useIPC";
@@ -17,7 +18,9 @@ type Choice =
   | "global-instructions"
   | "folder-instructions"
   | "api-keys"
-  | "line-connect";
+  | "line-connect"
+  | "telegram-connect"
+  | "messenger-connect";
 
 export function SettingsMenu({
   anchorRef,
@@ -102,14 +105,26 @@ export function SettingsMenu({
     {
       id: "api-keys",
       icon: <KeyRound size={12} />,
-      label: "Provider API keys",
-      hint: "Manage keys stored in the OS keychain",
+      label: "Settings & API keys",
+      hint: "Provider keys, gateway, deploy target, auto-learn",
     },
     {
       id: "line-connect",
       icon: <MessageCircle size={12} />,
       label: "Line Connect…",
       hint: "Pair this thClaws install with your LINE OA",
+    },
+    {
+      id: "telegram-connect",
+      icon: <Send size={12} />,
+      label: "Telegram Connect…",
+      hint: "Pair this thClaws install with a Telegram bot",
+    },
+    {
+      id: "messenger-connect",
+      icon: <MessageCircle size={12} />,
+      label: "Messenger Connect…",
+      hint: "Pair this thClaws install with a Facebook Page",
     },
   ];
 

@@ -1,15 +1,17 @@
 /**
  * Session codec for thClaws.
  *
- * thClaws persists sessions per-cwd in `.thclaws/projects/<hash>/<id>.jsonl`
- * (mirroring Claude Code's `~/.claude/projects/...` layout — clean-room
- * compat). The OpenAI Chat Completions API is stateless per request,
- * so multi-turn resume in v1 relies on Paperclip's higher-layer turn
- * folding rather than passing a session id back to thClaws.
+ * thClaws persists sessions per-workspace at
+ * `<workspaceDir>/.thclaws/sessions/<id>.jsonl`. The native `/agent/run`
+ * endpoint accepts a `session_id` on input (loads + hydrates the
+ * agent's history from that JSONL before running the new turn) and
+ * returns the id back on output (via a `session` SSE event on the
+ * sync/stream path, or the `session_id` field of the 202 ACK on the
+ * async path). The codec just shuttles that id between Paperclip's
+ * orchestration layer and the execute() result's `sessionParams`.
  *
- * This codec records the session id Paperclip wants to track but is
- * currently a pass-through — full resume semantics land alongside a
- * thClaws CLI subcommand for resume-by-id in a follow-up.
+ * (The OpenAI-compatible `/v1/chat/completions` surface remains
+ * stateless per request — only `/agent/run` carries session continuity.)
  */
 
 import type { AdapterSessionCodec } from "@paperclipai/adapter-utils";

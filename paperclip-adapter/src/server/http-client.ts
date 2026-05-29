@@ -51,7 +51,15 @@ export interface RunAgentRunRequest {
   model: string | null;
   /** Optional extra system message — appended to thClaws's default. */
   systemPrompt: string | null;
-  /** Reserved for session resume. Phase A on the server ignores it. */
+  /**
+   * Session id for multi-turn continuation. Pass the `sessionId`
+   * returned by the previous `runAgentRun` call to continue the same
+   * conversation; pass `null` (or omit) to start a fresh session and
+   * receive a freshly-minted id in the response. Sessions live at
+   * `<workspaceDir>/.thclaws/sessions/<id>.jsonl` on the thClaws side.
+   * thClaws returns a 404 `session_not_found` if the supplied id has
+   * no JSONL on disk — never silently mints a fresh one under your id.
+   */
   sessionId: string | null;
   temperature: number | null;
   maxTokens: number | null;
@@ -85,6 +93,14 @@ export interface RunAgentRunResult {
   /** Set by the async path when thClaws ACK'd with 202. */
   asyncAccepted?: boolean;
   acceptedRunId?: string;
+  /**
+   * Session id the next turn should resume from. On the sync/stream
+   * path it's surfaced in the SSE `session` event (emitted first).
+   * On the async path the 202 ACK carries it. Callers persist this
+   * and feed it back as `sessionId` on the next `runAgentRun` to
+   * continue the same conversation.
+   */
+  sessionId?: string;
 }
 
 interface AgentRunEvent {
@@ -175,10 +191,17 @@ export async function runAgentRun(
   if (req.xCallback) {
     if (res.status === 202) {
       let runId = req.xCallback.runId;
+      let sessionId: string | undefined;
       try {
-        const ack = (await res.json()) as { run_id?: string };
+        const ack = (await res.json()) as {
+          run_id?: string;
+          session_id?: string;
+        };
         if (typeof ack.run_id === "string" && ack.run_id.length > 0) {
           runId = ack.run_id;
+        }
+        if (typeof ack.session_id === "string" && ack.session_id.length > 0) {
+          sessionId = ack.session_id;
         }
       } catch {
         // best-effort
@@ -189,6 +212,7 @@ export async function runAgentRun(
         stopReason: "accepted_async",
         asyncAccepted: true,
         acceptedRunId: runId,
+        ...(sessionId ? { sessionId } : {}),
       };
     }
     if (!res.ok) {
@@ -234,10 +258,22 @@ export async function runAgentRun(
   let stopReason: string | null = null;
   let errorMessage: string | null = null;
   let usage: RunAgentRunResult["usage"];
+  let sessionId: string | undefined;
 
   try {
     for await (const ev of parseSseStream(res.body)) {
       switch (ev.name) {
+        case "session": {
+          // First event emitted by the server — carries the id the
+          // caller should use on the next `runAgentRun` to continue
+          // this conversation. Same id whether we passed one in
+          // (continuation) or asked for a fresh one (mint).
+          const payload = ev.data as { id?: unknown };
+          if (typeof payload.id === "string" && payload.id.length > 0) {
+            sessionId = payload.id;
+          }
+          break;
+        }
         case "text": {
           const delta = readDelta(ev.data);
           if (delta) {
@@ -340,6 +376,7 @@ export async function runAgentRun(
       errorCode: "sse_parse_failed",
       errorMessage: `SSE stream broke after ${stdoutChunks.length} chunks: ${msg}`,
       upstreamError: true,
+      ...(sessionId ? { sessionId } : {}),
     };
   }
 
@@ -354,6 +391,7 @@ export async function runAgentRun(
       errorCode: "upstream_error",
       errorMessage,
       upstreamError: true,
+      ...(sessionId ? { sessionId } : {}),
     };
   }
 
@@ -362,6 +400,7 @@ export async function runAgentRun(
     summary,
     stopReason,
     usage,
+    ...(sessionId ? { sessionId } : {}),
   };
 }
 

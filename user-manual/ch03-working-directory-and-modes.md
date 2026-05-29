@@ -131,11 +131,51 @@ git diff | thclaws -p "summarise this diff for a commit message"
 
 ![thClaws Non-Interactive Mode](../user-manual-img/ch-03/thclaws-non-interactive.png)
 
+### `--serve` (HTTP/WebSocket server)
+
+```bash
+thclaws --serve                       # listen on 127.0.0.1:8443
+thclaws --serve --port 7878           # custom port
+thclaws --serve --bind 0.0.0.0        # bind all interfaces (auth required)
+thclaws --serve --gui                 # plus open desktop window on same engine
+```
+
+![thClaws --serve mode](../user-manual-img/ch-03/thclaws-serve-mode.png)
+
+The same agent engine, exposed over HTTP + WebSocket — covers two
+use cases:
+
+- **Webapp surface** — point a browser at `http://127.0.0.1:8443/`
+  for the same React frontend the desktop GUI runs. Right for
+  remote access via an SSH tunnel or Cloudflare Tunnel (no need to
+  open a public port).
+- **AI Agent (API server) surface** — `--serve` also exposes
+  `/v1/chat/completions` (OpenAI-compatible, so Cursor, Aider, n8n,
+  openai-python can call it as-is) and `/agent/run` +
+  `/v1/agent/info` (thClaws-native, for orchestrators like
+  thcompany or Paperclip). One agent instance can serve humans and
+  other software at the same time.
+
+Default bind is `127.0.0.1` only (single-user, localhost loopback).
+To expose to other machines use `--bind 0.0.0.0` and set
+`THCLAWS_API_TOKEN` in the environment — every request must then
+carry `Authorization: Bearer <token>` or it gets a 401.
+
+`--serve` is mutually exclusive with `--cli` and `--print` but
+composes with `--gui` — the desktop window and any browser tab will
+attach to the same Agent + Session (same conversation, two
+surfaces). See [Chapter 21](ch21-line-and-browser-chat.md) for the
+LINE / browser bridge built on top of `--serve`.
+
 ### Common flags
 
 ```
     --cli                    run the CLI REPL instead of the GUI
 -p, --print                  non-interactive: run prompt and exit (implies --cli)
+    --serve                  expose engine over HTTP/WebSocket (default bind 127.0.0.1:8443)
+    --port N                 port for --serve mode (default 8443)
+    --bind ADDR              bind address for --serve (default 127.0.0.1; 0.0.0.0 needs auth)
+    --gui                    open desktop window (compose with --serve to attach to same engine)
 -m, --model MODEL            override the model (e.g. claude-sonnet-4-6, ap/gemma4-26b)
     --accept-all             auto-approve every tool call (dangerous — see ch5)
     --permission-mode MODE   auto | ask
@@ -184,3 +224,120 @@ and `.thclaws/team/` to `.gitignore` since those are runtime state.
 
 User-global equivalents live under `~/.config/thclaws/` (plus
 `~/.claude/` as a Claude Code fallback).
+
+### `settings.json` reference
+
+All runtime toggles live in one JSON file. Load order (higher wins):
+
+1. CLI flag (highest)
+2. `.thclaws/settings.json` — project, commit it with the repo
+3. `~/.config/thclaws/settings.json` — user-global
+4. `~/.claude/settings.json` — Claude Code fallback
+5. Compiled-in defaults (lowest)
+
+`settings.json` never holds API keys — those go in the OS keychain
+or `.env`, picked at first launch (see above).
+
+The first time you open thClaws in a project it bootstraps a
+template file that lists every field at its default value. Open
+`.thclaws/settings.json` and edit; delete a field or set it to
+`null` to fall back to the default.
+
+#### Model & turn control
+
+| Key | Type | Default | See |
+|---|---|---|---|
+| `model` | string | `"claude-sonnet-4-6"` | [Chapter 6](ch06-providers-models-api-keys.md) |
+| `maxTokens` | number | `32000` | (max output tokens per turn) |
+| `maxIterations` | number | `50` | (per-turn tool-call loop cap) |
+| `thinkingBudget` | number | `10000` | [Chapter 6](ch06-providers-models-api-keys.md) (Anthropic extended-thinking) |
+| `searchEngine` | string | `"auto"` | (`auto` / `tavily` / `brave` / `duckduckgo`) |
+
+#### Permissions & tools
+
+| Key | Type | Default | See |
+|---|---|---|---|
+| `permissions` | `"auto"` / `"ask"` or `{allow, deny}` | `"auto"` | [Chapter 5](ch05-permissions.md) |
+| `allowedTools` | string[] | `null` | [Chapter 5](ch05-permissions.md) |
+| `disallowedTools` | string[] | `null` | [Chapter 5](ch05-permissions.md) |
+
+#### Knowledge bases & memory
+
+| Key | Type | Default | See |
+|---|---|---|---|
+| `kms` | `{active: string[]}` | `{active: []}` | [Chapter 9](ch09-knowledge-bases-kms.md) |
+| `autoLearn` | bool | `false` | [Chapter 9 §Self-improving](ch09-knowledge-bases-kms.md#self-improving-ai-agent-auto-learn) |
+| `autoLearnKms` | string | `"self_learn"` | [Chapter 9 §Self-improving](ch09-knowledge-bases-kms.md#self-improving-ai-agent-auto-learn) |
+| `autoLearnReconcileHours` | number | `6` | [Chapter 9 §Self-improving](ch09-knowledge-bases-kms.md#self-improving-ai-agent-auto-learn) |
+
+#### Plan mode, skills, subagents
+
+| Key | Type | Default | See |
+|---|---|---|---|
+| `planContextStrategy` | `"compact"` / `"clear"` | `"compact"` | [Chapter 18](ch18-plan-mode.md) |
+| `skillsListingStrategy` | `"full"` / `"names-only"` / `"discover-tool-only"` | `"full"` | [Chapter 12](ch12-skills.md) |
+| `extract_save_skill_models` | string / string[] | `null` | [Chapter 12](ch12-skills.md) (override built-in skill model) |
+| `translator_subagent_model` | string | `null` | [Chapter 15](ch15-subagents.md) |
+
+#### Agent Teams
+
+| Key | Type | Default | See |
+|---|---|---|---|
+| `teamEnabled` | bool | `false` | [Chapter 17](ch17-agent-teams.md) |
+
+#### Provider routing
+
+| Key | Type | Default | See |
+|---|---|---|---|
+| `openrouterFreeOnly` | bool | `false` | [Chapter 6](ch06-providers-models-api-keys.md) |
+| `gatewayUseFor` | string[] | `[]` | [Chapter 6](ch06-providers-models-api-keys.md) (e.g. `["openai", "anthropic"]`) |
+
+#### GUI
+
+| Key | Type | Default | See |
+|---|---|---|---|
+| `windowWidth` | number | `null` (monitor-aware) | [Chapter 4](ch04-desktop-gui-tour.md) |
+| `windowHeight` | number | `null` (monitor-aware) | [Chapter 4](ch04-desktop-gui-tour.md) |
+| `guiScale` | number | `null` (1.0) | [Chapter 4](ch04-desktop-gui-tour.md) (clamped 0.5–3.0) |
+| `showRawResponse` | bool | `false` | (debug: print the assistant's raw text to stderr) |
+
+#### Sibling files (not in `settings.json`)
+
+Settings with larger or frequently-changing schemas live in their
+own files rather than cluttering `settings.json`:
+
+- **`.thclaws/mcp.json`** — MCP server registry spawned at startup
+  (same `{"mcpServers": {...}}` shape Claude Code uses) — see
+  [Chapter 14](ch14-mcp.md)
+- **`.thclaws/hooks/<event>.sh`** — shell scripts on lifecycle
+  events (8 events: `pre_tool_use`, `post_tool_use`,
+  `session_start`, etc.) — see [Chapter 13](ch13-hooks.md)
+- **`.thclaws/AGENTS.md`** or `CLAUDE.md` — project-level agent
+  instructions injected into the system prompt — see
+  [Chapter 8](ch08-memory-and-agents-md.md)
+- **Project `.env` or OS keychain** — API keys (never in
+  `settings.json`) — see
+  [Chapter 6](ch06-providers-models-api-keys.md)
+
+#### Example
+
+```json
+{
+  "model": "claude-sonnet-4-6",
+  "permissions": "auto",
+  "maxTokens": 32000,
+  "maxIterations": 50,
+  "thinkingBudget": 10000,
+  "searchEngine": "auto",
+  "planContextStrategy": "compact",
+  "skillsListingStrategy": "full",
+  "kms": { "active": ["project-notes"] },
+  "autoLearn": true,
+  "openrouterFreeOnly": false,
+  "gatewayUseFor": [],
+  "teamEnabled": false,
+  "windowWidth": null,
+  "windowHeight": null,
+  "guiScale": null
+}
+```

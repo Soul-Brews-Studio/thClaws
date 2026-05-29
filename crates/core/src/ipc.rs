@@ -295,6 +295,9 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
             let entry = crate::schedule::Schedule {
                 id: id.clone(),
                 cron,
+                // GUI schedule-add is recurring-only for now; one-shot
+                // (--at/--in) is CLI-only until the modal mirrors it.
+                run_at: None,
                 cwd: std::path::PathBuf::from(cwd),
                 prompt,
                 model,
@@ -754,6 +757,218 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
             (ctx.dispatch)(payload.to_string());
         }
 
+        // ── Telegram bridge wiring (dev-plan/29 Tier 1) ────────────
+        // The GUI TelegramConnectModal hits these; the polling session
+        // itself lives on the worker so its cancel token sits on one
+        // tokio task (mirrors the LINE handlers above).
+        "telegram_status" => {
+            // Live status (pending pairings + counts) lives in the
+            // worker's in-memory handle — ask it to broadcast a fresh
+            // snapshot rather than reading disk. The worker answers with
+            // a disconnected payload when no session is active.
+            let _ = ctx.shared.input_tx.send(ShellInput::TelegramStatusRequest);
+        }
+        "telegram_connect" => {
+            let token = msg
+                .get("bot_token")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            // A blank token is only valid when TELEGRAM_BOT_TOKEN is set
+            // — let the worker's getMe be the final arbiter, but catch an
+            // obviously-malformed pasted token here for a fast error.
+            if !token.is_empty() {
+                if let Err(e) = crate::telegram::config::validate_token(&token) {
+                    let payload = serde_json::json!({
+                        "type": "telegram_connect_ack",
+                        "ok": false,
+                        "error": e.to_string(),
+                    });
+                    (ctx.dispatch)(payload.to_string());
+                    return true;
+                }
+            }
+            // Merge onto any existing on-disk config so we don't clobber
+            // allow_from / policy when the user re-pastes a token.
+            let mut cfg = crate::telegram::TelegramConfig::load()
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            cfg.enabled = true;
+            if !token.is_empty() {
+                cfg.bot_token = Some(token);
+            }
+            if let Err(e) = cfg.save() {
+                let payload = serde_json::json!({
+                    "type": "telegram_connect_ack",
+                    "ok": false,
+                    "error": format!("save config: {e}"),
+                });
+                (ctx.dispatch)(payload.to_string());
+                return true;
+            }
+            let _ = ctx.shared.input_tx.send(ShellInput::TelegramConnect(cfg));
+            let payload = serde_json::json!({
+                "type": "telegram_connect_ack",
+                "ok": true,
+            });
+            (ctx.dispatch)(payload.to_string());
+        }
+        "telegram_disconnect" => {
+            let _ = ctx.shared.input_tx.send(ShellInput::TelegramDisconnect);
+            let payload = serde_json::json!({
+                "type": "telegram_disconnect_ack",
+                "ok": true,
+            });
+            (ctx.dispatch)(payload.to_string());
+        }
+        "telegram_pairing_approve" => {
+            if let Some(code) = msg.get("code").and_then(|v| v.as_str()) {
+                let _ = ctx
+                    .shared
+                    .input_tx
+                    .send(ShellInput::TelegramPairingApprove {
+                        code: code.to_string(),
+                    });
+            }
+        }
+        "telegram_pairing_reject" => {
+            if let Some(code) = msg.get("code").and_then(|v| v.as_str()) {
+                let _ = ctx.shared.input_tx.send(ShellInput::TelegramPairingReject {
+                    code: code.to_string(),
+                });
+            }
+        }
+
+        // ── Messenger bridge wiring (dev-plan/31) ──────────────────
+        // The GUI MessengerConnectModal hits these. Pairing redemption
+        // mirrors `line_pair`: POST the relay's /pair with the code the
+        // relay DMed the user, save the binding JWT, hand off to the
+        // worker. Status / disconnect mirror the LINE arms.
+        "messenger_status" => {
+            let _ = ctx.shared.input_tx.send(ShellInput::MessengerStatusRequest);
+        }
+        "messenger_pair" => {
+            let code = msg
+                .get("code")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cwd = msg
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    std::env::current_dir()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| ".".into())
+                });
+            let machine_label = msg
+                .get("machine_label")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    std::env::var("HOSTNAME")
+                        .or_else(|_| std::env::var("COMPUTERNAME"))
+                        .unwrap_or_else(|_| "this-machine".into())
+                });
+            let server_url = std::env::var("THCLAWS_MESSENGER_SERVER")
+                .ok()
+                .map(|u| u.trim_end_matches('/').to_string())
+                .unwrap_or_else(|| {
+                    crate::messenger::config::DEFAULT_SERVER_URL
+                        .trim_end_matches('/')
+                        .to_string()
+                });
+            let pair_url = format!("{server_url}/pair");
+            let input_tx = ctx.shared.input_tx.clone();
+            let dispatch = ctx.dispatch.clone();
+            tokio::spawn(async move {
+                let body = serde_json::json!({
+                    "code": code,
+                    "cwd": cwd,
+                    "machine_label": machine_label,
+                });
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(15))
+                    .build()
+                    .expect("reqwest client build");
+                let resp = match client.post(&pair_url).json(&body).send().await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let payload = serde_json::json!({
+                            "type": "messenger_pair_result",
+                            "ok": false,
+                            "error": format!("relay HTTP: {e}"),
+                        });
+                        (dispatch)(payload.to_string());
+                        return;
+                    }
+                };
+                let status = resp.status();
+                let response_text = resp.text().await.unwrap_or_default();
+                if !status.is_success() {
+                    let payload = serde_json::json!({
+                        "type": "messenger_pair_result",
+                        "ok": false,
+                        "error": format!("relay {status}: {response_text}"),
+                    });
+                    (dispatch)(payload.to_string());
+                    return;
+                }
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&response_text).unwrap_or(serde_json::Value::Null);
+                let token = parsed
+                    .get("token")
+                    .and_then(|t| t.as_str())
+                    .filter(|t| !t.is_empty())
+                    .map(String::from);
+                let Some(token) = token else {
+                    let payload = serde_json::json!({
+                        "type": "messenger_pair_result",
+                        "ok": false,
+                        "error": "relay response missing 'token'",
+                    });
+                    (dispatch)(payload.to_string());
+                    return;
+                };
+                let cfg = crate::messenger::MessengerConfig {
+                    binding_token: token,
+                    server_url: Some(server_url.clone()),
+                    page_name: None,
+                    page_id: None,
+                };
+                if let Err(e) = cfg.save() {
+                    let payload = serde_json::json!({
+                        "type": "messenger_pair_result",
+                        "ok": false,
+                        "error": format!("save config: {e}"),
+                    });
+                    (dispatch)(payload.to_string());
+                    return;
+                }
+                let _ = input_tx.send(crate::shared_session::ShellInput::MessengerConnect(cfg));
+                let payload = serde_json::json!({
+                    "type": "messenger_pair_result",
+                    "ok": true,
+                    "server_url": server_url,
+                });
+                (dispatch)(payload.to_string());
+            });
+        }
+        "messenger_disconnect" => {
+            let _ = ctx
+                .shared
+                .input_tx
+                .send(crate::shared_session::ShellInput::MessengerDisconnect);
+            let payload = serde_json::json!({
+                "type": "messenger_disconnect_ack",
+                "ok": true,
+            });
+            (ctx.dispatch)(payload.to_string());
+        }
+
         // ── Working directory (M6.36 SERVE9d — migrated from gui.rs) ─
         "get_cwd" => {
             let cwd = std::env::current_dir()
@@ -841,12 +1056,90 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
                     None,
                 ),
             };
+            // Trigger an in-place system-prompt rebuild on the running
+            // worker — without this, an edit-and-save cycle in the
+            // Settings menu only takes effect on the next session.
+            if ok {
+                let _ = ctx.shared.input_tx.send(ShellInput::InstructionsChanged);
+            }
             let payload = serde_json::json!({
                 "type": "instructions_save_result",
                 "scope": scope,
                 "path": path,
                 "ok": ok,
                 "error": error,
+            });
+            (ctx.dispatch)(payload.to_string());
+        }
+
+        // ── Deploy target (dev-plan/28: /deploy command config) ────
+        "remote_agent_get" => {
+            let url = crate::remote_agent::url();
+            // Resolve the token to learn whether one is stored AND
+            // how long it is — the length is what powers the
+            // ••••• sentinel sizing in the Settings modal (matches
+            // the api_key_status row shape). The value itself is
+            // NEVER returned to the frontend.
+            let token_resolved = crate::remote_agent::token();
+            let has_token = token_resolved.is_some();
+            let token_length = token_resolved.as_deref().map(|t| t.len()).unwrap_or(0);
+            let env_var_set = std::env::var("THCLAWS_REMOTE_AGENT_TOKEN")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            let payload = serde_json::json!({
+                "type": "remote_agent_config",
+                "url": url,
+                "has_token": has_token,
+                "token_length": token_length,
+                "env_var_set": env_var_set,
+                "keychain_writable": crate::remote_agent::keychain_writable(),
+            });
+            (ctx.dispatch)(payload.to_string());
+        }
+
+        "remote_agent_set" => {
+            // url and token are independent — either can be omitted to
+            // update only one. Empty string explicitly clears.
+            let url_arg = msg.get("url").and_then(|v| v.as_str());
+            let token_arg = msg.get("token").and_then(|v| v.as_str());
+            let mut url_ok = true;
+            let mut url_err = String::new();
+            let mut token_ok = true;
+            let mut token_err = String::new();
+
+            if let Some(url) = url_arg {
+                let mut project = crate::config::ProjectConfig::load().unwrap_or_default();
+                let normalized = if url.trim().is_empty() {
+                    None
+                } else {
+                    Some(url)
+                };
+                project.set_remote_agent_url(normalized);
+                if let Err(e) = project.save() {
+                    url_ok = false;
+                    url_err = format!("settings.json write failed: {e}");
+                }
+            }
+
+            if let Some(token) = token_arg {
+                let trimmed = token.trim();
+                let result = if trimmed.is_empty() {
+                    crate::remote_agent::clear_token()
+                } else {
+                    crate::remote_agent::set_token(trimmed)
+                };
+                if let Err(e) = result {
+                    token_ok = false;
+                    token_err = format!("{e}");
+                }
+            }
+
+            let payload = serde_json::json!({
+                "type": "remote_agent_result",
+                "url_ok": url_ok,
+                "url_error": url_err,
+                "token_ok": token_ok,
+                "token_error": token_err,
             });
             (ctx.dispatch)(payload.to_string());
         }
@@ -1146,6 +1439,92 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
             (ctx.dispatch)(payload.to_string());
         }
 
+        // ── Auto-learn project setting ─────────────────────────────
+        // Exposes `ProjectConfig.auto_learn` as a webui toggle so the
+        // setting isn't desktop-GUI-only. See #105.
+        // ── Mid-turn user input injection (issue #106) ──────────────
+        // Push a user-typed message into the agent's injection queue
+        // while the agent is busy. The agent drains the queue at the
+        // next tool_result boundary inside `run_turn`. Frontend uses
+        // this to let the user "steer" the leader between tool calls
+        // without `/stop`-and-restart.
+        "user_input_inject" => {
+            let text = msg
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let id = msg
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            if text.is_empty() {
+                let payload = serde_json::json!({
+                    "type": "user_input_inject_result",
+                    "id": id,
+                    "ok": false,
+                    "error": "empty text",
+                    "pending": 0,
+                });
+                (ctx.dispatch)(payload.to_string());
+                return true;
+            }
+            let pending = {
+                let mut q = ctx
+                    .shared
+                    .injection_queue
+                    .lock()
+                    .expect("injection_queue lock");
+                q.push_back(text);
+                q.len()
+            };
+            let payload = serde_json::json!({
+                "type": "user_input_inject_result",
+                "id": id,
+                "ok": true,
+                "pending": pending,
+            });
+            (ctx.dispatch)(payload.to_string());
+        }
+
+        "auto_learn_get" => {
+            let enabled = crate::config::AppConfig::load()
+                .map(|c| c.auto_learn)
+                .unwrap_or(false);
+            let payload = serde_json::json!({
+                "type": "auto_learn",
+                "enabled": enabled,
+            });
+            (ctx.dispatch)(payload.to_string());
+        }
+
+        "auto_learn_set" => {
+            let enabled = msg
+                .get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let mut cfg = crate::config::ProjectConfig::load().unwrap_or_default();
+            cfg.auto_learn = Some(enabled);
+            let (ok, error) = match cfg.save() {
+                Ok(()) => (true, String::new()),
+                Err(e) => (false, e.to_string()),
+            };
+            let payload = serde_json::json!({
+                "type": "auto_learn_result",
+                "enabled": enabled,
+                "ok": ok,
+                "error": error,
+            });
+            (ctx.dispatch)(payload.to_string());
+            // Reload AppConfig so the next session-end ingest /
+            // reconcile pass sees the new value without a restart.
+            let _ = ctx
+                .shared
+                .input_tx
+                .send(crate::shared_session::ShellInput::ReloadConfig);
+        }
+
         "openrouter_free_only_set" => {
             let enabled = msg
                 .get("enabled")
@@ -1294,6 +1673,235 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
             });
             (ctx.dispatch)(payload.to_string());
             (ctx.dispatch)(crate::kms::build_update_payload().to_string());
+        }
+
+        // Create a new blank KMS page from the per-KMS browser's `+`.
+        // The browser is scoped to one KMS, so `kms` names the target.
+        // `title` is required; `topic`/`category`/`tags` are optional
+        // frontmatter. The page filename is the slugified title. An
+        // empty body lets `write_page` stamp the canonical
+        // `# {title}` / Description header. After writing we re-emit a
+        // fresh `kms_browse_result` so the open browser refreshes.
+        "kms_new_page" => {
+            let kms = msg.get("kms").and_then(|v| v.as_str()).unwrap_or("");
+            let title = msg
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            let topic = msg
+                .get("topic")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            let category = msg
+                .get("category")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            let tags = msg
+                .get("tags")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+
+            let (ok, error, page_name) = if title.is_empty() {
+                (false, "title required".to_string(), String::new())
+            } else {
+                match crate::kms::resolve(kms) {
+                    None => (false, format!("KMS '{kms}' not found"), String::new()),
+                    Some(kref) => {
+                        let slug = crate::kms::sanitize_alias(title);
+                        if slug.is_empty() {
+                            (
+                                false,
+                                "title has no usable characters for a filename".to_string(),
+                                String::new(),
+                            )
+                        } else {
+                            // Build frontmatter; empty body → write_page
+                            // injects the canonical title/Description header.
+                            let mut fm = String::from("---\n");
+                            fm.push_str(&format!("title: {title}\n"));
+                            if !topic.is_empty() {
+                                fm.push_str(&format!("topic: {topic}\n"));
+                            }
+                            if !category.is_empty() {
+                                fm.push_str(&format!("category: {category}\n"));
+                            }
+                            if !tags.is_empty() {
+                                fm.push_str(&format!("tags: {tags}\n"));
+                            }
+                            fm.push_str("---\n\n");
+                            match crate::kms::write_page(&kref, &slug, &fm) {
+                                Ok(_) => (true, String::new(), slug),
+                                Err(e) => (false, e.to_string(), String::new()),
+                            }
+                        }
+                    }
+                }
+            };
+            (ctx.dispatch)(
+                serde_json::json!({
+                    "type": "kms_new_page_result",
+                    "kms": kms,
+                    "name": page_name,
+                    "ok": ok,
+                    "error": error,
+                })
+                .to_string(),
+            );
+            // Refresh the browser listing if the write succeeded.
+            if ok {
+                if let Some(listing) = crate::kms::browse(kms) {
+                    (ctx.dispatch)(
+                        serde_json::json!({
+                            "type": "kms_browse_result",
+                            "kms": listing.kms,
+                            "pages": listing.pages,
+                            "sources": listing.sources,
+                            "ok": true,
+                        })
+                        .to_string(),
+                    );
+                }
+            }
+        }
+
+        // Rename a KMS page from the browser's row context menu. Moves
+        // the file + rewrites inbound links + the index. `name` is the
+        // current page stem; `new_name` is slugified server-side.
+        "kms_rename_page" => {
+            let kms = msg.get("kms").and_then(|v| v.as_str()).unwrap_or("");
+            let name = msg.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let new_name = msg
+                .get("new_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            let (ok, error) = if name.is_empty() || new_name.is_empty() {
+                (false, "name and new_name required".to_string())
+            } else {
+                match crate::kms::resolve(kms) {
+                    None => (false, format!("KMS '{kms}' not found")),
+                    Some(kref) => match crate::kms::rename_page(&kref, name, new_name) {
+                        Ok(_) => (true, String::new()),
+                        Err(e) => (false, e.to_string()),
+                    },
+                }
+            };
+            (ctx.dispatch)(
+                serde_json::json!({
+                    "type": "kms_rename_page_result",
+                    "kms": kms,
+                    "name": name,
+                    "ok": ok,
+                    "error": error,
+                })
+                .to_string(),
+            );
+            if ok {
+                if let Some(listing) = crate::kms::browse(kms) {
+                    (ctx.dispatch)(
+                        serde_json::json!({
+                            "type": "kms_browse_result",
+                            "kms": listing.kms,
+                            "pages": listing.pages,
+                            "sources": listing.sources,
+                            "ok": true,
+                        })
+                        .to_string(),
+                    );
+                }
+            }
+        }
+
+        // Overwrite a KMS page's full content (frontmatter + body) from
+        // the viewer's edit mode. `content` is the recombined markdown
+        // the frontend assembled (edited YAML frontmatter + TipTap body).
+        // write_page re-stamps `updated:`, preserves `created:`, and is
+        // idempotent on the canonical header. Edit never renames — the
+        // filename stays `name` even if the frontmatter title changed.
+        "kms_write_page" => {
+            let kms = msg.get("kms").and_then(|v| v.as_str()).unwrap_or("");
+            let name = msg.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            let (ok, error) = if name.is_empty() {
+                (false, "name required".to_string())
+            } else {
+                match crate::kms::resolve(kms) {
+                    None => (false, format!("KMS '{kms}' not found")),
+                    Some(kref) => match crate::kms::write_page(&kref, name, content) {
+                        Ok(_) => (true, String::new()),
+                        Err(e) => (false, e.to_string()),
+                    },
+                }
+            };
+            (ctx.dispatch)(
+                serde_json::json!({
+                    "type": "kms_write_page_result",
+                    "kms": kms,
+                    "name": name,
+                    "ok": ok,
+                    "error": error,
+                })
+                .to_string(),
+            );
+            if ok {
+                if let Some(listing) = crate::kms::browse(kms) {
+                    (ctx.dispatch)(
+                        serde_json::json!({
+                            "type": "kms_browse_result",
+                            "kms": listing.kms,
+                            "pages": listing.pages,
+                            "sources": listing.sources,
+                            "ok": true,
+                        })
+                        .to_string(),
+                    );
+                }
+            }
+        }
+
+        // Delete a KMS page from the browser's row context menu.
+        "kms_delete_page" => {
+            let kms = msg.get("kms").and_then(|v| v.as_str()).unwrap_or("");
+            let name = msg.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let (ok, error) = if name.is_empty() {
+                (false, "name required".to_string())
+            } else {
+                match crate::kms::resolve(kms) {
+                    None => (false, format!("KMS '{kms}' not found")),
+                    Some(kref) => match crate::kms::delete_page(&kref, name) {
+                        Ok(_) => (true, String::new()),
+                        Err(e) => (false, e.to_string()),
+                    },
+                }
+            };
+            (ctx.dispatch)(
+                serde_json::json!({
+                    "type": "kms_delete_page_result",
+                    "kms": kms,
+                    "name": name,
+                    "ok": ok,
+                    "error": error,
+                })
+                .to_string(),
+            );
+            if ok {
+                if let Some(listing) = crate::kms::browse(kms) {
+                    (ctx.dispatch)(
+                        serde_json::json!({
+                            "type": "kms_browse_result",
+                            "kms": listing.kms,
+                            "pages": listing.pages,
+                            "sources": listing.sources,
+                            "ok": true,
+                        })
+                        .to_string(),
+                    );
+                }
+            }
         }
 
         // ── api_key_set (M6.36 SERVE9f — full rich path) ──────────
@@ -1892,6 +2500,79 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
                 "error": error,
             });
             (ctx.dispatch)(payload.to_string());
+        }
+
+        // Create a new directory (Files-tab explorer context menu).
+        // Sandbox-checked; refuses to clobber an existing path.
+        "file_mkdir" => {
+            let raw_path = msg.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let (ok, error): (bool, Option<String>) = match crate::sandbox::Sandbox::check(raw_path)
+            {
+                Ok(path) => {
+                    if path.exists() {
+                        (
+                            false,
+                            Some("a file or folder with that name already exists".into()),
+                        )
+                    } else {
+                        match std::fs::create_dir_all(&path) {
+                            Ok(()) => (true, None),
+                            Err(e) => (false, Some(format!("mkdir: {e}"))),
+                        }
+                    }
+                }
+                Err(e) => (false, Some(format!("access denied: {e}"))),
+            };
+            (ctx.dispatch)(
+                serde_json::json!({
+                    "type": "file_mkdir_result",
+                    "path": raw_path,
+                    "ok": ok,
+                    "error": error,
+                })
+                .to_string(),
+            );
+        }
+
+        // Create a new empty file (Files-tab explorer context menu).
+        // Sandbox-checked; creates parent dirs; refuses to clobber via
+        // `create_new` (atomic exists-check).
+        "file_create" => {
+            let raw_path = msg.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let (ok, error): (bool, Option<String>) = match crate::sandbox::Sandbox::check(raw_path)
+            {
+                Ok(path) => {
+                    let parent_made = match path.parent() {
+                        Some(parent) => std::fs::create_dir_all(parent)
+                            .map_err(|e| format!("mkdir parent: {e}")),
+                        None => Ok(()),
+                    };
+                    match parent_made {
+                        Err(e) => (false, Some(e)),
+                        Ok(()) => match std::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(&path)
+                        {
+                            Ok(_) => (true, None),
+                            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                                (false, Some("a file with that name already exists".into()))
+                            }
+                            Err(e) => (false, Some(format!("create: {e}"))),
+                        },
+                    }
+                }
+                Err(e) => (false, Some(format!("access denied: {e}"))),
+            };
+            (ctx.dispatch)(
+                serde_json::json!({
+                    "type": "file_create_result",
+                    "path": raw_path,
+                    "ok": ok,
+                    "error": error,
+                })
+                .to_string(),
+            );
         }
 
         // ── Session sidebar mutators (M6.36 SERVE9j) ──────────────

@@ -121,15 +121,20 @@ Always present. When no team exists it shows an empty-state pointer ("No team ag
 
 ### Settings menu (gear icon)
 
-Click the gear ⚙ in the top-right to open a popup menu:
+Click the gear ⚙ on the right side of the status bar (bottom-right of
+the window) to open a popup menu:
+
+![thClaws Settings menu](../user-manual-img/ch-04/thClaws-settings-menu.png)
 
 | Item | Opens |
 |---|---|
 | **Global instructions** | Tiptap markdown editor on `~/.config/thclaws/AGENTS.md` |
 | **Folder instructions** | Tiptap editor on `./AGENTS.md` (in the working directory) |
 | **Provider API keys** | Settings modal for keys — see [chapter 6](ch06-providers-models-api-keys.md) |
-| **Appearance** | Light / Dark / System theme toggle — see below |
-| **GUI scale** | Zoom factor for HiDPI / 4K displays — 75 / 90 / 100 / 110 / 125 / 150 / 175 / 200% (v0.7.3+) |
+| **LINE Connect...** | Pair this thClaws install with your LINE OA so you can drive the agent from your phone — see [chapter 21](ch21-line-and-browser-chat.md) |
+| **APPEARANCE → Light / Dark / System** | Theme toggle — see below |
+| **APPEARANCE → GUI scale** | Zoom factor for HiDPI / 4K displays — 75 / 90 / 100 / 110 / 125 / 150 / 175 / 200% (v0.7.3+) |
+| **WORKSPACE → Agent Teams** | Toggle the Agent Teams feature (writes `teamEnabled` to `.thclaws/settings.json`) — see [chapter 17](ch17-agent-teams.md) |
 
 The Tiptap editor round-trips markdown through `tiptap-markdown`: you edit in a rich-text UI (headings, bold, lists, code fences), save to disk as markdown, and the agent reads the file on its next turn. No lossy conversion for standard Markdown.
 
@@ -199,6 +204,10 @@ Terminal tab and Chat tab **share the same session**. History scrolls together; 
 | KMS (project) | `.thclaws/kms/` inside the working directory |
 | MCP servers (user) | `~/.config/thclaws/mcp.json` |
 | MCP servers (project) | `.mcp.json` or `.thclaws/mcp.json` |
+| Skills (user) | `~/.config/thclaws/skills/` (with `~/.claude/skills/` as fallback) — see [chapter 12](ch12-skills.md) |
+| Skills (project) | `.thclaws/skills/` (with `.claude/skills/` as fallback) — project wins over plugin/user on a name clash |
+| Plugins (user) | `~/.config/thclaws/plugins/<name>/` + registry `~/.config/thclaws/plugins.json` — see [chapter 16](ch16-plugins.md) |
+| Plugins (project) | `.thclaws/plugins/<name>/` + registry `.thclaws/plugins.json` |
 
 ## Changing the working directory mid-session
 

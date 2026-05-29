@@ -215,15 +215,25 @@ pub async fn discover(client: &Client, mcp_url: &str) -> Result<OAuthMetadata> {
     let resource_meta_url = format!("{origin}/.well-known/oauth-protected-resource");
     eprintln!("\x1b[2m[oauth] fetching {resource_meta_url}\x1b[0m");
 
-    let resource_resp = client
-        .get(&resource_meta_url)
-        .send()
-        .await
-        .map_err(|e| Error::Provider(format!("oauth discovery: {e}")))?;
-    let resource: Value = resource_resp
-        .json()
-        .await
-        .map_err(|e| Error::Provider(format!("oauth resource metadata: {e}")))?;
+    // Hard timeout so a stalled/black-holed discovery endpoint can't hang
+    // the caller (`/mcp add`, a startup spawn) indefinitely. Wraps both
+    // the connect+send and the body read.
+    let resource: Value = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let resp = client
+            .get(&resource_meta_url)
+            .send()
+            .await
+            .map_err(|e| Error::Provider(format!("oauth discovery: {e}")))?;
+        resp.json::<Value>()
+            .await
+            .map_err(|e| Error::Provider(format!("oauth resource metadata: {e}")))
+    })
+    .await
+    .map_err(|_| {
+        Error::Provider(format!(
+            "oauth discovery: timed out fetching {resource_meta_url} (15s)"
+        ))
+    })??;
 
     let auth_server = resource
         .get("authorization_servers")
@@ -240,15 +250,22 @@ pub async fn discover(client: &Client, mcp_url: &str) -> Result<OAuthMetadata> {
         "{}/.well-known/oauth-authorization-server",
         auth_server.trim_end_matches('/')
     );
-    let meta_resp = client
-        .get(&meta_url)
-        .send()
-        .await
-        .map_err(|e| Error::Provider(format!("oauth server metadata: {e}")))?;
-    let meta: Value = meta_resp
-        .json()
-        .await
-        .map_err(|e| Error::Provider(format!("oauth server metadata json: {e}")))?;
+    let meta: Value = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let resp = client
+            .get(&meta_url)
+            .send()
+            .await
+            .map_err(|e| Error::Provider(format!("oauth server metadata: {e}")))?;
+        resp.json::<Value>()
+            .await
+            .map_err(|e| Error::Provider(format!("oauth server metadata json: {e}")))
+    })
+    .await
+    .map_err(|_| {
+        Error::Provider(format!(
+            "oauth server metadata: timed out fetching {meta_url} (15s)"
+        ))
+    })??;
 
     let authorization_endpoint = meta
         .get("authorization_endpoint")
@@ -380,33 +397,33 @@ async fn register_dynamic_client(
 
 // ── Authorization flow ───────────────────────────────────────────────
 
-/// Run the full OAuth 2.1 + PKCE browser flow. Opens a browser, waits for
-/// the callback on a local ephemeral HTTP server, exchanges the code for
-/// tokens, and returns a `TokenEntry`. The caller is responsible for storing
-/// it in the `TokenStore`.
-pub async fn authorize(
+/// Build the OAuth /authorize URL (PKCE + state + optional DCR) for a
+/// given redirect_uri. Returns the pieces the caller needs to complete
+/// the flow after the provider redirects back: the URL to send the
+/// user to, the `state` nonce to match in the callback, the
+/// `code_verifier` to present at the token endpoint, the resolved
+/// `client_id` / optional `client_secret`, and the scope string we
+/// asked for. Used by both the laptop loopback flow (binds an
+/// ephemeral port, immediately waits for the redirect) and the pod
+/// public-callback flow (returns the URL to the operator, lets the
+/// provider redirect to `/v1/oauth/callback`, completes the exchange
+/// from there).
+pub async fn begin_authorize(
     client: &Client,
     meta: &OAuthMetadata,
-    _mcp_url: &str,
-) -> Result<TokenEntry> {
+    redirect_uri: &str,
+) -> Result<BeginAuthorize> {
     let (code_verifier, code_challenge) = generate_pkce()?;
     let state = generate_state()?;
 
-    // Find a free local port for the callback server.
-    let listener = find_listener().await?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| Error::Provider(format!("callback addr: {e}")))?
-        .port();
-    let redirect_uri = format!("http://localhost:{port}/callback");
-
-    // RFC 7591 dynamic client registration BEFORE /authorize. Required by
-    // the MCP spec when the AS advertises a `registration_endpoint`; falls
-    // back to the static client_id only when DCR is unavailable.
+    // RFC 7591 dynamic client registration BEFORE /authorize. Same
+    // rationale as the inline path used to have — strict ASes reject
+    // /authorize unless the redirect_uri was registered. We register
+    // fresh per flow with the exact redirect_uri we'll send back.
     let (effective_client_id, client_secret) =
         if let Some(reg_url) = meta.registration_endpoint.as_deref() {
             eprintln!("\x1b[2m[oauth] registering client at {reg_url}\x1b[0m");
-            match register_dynamic_client(client, reg_url, &redirect_uri).await {
+            match register_dynamic_client(client, reg_url, redirect_uri).await {
                 Ok((cid, secret)) => {
                     eprintln!(
                         "\x1b[2m[oauth] registered client_id={cid}{}\x1b[0m",
@@ -425,56 +442,82 @@ pub async fn authorize(
             (CLIENT_ID.to_string(), None)
         };
 
-    // Build the authorization URL.
     let scope = if meta.scopes_supported.is_empty() {
         "hosting:read hosting:write deploy:write".to_string()
     } else {
         meta.scopes_supported.join(" ")
     };
+
     let auth_url = format!(
         "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}\
          &code_challenge={}&code_challenge_method=S256",
         meta.authorization_endpoint,
         urlencoding::encode(&effective_client_id),
-        urlencoding::encode(&redirect_uri),
+        urlencoding::encode(redirect_uri),
         urlencoding::encode(&scope),
         urlencoding::encode(&state),
         urlencoding::encode(&code_challenge),
     );
 
-    eprintln!("\x1b[36m[oauth] opening browser for authorization…\x1b[0m");
-    open_browser(&auth_url);
+    Ok(BeginAuthorize {
+        auth_url,
+        state,
+        code_verifier,
+        client_id: effective_client_id,
+        client_secret,
+        scope,
+        redirect_uri: redirect_uri.to_string(),
+    })
+}
 
-    // Wait for the callback.
-    let code = wait_for_callback(listener, &state).await?;
+/// Output of [`begin_authorize`] — everything the eventual code
+/// exchange needs.
+pub struct BeginAuthorize {
+    pub auth_url: String,
+    pub state: String,
+    pub code_verifier: String,
+    pub client_id: String,
+    pub client_secret: Option<String>,
+    pub scope: String,
+    pub redirect_uri: String,
+}
 
-    eprintln!("\x1b[36m[oauth] exchanging code for tokens…\x1b[0m");
-
-    // Exchange code for tokens. For confidential clients (DCR-issued
-    // secret) authenticate via Basic auth on the token endpoint, per
-    // RFC 6749 §2.3.1; the body still carries client_id for parity.
+/// Exchange an authorization `code` for a `TokenEntry`. Shared by the
+/// laptop loopback flow (called inline after `wait_for_callback`) and
+/// the pod public-callback flow (called from the
+/// `/v1/oauth/callback` handler in `api_v1::oauth_callback`).
+#[allow(clippy::too_many_arguments)]
+pub async fn exchange_code_for_token(
+    client: &Client,
+    token_endpoint: &str,
+    code: &str,
+    redirect_uri: &str,
+    client_id: &str,
+    client_secret: Option<&str>,
+    code_verifier: &str,
+    requested_scope: &str,
+    authorization_server_origin: &str,
+) -> Result<TokenEntry> {
     let mut form: Vec<(&str, &str)> = vec![
         ("grant_type", "authorization_code"),
-        ("code", &code),
-        ("redirect_uri", &redirect_uri),
-        ("client_id", &effective_client_id),
-        ("code_verifier", &code_verifier),
+        ("code", code),
+        ("redirect_uri", redirect_uri),
+        ("client_id", client_id),
+        ("code_verifier", code_verifier),
     ];
-    if let Some(s) = client_secret.as_deref() {
+    if let Some(s) = client_secret {
         form.push(("client_secret", s));
     }
     let token_resp = client
-        .post(&meta.token_endpoint)
+        .post(token_endpoint)
         .form(&form)
         .send()
         .await
         .map_err(|e| Error::Provider(format!("token exchange: {e}")))?;
-
     if !token_resp.status().is_success() {
         let text = token_resp.text().await.unwrap_or_default();
         return Err(Error::Provider(format!("token exchange failed: {text}")));
     }
-
     let tv: Value = token_resp
         .json()
         .await
@@ -494,21 +537,16 @@ pub async fn authorize(
         .and_then(|v| v.as_u64())
         .unwrap_or(3600);
 
-    // Validate granted scope. RFC 6749 §5.1 says the `scope` field is
-    // OPTIONAL in the response — if present, it's the set actually
-    // granted. If it differs from what we asked for, warn loudly so
-    // the user notices a server that silently narrowed / widened the
-    // grant; we accept the narrower set either way (we have no way to
-    // require the wider).
     if let Some(granted) = tv.get("scope").and_then(|v| v.as_str()) {
-        let requested: std::collections::HashSet<&str> = scope.split_whitespace().collect();
+        let requested: std::collections::HashSet<&str> =
+            requested_scope.split_whitespace().collect();
         let got: std::collections::HashSet<&str> = granted.split_whitespace().collect();
         let missing: Vec<&str> = requested.difference(&got).copied().collect();
         let extra: Vec<&str> = got.difference(&requested).copied().collect();
         if !missing.is_empty() || !extra.is_empty() {
             eprintln!(
                 "\x1b[33m[oauth] scope mismatch — requested: [{}], granted: [{}]\x1b[0m",
-                scope, granted
+                requested_scope, granted
             );
             if !missing.is_empty() {
                 eprintln!(
@@ -529,23 +567,63 @@ pub async fn authorize(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-
     eprintln!(
         "\x1b[32m[oauth] authorized successfully\x1b[0m\n\x1b[2m  token ({}B): {}…\n  has_refresh: {}\x1b[0m",
         access_token.len(),
         &access_token[..access_token.len().min(40)],
         refresh_token.is_some()
     );
-
     Ok(TokenEntry {
         access_token,
         refresh_token,
-        token_endpoint: meta.token_endpoint.clone(),
+        token_endpoint: token_endpoint.to_string(),
         expires_at: now + expires_in,
-        authorization_server: Some(meta.authorization_server_origin.clone()),
-        client_id: Some(effective_client_id),
-        client_secret,
+        authorization_server: Some(authorization_server_origin.to_string()),
+        client_id: Some(client_id.to_string()),
+        client_secret: client_secret.map(|s| s.to_string()),
     })
+}
+
+/// Run the full OAuth 2.1 + PKCE browser flow. Opens a browser, waits
+/// for the callback on a local ephemeral HTTP server, exchanges the
+/// code for tokens, and returns a `TokenEntry`. The caller is
+/// responsible for storing it in the `TokenStore`. Used by the laptop
+/// path; pod-side flows use [`begin_authorize`] +
+/// [`exchange_code_for_token`] directly so the redirect can land on a
+/// public URL.
+pub async fn authorize(
+    client: &Client,
+    meta: &OAuthMetadata,
+    _mcp_url: &str,
+) -> Result<TokenEntry> {
+    // Find a free local port for the callback server.
+    let listener = find_listener().await?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| Error::Provider(format!("callback addr: {e}")))?
+        .port();
+    let redirect_uri = format!("http://localhost:{port}/callback");
+
+    let begin = begin_authorize(client, meta, &redirect_uri).await?;
+
+    eprintln!("\x1b[36m[oauth] opening browser for authorization…\x1b[0m");
+    open_browser(&begin.auth_url);
+
+    let code = wait_for_callback(listener, &begin.state).await?;
+
+    eprintln!("\x1b[36m[oauth] exchanging code for tokens…\x1b[0m");
+    exchange_code_for_token(
+        client,
+        &meta.token_endpoint,
+        &code,
+        &begin.redirect_uri,
+        &begin.client_id,
+        begin.client_secret.as_deref(),
+        &begin.code_verifier,
+        &begin.scope,
+        &meta.authorization_server_origin,
+    )
+    .await
 }
 
 /// Try to refresh an expired token. Returns a new TokenEntry on success.

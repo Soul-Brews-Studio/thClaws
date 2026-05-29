@@ -39,6 +39,49 @@ fn readline_config() -> rustyline::Config {
     let builder = builder.behavior(rustyline::Behavior::PreferTerm);
     builder.build()
 }
+
+/// Number of codepoints in the last `n` grapheme clusters of `before`
+/// (the text left of the cursor). Drives grapheme-aware Backspace so a
+/// single press deletes a whole user-perceived character — Thai/Lao
+/// consonant + vowel/tone marks, Hindi/Arabic combining marks, emoji ZWJ
+/// sequences — instead of orphaning one codepoint at a time. `0` when
+/// `before` is empty (caller falls back to rustyline's default).
+fn grapheme_backspace_chars(before: &str, n: usize) -> usize {
+    use unicode_segmentation::UnicodeSegmentation;
+    before
+        .graphemes(true)
+        .rev()
+        .take(n.max(1))
+        .map(|g| g.chars().count())
+        .sum()
+}
+
+/// rustyline keybinding: make Backspace delete a grapheme cluster rather
+/// than a single codepoint. The default Backspace is
+/// `Cmd::Kill(Movement::BackwardChar(1))`; we generalise the count to the
+/// cluster size at the cursor. Avoids vendoring/forking rustyline (cf.
+/// thClaws#126) — it's the public `ConditionalEventHandler` API.
+struct GraphemeBackspace;
+
+impl rustyline::ConditionalEventHandler for GraphemeBackspace {
+    fn handle(
+        &self,
+        _evt: &rustyline::Event,
+        n: rustyline::RepeatCount,
+        _positive: bool,
+        ctx: &rustyline::EventContext,
+    ) -> Option<rustyline::Cmd> {
+        let before = &ctx.line()[..ctx.pos()];
+        let chars = grapheme_backspace_chars(before, n);
+        // At beginning-of-line (nothing to delete) defer to the default.
+        if chars == 0 {
+            return None;
+        }
+        Some(rustyline::Cmd::Kill(rustyline::Movement::BackwardChar(
+            chars,
+        )))
+    }
+}
 /// Render the current plan as a coloured ANSI block for the CLI
 /// terminal — analogue of the right-side `PlanSidebar` component the
 /// GUI chat tab gets. M5 CLI parity. Called from the agent loop after
@@ -177,6 +220,12 @@ pub enum SlashCommand {
         key: String,
         value: String,
     },
+    /// Session-level cost counter shown alongside the per-turn token
+    /// line. `reset: true` zeroes the accumulator; `reset: false`
+    /// prints the current value.
+    Cost {
+        reset: bool,
+    },
     Save,
     Load(String),
     Sessions,
@@ -291,6 +340,10 @@ pub enum SlashCommand {
         name: String,
         url: String,
         user: bool,
+        /// Optional HTTP headers from repeatable `--header "K: V"` flags.
+        /// Values may contain `${VAR}` — resolved from the environment at
+        /// connection time so secrets stay out of mcp.json.
+        headers: Vec<(String, String)>,
     },
     /// `/mcp add <name> <command> [args...]` — stdio transport, sibling
     /// of `McpAdd` (HTTP). Routed by `parse_mcp_subcommand` based on
@@ -304,6 +357,14 @@ pub enum SlashCommand {
     McpRemove {
         name: String,
         user: bool,
+    },
+    /// `/mcp reauth <name>` — re-authorize a remote (HTTP) MCP server.
+    /// Clears any cached token for that server and runs a fresh OAuth
+    /// flow: laptop opens the user's browser, pod surfaces a clickable
+    /// auth URL whose redirect lands on `/v1/oauth/callback`. See
+    /// `api_v1::oauth_callback` for the pod-side flow.
+    McpReauth {
+        name: String,
     },
     Plugins,
     PluginInstall {
@@ -347,6 +408,13 @@ pub enum SlashCommand {
     /// session's on-disk JSONL has grown past the working threshold
     /// and continuing in-place would keep bloating the file.
     Fork,
+    /// `/reload` — re-execute the current thclaws binary in place.
+    /// Drops in-memory state (MCP handles, system prompt, skill
+    /// caches, current chat) and starts fresh; on-disk sessions
+    /// survive so the user can resume. Works the same on pod
+    /// (--serve) and laptop (GUI/CLI). For a real container restart
+    /// that picks up a new image, use `/deploy --restart` instead.
+    Reload,
     Doctor,
     Skills,
     /// Org-policy SSO subcommands (Phase 4).
@@ -598,6 +666,30 @@ pub enum SlashCommand {
         /// 3b inside dream.md) to every page Pass 3 touched.
         all_sessions: bool,
     },
+    /// `/deploy [--pod URL] [--token TOKEN] [--dry-run] [--full]
+    /// [--include-memory] [--allow-stdio-mcp] [--no-restart]` — ship
+    /// the current project's .thclaws/ to a thclaws --serve pod.
+    /// URL + token default to the configured deploy target
+    /// (remote_agent_url + remote-agent-token keychain entry). The
+    /// pod is restarted by default after the swap so MCP servers,
+    /// plugin runtimes, skill caches, and the system prompt
+    /// re-initialise; pass --no-restart to keep the running process
+    /// up. See dev-plan/28.
+    Deploy {
+        pod: Option<String>,
+        token: Option<String>,
+        dry_run: bool,
+        full: bool,
+        include_memory: bool,
+        allow_stdio_mcp: bool,
+        restart: bool,
+    },
+    /// dev-plan/32 Stage B: author + run a deterministic workflow
+    /// script for the given goal. The model writes a JS file using the
+    /// `thclaws.*` API; the REPL shows it for review; on approve, Boa
+    /// executes it and prints the script's final value. The arg is the
+    /// raw user goal — everything after `/workflow run`.
+    WorkflowRun(String),
     Unknown(String),
 }
 
@@ -732,6 +824,32 @@ fn parse_plugin_subcommand(cmd: &str, args: &str) -> SlashCommand {
 /// Bare `/schedule` lists. `add` is intentionally not supported as a
 /// slash command — multi-line prompt + cron + flags doesn't fit a
 /// REPL line cleanly; users go to `thclaws schedule add` for that.
+/// dev-plan/32 Stage B. Only `run` is wired so far; `list` / `inspect`
+/// / `rm` land in Tier 2 alongside resume support.
+fn parse_workflow_subcommand(args: &str) -> SlashCommand {
+    let args = args.trim();
+    let (sub, rest) = args.split_once(char::is_whitespace).unwrap_or((args, ""));
+    let rest = rest.trim();
+    match sub {
+        "run" => {
+            if rest.is_empty() {
+                SlashCommand::Unknown(
+                    "usage: /workflow run <goal> — describe what the workflow should accomplish"
+                        .to_string(),
+                )
+            } else {
+                SlashCommand::WorkflowRun(rest.to_string())
+            }
+        }
+        "" => SlashCommand::Unknown(
+            "usage: /workflow run <goal>  (Tier 1 — list/inspect/rm land in Tier 2)".to_string(),
+        ),
+        _ => SlashCommand::Unknown(format!(
+            "unknown workflow subcommand: '{sub}' (Tier 1 only ships /workflow run)"
+        )),
+    }
+}
+
 fn parse_schedule_subcommand(args: &str) -> SlashCommand {
     let args = args.trim();
     if args.is_empty() || args == "list" || args == "ls" {
@@ -1015,45 +1133,87 @@ fn parse_mcp_subcommand(args: &str) -> SlashCommand {
     let (sub, rest) = args.split_once(char::is_whitespace).unwrap_or((args, ""));
     match sub {
         "add" => {
-            let mut parts: Vec<&str> = rest.split_whitespace().collect();
+            // Quote-aware tokenize so `--header "X-API-KEY: abc"` keeps
+            // its value (which contains a space after the colon) intact.
+            let tokens = tokenize_quoted(rest);
             let mut user = false;
-            if parts.first().copied() == Some("--user") {
-                user = true;
-                parts.remove(0);
-            } else if parts.first().copied() == Some("--project") {
-                parts.remove(0);
+            let mut idx = 0;
+            // Leading scope flags. (`--header` is parsed *after* the URL,
+            // curl-style, so a stdio command's own flags pass through.)
+            while idx < tokens.len() {
+                match tokens[idx].as_str() {
+                    "--user" => {
+                        user = true;
+                        idx += 1;
+                    }
+                    "--project" => {
+                        idx += 1;
+                    }
+                    _ => break,
+                }
             }
+            let positionals = &tokens[idx..];
             // Need at least <name> <url-or-command>.
-            if parts.len() < 2 {
+            if positionals.len() < 2 {
                 return SlashCommand::Unknown(
-                    "usage: /mcp add [--user] <name> <url>\n   or: /mcp add [--user] <name> <command> [args...]"
+                    "usage: /mcp add [--user] <name> <url> [--header \"Key: Value\"]\n   or: /mcp add [--user] <name> <command> [args...]"
                         .into(),
                 );
             }
-            let name = parts[0].to_string();
-            let target = parts[1];
+            let name = positionals[0].clone();
+            let target = positionals[1].clone();
+            let trailing = &positionals[2..];
             // Route by shape: a URL means HTTP transport; anything
             // else is treated as a stdio command. We don't probe the
             // command — first spawn happens in the dispatch arm and
             // surfaces any failure (missing binary, missing env, etc.)
             // via the existing error path.
             if target.starts_with("http://") || target.starts_with("https://") {
-                if parts.len() != 2 {
-                    return SlashCommand::Unknown(
-                        "usage: /mcp add [--user] <name> <url> (HTTP transport takes no extra args)"
-                            .into(),
-                    );
+                // Trailing tokens for HTTP are `--header`/`-H "Key: Value"`
+                // pairs (repeatable). Values may contain `${VAR}`, resolved
+                // from the environment at connect time.
+                let mut headers: Vec<(String, String)> = Vec::new();
+                let mut j = 0;
+                while j < trailing.len() {
+                    match trailing[j].as_str() {
+                        "--header" | "-H" => {
+                            let Some(spec) = trailing.get(j + 1) else {
+                                return SlashCommand::Unknown(
+                                    "--header expects a following \"Key: Value\"".into(),
+                                );
+                            };
+                            let Some((k, v)) = spec.split_once(':') else {
+                                return SlashCommand::Unknown(format!(
+                                    "--header expects \"Key: Value\" (got '{spec}')"
+                                ));
+                            };
+                            let key = k.trim();
+                            if key.is_empty() {
+                                return SlashCommand::Unknown(format!(
+                                    "--header has an empty key (got '{spec}')"
+                                ));
+                            }
+                            headers.push((key.to_string(), v.trim().to_string()));
+                            j += 2;
+                        }
+                        other => {
+                            return SlashCommand::Unknown(format!(
+                                "unexpected arg '{other}' after <url> — HTTP transport accepts only --header \"Key: Value\""
+                            ));
+                        }
+                    }
                 }
                 SlashCommand::McpAdd {
                     name,
-                    url: target.to_string(),
+                    url: target,
                     user,
+                    headers,
                 }
             } else {
                 SlashCommand::McpAddStdio {
                     name,
-                    command: target.to_string(),
-                    args: parts[2..].iter().map(|s| (*s).to_string()).collect(),
+                    command: target,
+                    args: trailing.iter().map(|s| s.to_string()).collect(),
                     user,
                 }
             }
@@ -1110,8 +1270,19 @@ fn parse_mcp_subcommand(args: &str) -> SlashCommand {
                 _ => SlashCommand::Unknown("usage: /mcp install [--user] <name>".into()),
             }
         }
+        "reauth" | "login" => {
+            let parts: Vec<&str> = rest.split_whitespace().collect();
+            match parts.as_slice() {
+                [name] => SlashCommand::McpReauth {
+                    name: (*name).to_string(),
+                },
+                _ => SlashCommand::Unknown(
+                    "usage: /mcp reauth <name>  (re-authorize a remote MCP server)".into(),
+                ),
+            }
+        }
         other => SlashCommand::Unknown(format!(
-            "unknown mcp subcommand: '{other}' (try: /mcp, /mcp add, /mcp remove, /mcp marketplace, /mcp search, /mcp info, /mcp install)"
+            "unknown mcp subcommand: '{other}' (try: /mcp, /mcp add, /mcp remove, /mcp reauth, /mcp marketplace, /mcp search, /mcp info, /mcp install)"
         )),
     }
 }
@@ -1290,7 +1461,15 @@ pub fn parse_slash(input: &str) -> Option<SlashCommand> {
         "cwd" | "pwd" => SlashCommand::Cwd,
         "thinking" => SlashCommand::Thinking(args.to_string()),
         "compact" => SlashCommand::Compact,
+        "cost" => match args {
+            "" => SlashCommand::Cost { reset: false },
+            "reset" | "clear" | "zero" => SlashCommand::Cost { reset: true },
+            other => SlashCommand::Unknown(format!(
+                "unknown /cost subcommand: '{other}' (try: /cost, /cost reset)"
+            )),
+        },
         "fork" => SlashCommand::Fork,
+        "reload" | "restart" => SlashCommand::Reload,
         "doctor" | "diag" => SlashCommand::Doctor,
         "sso" => match args.trim() {
             "" | "status" => SlashCommand::Sso {
@@ -1383,8 +1562,10 @@ pub fn parse_slash(input: &str) -> Option<SlashCommand> {
         "loop" => parse_loop_subcommand(args),
         "goal" => parse_goal_subcommand(args),
         "schedule" | "sched" => parse_schedule_subcommand(args),
+        "workflow" | "wf" => parse_workflow_subcommand(args),
         "agent" => parse_agent_subcommand(args),
         "agents" => SlashCommand::AgentsList,
+        "deploy" => parse_deploy_subcommand(args),
         "dream" => {
             // Parse `--all` flag (order-insensitive). Anything else is
             // the focus topic. `/dream auth --all` and `/dream --all
@@ -1422,6 +1603,66 @@ pub fn parse_slash(input: &str) -> Option<SlashCommand> {
         }
         _ => SlashCommand::Unknown(cmd.to_string()),
     })
+}
+
+/// Parse `/deploy [--pod URL] [--token TOKEN] [--dry-run] [--full]
+/// [--include-memory] [--allow-stdio-mcp] [--no-restart]`. All flags
+/// optional — missing URL/token fall back to the configured
+/// remote-agent target (see dev-plan/28). The pod is restarted by
+/// default; `--no-restart` opts out.
+fn parse_deploy_subcommand(args: &str) -> SlashCommand {
+    let mut pod: Option<String> = None;
+    let mut token: Option<String> = None;
+    let mut dry_run = false;
+    let mut full = false;
+    let mut include_memory = false;
+    let mut allow_stdio_mcp = false;
+    let mut restart = true;
+    let mut tokens = args.split_whitespace().peekable();
+    while let Some(tok) = tokens.next() {
+        match tok {
+            "--dry-run" | "--plan" => dry_run = true,
+            "--full" | "--no-diff" => full = true,
+            "--include-memory" => include_memory = true,
+            "--allow-stdio-mcp" => allow_stdio_mcp = true,
+            // Default-on — accepted as a no-op for muscle-memory
+            // compatibility with v0.13.4's --restart opt-in flag.
+            "--restart" => restart = true,
+            "--no-restart" => restart = false,
+            "--pod" => {
+                pod = tokens.next().map(|s| s.to_string());
+                if pod.as_deref().is_none() {
+                    return SlashCommand::Unknown("--pod requires a URL".into());
+                }
+            }
+            "--token" => {
+                token = tokens.next().map(|s| s.to_string());
+                if token.as_deref().is_none() {
+                    return SlashCommand::Unknown("--token requires a value".into());
+                }
+            }
+            other if other.starts_with("--pod=") => {
+                pod = Some(other.trim_start_matches("--pod=").to_string());
+            }
+            other if other.starts_with("--token=") => {
+                token = Some(other.trim_start_matches("--token=").to_string());
+            }
+            other => {
+                return SlashCommand::Unknown(format!(
+                    "unknown arg '{other}' — usage: /deploy [--pod URL] [--token T] [--dry-run] [--full] [--include-memory] [--allow-stdio-mcp] [--no-restart]"
+                ));
+            }
+        }
+    }
+    SlashCommand::Deploy {
+        pod,
+        token,
+        dry_run,
+        full,
+        include_memory,
+        allow_stdio_mcp,
+        restart,
+    }
 }
 
 /// Parse `/agent <name> <prompt>` and `/agent cancel <id>`. Bare
@@ -2779,6 +3020,7 @@ pub fn built_in_commands() -> &'static [BuiltInCommand] {
         BuiltInCommand { name: "clear",    description: "Clear conversation history",                 category: "Session", usage: "" },
         BuiltInCommand { name: "compact",  description: "Compact history (drop oldest, keep recent)", category: "Session", usage: "" },
         BuiltInCommand { name: "fork",     description: "Save + start a new session seeded with a summary", category: "Session", usage: "" },
+        BuiltInCommand { name: "reload",   description: "Re-exec thclaws (re-init MCP / system prompt; sessions survive)", category: "Session", usage: "" },
         BuiltInCommand { name: "save",     description: "Force-save the current session",             category: "Session", usage: "" },
         BuiltInCommand { name: "load",     description: "Load a saved session by id or name",         category: "Session", usage: "ID|NAME" },
         BuiltInCommand { name: "sessions", description: "List saved sessions",                        category: "Session", usage: "" },
@@ -2791,7 +3033,7 @@ pub fn built_in_commands() -> &'static [BuiltInCommand] {
         BuiltInCommand { name: "provider",  description: "Switch provider to its default model",      category: "Model", usage: "NAME" },
         BuiltInCommand { name: "providers", description: "List all supported providers",              category: "Model", usage: "" },
         BuiltInCommand { name: "thinking",  description: "Set extended-thinking token budget",        category: "Model", usage: "BUDGET" },
-        BuiltInCommand { name: "permissions", description: "Show or set the permission mode",         category: "Model", usage: "[auto|ask]" },
+        BuiltInCommand { name: "permissions", description: "Show or set the permission mode",         category: "Model", usage: "[auto|ask|linegated]" },
         BuiltInCommand { name: "plan",        description: "Toggle plan mode (read-only + sidebar)", category: "Model", usage: "[enter|exit|status]" },
 
         // Context / memory / knowledge
@@ -2805,7 +3047,7 @@ pub fn built_in_commands() -> &'static [BuiltInCommand] {
         BuiltInCommand { name: "skill",    description: "Skill subcommands (install / marketplace / search / info / show)", category: "Extensions", usage: "<sub> [args]" },
         BuiltInCommand { name: "plugins",  description: "List installed plugins",                     category: "Extensions", usage: "" },
         BuiltInCommand { name: "plugin",   description: "Plugin subcommands (install / marketplace / search / info / show / enable / disable)", category: "Extensions", usage: "<sub> [args]" },
-        BuiltInCommand { name: "mcp",      description: "MCP subcommands (add / remove / install / marketplace / search / info)", category: "Extensions", usage: "[sub] [args]" },
+        BuiltInCommand { name: "mcp",      description: "MCP subcommands (add / remove / install / reauth / marketplace / search / info)", category: "Extensions", usage: "[sub] [args]" },
 
         // Team
         BuiltInCommand { name: "team",     description: "Show team agent status",                     category: "Team", usage: "" },
@@ -2814,11 +3056,15 @@ pub fn built_in_commands() -> &'static [BuiltInCommand] {
         // Research
         BuiltInCommand { name: "research", description: "Background research → KMS",                  category: "Research", usage: "<query> | list | status <id> | show <id> | cancel <id> | wait <id>" },
 
+        // Deploy
+        BuiltInCommand { name: "deploy",   description: "Ship .thclaws/ to a remote pod (dev-plan/28)", category: "Deploy", usage: "[--pod URL] [--token T] [--dry-run] [--full] [--no-restart]" },
+
         // System
         BuiltInCommand { name: "help",     description: "Show this help",                             category: "System", usage: "" },
         BuiltInCommand { name: "version",  description: "Show version",                               category: "System", usage: "" },
         BuiltInCommand { name: "cwd",      description: "Show current working directory",             category: "System", usage: "" },
         BuiltInCommand { name: "usage",    description: "Show token usage by provider and model",     category: "System", usage: "" },
+        BuiltInCommand { name: "cost",     description: "Show or reset accumulated session cost",     category: "System", usage: "[reset]" },
         BuiltInCommand { name: "doctor",   description: "Run diagnostics",                            category: "System", usage: "" },
         BuiltInCommand { name: "config",   description: "Set a config value (session-only)",          category: "System", usage: "key=value" },
         BuiltInCommand { name: "quit",     description: "Exit",                                       category: "System", usage: "" },
@@ -2971,10 +3217,13 @@ pub fn render_help() -> &'static str {
      /memory           List memory entries\n  \
      /memory read NAME Show a memory entry by name\n  \
      /mcp              List active MCP servers and their tools\n  \
-     /mcp add [--user] <name> <url>\n  \
+     /mcp add [--user] <name> <url> [--header \"K: V\"]\n  \
                        Register a remote (HTTP) MCP server. Writes to\n  \
                        .thclaws/mcp.json (or ~/.config/thclaws/mcp.json\n  \
                        with --user), then connects and registers tools.\n  \
+                       --header (repeatable) sets auth headers, e.g.\n  \
+                       --header \"X-API-KEY: ${MY_KEY}\" (${VAR} resolves\n  \
+                       from the environment at connect time).\n  \
      /mcp add [--user] <name> <command> [args...]\n  \
                        Register a local (stdio) MCP server. Same persist\n  \
                        + spawn flow; first arg is the binary, remaining\n  \
@@ -3000,6 +3249,8 @@ pub fn render_help() -> &'static str {
      /version          Show version\n  \
      /team             Attach to team tmux session (or show status)\n  \
      /usage            Show token usage by provider and model\n  \
+     /cost             Show accumulated session cost in USD\n  \
+     /cost reset       Zero the session cost counter\n  \
      /skill show NAME  Show full description + path for a skill\n  \
      /skill install [--user] <url> [name]\n  \
      \x20                 Install a skill (or bundle) from a git repo or\n  \
@@ -3466,23 +3717,15 @@ pub async fn build_provider_with_fallback(
     }
     let original = config.model.clone();
 
-    // 2. Walk a preference list. Cloud providers only succeed when a
-    //    matching key exists (shell export > keychain > .env). Ollama
-    //    variants always *build* successfully, so we probe the endpoint
-    //    before offering them as a fallback — otherwise a user with no
-    //    keys AND no local Ollama gets a noisy "model not found" loop
-    //    on the first prompt.
+    // 2. Walk a free-fallback list ONLY. Paid providers are
+    //    deliberately excluded: silently swapping a user's
+    //    openrouter (or other) configuration to Anthropic when a
+    //    transient build failure happens has caused real bill
+    //    surprises. Ollama variants always *build* successfully so
+    //    we probe the daemon before offering them — otherwise a
+    //    user with no key AND no local Ollama gets a noisy
+    //    "model not found" loop on the first prompt.
     let fallback_order: &[ProviderKind] = &[
-        ProviderKind::Anthropic,
-        ProviderKind::OpenAI,
-        ProviderKind::AgenticPress,
-        ProviderKind::OpenRouter,
-        ProviderKind::Gemini,
-        ProviderKind::DashScope,
-        ProviderKind::QwenCloud,
-        ProviderKind::ZAi,
-        ProviderKind::ThaiLLM,
-        ProviderKind::OpenCodeGo,
         ProviderKind::Ollama,
         ProviderKind::OllamaAnthropic,
         ProviderKind::OllamaCloud,
@@ -3496,7 +3739,7 @@ pub async fn build_provider_with_fallback(
         config.model = kind.default_model().to_string();
         if let Ok(p) = build_provider(config) {
             let warning = format!(
-                "no API key for {} — falling back to {} (model: {})",
+                "{} couldn't be built — falling back to local {} (model: {}). Fix the credential or run `/model <provider>/<model>` to switch.",
                 ProviderKind::detect(&original)
                     .map(|k| k.name())
                     .unwrap_or("<unknown>"),
@@ -3507,12 +3750,15 @@ pub async fn build_provider_with_fallback(
         }
     }
 
-    // 3. Nothing works — restore the original model so the rest of the
-    //    REPL still shows what the user had configured, and let the
-    //    caller degrade gracefully.
+    // 3. Nothing free works — restore the original model so the
+    //    user's settings.json is untouched and let the caller
+    //    degrade gracefully. No silent swap to a paid provider.
     config.model = original;
     (None, Some(
-        "no usable LLM provider — set an API key via Settings → Provider API keys, or start Ollama (see Chapter 2)".into(),
+        format!(
+            "no usable LLM provider for `{}` and no local fallback (Ollama / LMStudio) reachable. Set an API key via Settings → Provider API keys, run `/model <provider>/<model>` to switch, or start a local runtime (see Chapter 2).",
+            config.model
+        ),
     ))
 }
 
@@ -4386,10 +4632,16 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                 let _ = mailbox.write_status(agent_name, "working", Some(&msg.id));
                 let mut last_heartbeat = std::time::Instant::now();
                 let turn_start = std::time::Instant::now();
+                let mut team_active_tools: std::collections::HashMap<
+                    String,
+                    crate::tool_display::ActiveToolDisplay,
+                > = std::collections::HashMap::new();
 
                 // Run the agent turn.
                 let mut stream = Box::pin(agent.run_turn(prompt));
                 loop {
+                    let heartbeat_delay =
+                        crate::tool_display::next_heartbeat_delay(&team_active_tools);
                     let ev = tokio::select! {
                         ev = stream.next() => ev,
                         _ = tokio::signal::ctrl_c() => {
@@ -4397,23 +4649,48 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                             drop(stream);
                             break;
                         }
+                        _ = tokio::time::sleep(heartbeat_delay) => {
+                            if let Some(id) = crate::tool_display::oldest_due_heartbeat(&team_active_tools).map(|(k, _)| k.clone()) {
+                                if let Some(td) = team_active_tools.get_mut(&id) {
+                                    team_println!("\n{}", crate::tool_display::format_tool_heartbeat(&td.label, td.elapsed()));
+                                    td.last_heartbeat_at = std::time::Instant::now();
+                                }
+                            }
+                            continue;
+                        }
                     };
                     let Some(ev) = ev else { break };
                     match ev {
                         Ok(AgentEvent::Text(s)) => {
                             team_print!("{s}");
-                            // Throttled heartbeat — update every 30s on any output.
                             if last_heartbeat.elapsed().as_secs() >= 30 {
                                 let _ = mailbox.write_status(agent_name, "working", None);
                                 last_heartbeat = std::time::Instant::now();
                             }
                         }
-                        Ok(AgentEvent::ToolCallStart { name, .. }) => {
-                            team_print!("\n[tool: {name}]");
+                        Ok(AgentEvent::ToolCallStart {
+                            id, name, input, ..
+                        }) => {
+                            let label = crate::tool_display::tool_label(&name, &input);
+                            team_active_tools.insert(
+                                id,
+                                crate::tool_display::ActiveToolDisplay::new(label.clone()),
+                            );
+                            team_print!("\n[tool: {label}]");
                         }
-                        Ok(AgentEvent::ToolCallResult { output, .. }) => {
-                            team_println!("{}", if output.is_ok() { " ✓" } else { " ✗" });
-                            // Update heartbeat on tool completion.
+                        Ok(AgentEvent::ToolCallResult { id, output, .. }) => {
+                            let dur = team_active_tools.remove(&id).map(|t| t.elapsed());
+                            let dur_str = dur
+                                .map(|d| format!(" {}", crate::tool_display::format_duration(d)))
+                                .unwrap_or_default();
+                            team_println!(
+                                "{}",
+                                if output.is_ok() {
+                                    format!(" ✓{dur_str}")
+                                } else {
+                                    format!(" ✗{dur_str}")
+                                }
+                            );
                             let _ = mailbox.write_status(agent_name, "working", None);
                             last_heartbeat = std::time::Instant::now();
                         }
@@ -4530,6 +4807,13 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
     > = rustyline::Editor::with_config(readline_config())
         .map_err(|e| Error::Agent(format!("readline init: {e}")))?;
     rl.set_helper(Some(crate::cli_completer::SlashCompleter));
+    // Grapheme-aware Backspace: one press deletes a whole cluster, so
+    // Thai/Lao/Hindi/Arabic combining marks (and emoji ZWJ runs) aren't
+    // orphaned a codepoint at a time. thClaws#126.
+    rl.bind_sequence(
+        rustyline::KeyEvent(rustyline::KeyCode::Backspace, rustyline::Modifiers::NONE),
+        rustyline::EventHandler::Conditional(Box::new(GraphemeBackspace)),
+    );
     let rl_mutex = std::sync::Arc::new(std::sync::Mutex::new(rl));
 
     // M6.39.2: track which research jobs we've already announced as
@@ -4537,6 +4821,20 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
     // exactly once per job. Cleared only by process restart — terminal
     // jobs stay in the manager until pruned, but each is announced once.
     let mut notified_research: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Accumulated USD cost for this REPL session. Computed via the
+    // model catalogue after every AgentEvent::Done and shown alongside
+    // the per-turn token counts. `/cost reset` zeroes it.
+    let mut session_cost_usd: f64 = 0.0;
+
+    // Cardputer cost-display bridge — best-effort BLE central that
+    // streams `session_cost_usd` to a `thClaws-Cost-*` peripheral and
+    // takes reset notifications back when the user hits Backspace on
+    // the device. Feature-gated so headless CI / GUI-only builds don't
+    // pull in btleplug. The handle stays alive for the REPL's lifetime;
+    // dropping it on Ctrl-C / quit terminates the background task.
+    #[cfg(feature = "cost_bridge")]
+    let mut cost_bridge = crate::cost_bridge::spawn();
 
     // Helper: process team inbox messages and run agent turn.
     macro_rules! process_team_messages {
@@ -4605,7 +4903,10 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                 let _ = std::io::stdout().flush();
                 let mut stream = Box::pin(agent.run_turn(team_prompt));
                 let mut last_was_thinking = false;
+                let mut active_tools: std::collections::HashMap<String, crate::tool_display::ActiveToolDisplay> =
+                    std::collections::HashMap::new();
                 loop {
+                    let heartbeat_delay = crate::tool_display::next_heartbeat_delay(&active_tools);
                     let ev = tokio::select! {
                         ev = stream.next() => ev,
                         _ = tokio::signal::ctrl_c() => {
@@ -4613,6 +4914,18 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                             lead_log!("{COLOR_RESET}\n{COLOR_YELLOW}[cancelled]{COLOR_RESET}\n");
                             drop(stream);
                             break;
+                        }
+                        _ = tokio::time::sleep(heartbeat_delay) => {
+                            if let Some(id) = crate::tool_display::oldest_due_heartbeat(&active_tools).map(|(k, _)| k.clone()) {
+                                if let Some(td) = active_tools.get_mut(&id) {
+                                    let hb = crate::tool_display::format_tool_heartbeat(&td.label, td.elapsed());
+                                    println!("{COLOR_DIM}{hb}{COLOR_RESET}");
+                                    lead_log!("{COLOR_DIM}{hb}{COLOR_RESET}\n");
+                                    let _ = std::io::stdout().flush();
+                                    td.last_heartbeat_at = std::time::Instant::now();
+                                }
+                            }
+                            continue;
                         }
                     };
                     let Some(ev) = ev else { break };
@@ -4627,33 +4940,37 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                             let _ = std::io::stdout().flush();
                         }
                         Ok(AgentEvent::Thinking(s)) => {
-                            // Dim-italic so reasoning is visibly distinct from
-                            // the final answer (DeepSeek v4/r1, glm4.7, etc.).
                             print!("\x1b[2;3m{s}\x1b[0m");
                             last_was_thinking = true;
                             let _ = std::io::stdout().flush();
                         }
-                        Ok(AgentEvent::ToolCallStart { name, .. }) => {
-                            // Tool-call line already starts with \n, so any
-                            // prior thinking is naturally separated; clear
-                            // the flag so we don't double-line.
+                        Ok(AgentEvent::ToolCallStart { id, name, input, .. }) => {
                             last_was_thinking = false;
+                            let label = crate::tool_display::tool_label(&name, &input);
+                            active_tools.insert(id, crate::tool_display::ActiveToolDisplay::new(label.clone()));
                             print!(
-                                "{COLOR_RESET}\n{COLOR_DIM}[tool: {name}]{COLOR_RESET}{COLOR_GREEN}"
+                                "{COLOR_RESET}\n{COLOR_DIM}[tool: {label}]{COLOR_RESET}{COLOR_GREEN}"
                             );
-                            lead_log!("{COLOR_RESET}\n{COLOR_DIM}[tool: {name}]{COLOR_RESET}");
+                            lead_log!("{COLOR_RESET}\n{COLOR_DIM}[tool: {label}]{COLOR_RESET}");
                         }
-                        Ok(AgentEvent::ToolCallResult { output, .. }) => {
+                        Ok(AgentEvent::ToolCallResult { id, output, .. }) => {
+                            let dur = active_tools.remove(&id).map(|t| t.elapsed());
+                            let dur_str = dur
+                                .map(|d| format!(" {}", crate::tool_display::format_duration(d)))
+                                .unwrap_or_default();
                             let mark = if output.is_ok() { "✓" } else { "✗" };
                             let color = if output.is_ok() { COLOR_DIM } else { COLOR_YELLOW };
-                            print!("{color} {mark}{COLOR_RESET}{COLOR_GREEN}");
-                            lead_log!(" {color}{mark}{COLOR_RESET}\n{COLOR_GREEN}");
+                            print!("{color} {mark}{dur_str}{COLOR_RESET}{COLOR_GREEN}");
+                            lead_log!(" {color}{mark}{dur_str}{COLOR_RESET}\n{COLOR_GREEN}");
                         }
-                        Ok(AgentEvent::ToolCallDenied { name, .. }) => {
+                        Ok(AgentEvent::ToolCallDenied { id, name, .. }) => {
+                            let dur_str = active_tools.remove(&id)
+                                .map(|t| format!(" {}", crate::tool_display::format_duration(t.elapsed())))
+                                .unwrap_or_default();
                             print!(
-                                "{COLOR_RESET}\n{COLOR_YELLOW}[denied: {name}]{COLOR_RESET}{COLOR_GREEN}"
+                                "{COLOR_RESET}\n{COLOR_YELLOW}[denied: {name}{dur_str}]{COLOR_RESET}{COLOR_GREEN}"
                             );
-                            lead_log!("{COLOR_RESET}\n{COLOR_YELLOW}[denied: {name}]{COLOR_RESET}\n{COLOR_GREEN}");
+                            lead_log!("{COLOR_RESET}\n{COLOR_YELLOW}[denied: {name}{dur_str}]{COLOR_RESET}\n{COLOR_GREEN}");
                         }
                         Ok(AgentEvent::Done { stop_reason, .. }) => {
                             print!("{COLOR_RESET}");
@@ -4695,6 +5012,16 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
     // Uses select! to race user input against team inbox messages so the
     // lead can respond to teammates without the user needing to press Enter.
     loop {
+        // Drain Cardputer reset notifications quietly — when the user
+        // hits Backspace on the device we zero the session counter so
+        // both displays stay in sync. Silent on purpose; the device
+        // already shows the $0.0000 result and a CLI println here would
+        // garble whatever the user is mid-typing into readline.
+        #[cfg(feature = "cost_bridge")]
+        while cost_bridge.rx_reset.try_recv().is_ok() {
+            session_cost_usd = 0.0;
+        }
+
         // M6.39.2: announce any research jobs that finished since the
         // last prompt (Done / Cancelled / Failed). Each id announced
         // once; subsequent prompts skip already-notified jobs.
@@ -4791,11 +5118,29 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
             continue;
         }
 
+        // Immediate feedback: show spinner right after Enter. Gate on
+        // TTY so piped / headless invocations don't accumulate ANSI
+        // control bytes in their stdout (logs, redirected output, …).
+        use std::io::IsTerminal as _;
+        let early_spinner_shown = if std::io::stdout().is_terminal() {
+            print!(
+                "{}",
+                crate::tool_display::format_thinking_spinner(std::time::Duration::ZERO, 0)
+            );
+            let _ = std::io::stdout().flush();
+            true
+        } else {
+            false
+        };
+
         // `!<cmd>` shell escape — user-initiated shell command, runs
         // through BashTool (sandbox cwd, non-interactive env, etc.)
         // and prints the output. Doesn't touch agent history. Mirrors
         // the GUI handle_line path in shared_session.rs.
         if let Some(cmd) = crate::shell_bang::parse_bang(&line) {
+            if early_spinner_shown {
+                print!("{}", crate::tool_display::clear_thinking_line());
+            }
             println!("{COLOR_DIM}[!] {cmd}{COLOR_RESET}");
             match crate::shell_bang::run_bang_command(cmd).await {
                 Ok(output) => {
@@ -4997,6 +5342,10 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
         }
 
         if let Some(cmd) = parse_slash(&line) {
+            if early_spinner_shown {
+                print!("{}", crate::tool_display::clear_thinking_line());
+                let _ = std::io::stdout().flush();
+            }
             match cmd {
                 SlashCommand::Help => println!("{}", render_help()),
                 SlashCommand::Quit => break,
@@ -6093,7 +6442,12 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                         }
                     }
                 }
-                SlashCommand::McpAdd { name, url, user } => {
+                SlashCommand::McpAdd {
+                    name,
+                    url,
+                    user,
+                    headers,
+                } => {
                     let scope = if user { "user" } else { "project" };
                     // /mcp add is hand-add — untrusted by default. To
                     // enable widget rendering on a self-added server,
@@ -6106,7 +6460,11 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                         args: Vec::new(),
                         env: Default::default(),
                         url: url.clone(),
-                        headers: Default::default(),
+                        // Stored verbatim — `${VAR}` is resolved from the
+                        // environment at connect time (mcp::connect_http),
+                        // so a `${API_KEY}` placeholder keeps the literal
+                        // secret out of mcp.json.
+                        headers: headers.iter().cloned().collect(),
                         trusted: false,
                     };
                     // 1. Persist to disk.
@@ -6117,8 +6475,12 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                             continue;
                         }
                     };
-                    // 2. Connect and list tools.
-                    match crate::mcp::McpClient::spawn(cfg.clone()).await {
+                    // 2. Connect and list tools. Non-interactive: if the
+                    //    server requires OAuth we don't block the REPL on a
+                    //    browser callback — the error tells the user to run
+                    //    `/mcp reauth <name>` (issue #114). CLI has no GUI
+                    //    approver (stdio falls back to stdin).
+                    match crate::mcp::McpClient::spawn_noninteractive(cfg.clone(), None).await {
                         Ok(client) => match client.list_tools().await {
                             Ok(tools) => {
                                 let names: Vec<String> =
@@ -6242,13 +6604,26 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                 }
                 SlashCommand::McpRemove { name, user } => {
                     match crate::config::remove_mcp_server(&name, user) {
-                        Ok((true, path)) => {
+                        Ok((true, path, removed_url)) => {
+                            let token_msg = if let Some(url) = removed_url {
+                                let mut store = crate::oauth::TokenStore::load();
+                                let had_token = store.get(&url).is_some();
+                                store.remove(&url);
+                                store.save();
+                                if had_token {
+                                    " + cached OAuth token cleared"
+                                } else {
+                                    ""
+                                }
+                            } else {
+                                ""
+                            };
                             println!(
-                                "{COLOR_DIM}mcp '{name}' removed from {} (restart to drop active tools){COLOR_RESET}",
+                                "{COLOR_DIM}mcp '{name}' removed from {}{token_msg} (restart to drop active tools){COLOR_RESET}",
                                 path.display()
                             );
                         }
-                        Ok((false, path)) => {
+                        Ok((false, path, _)) => {
                             println!(
                                 "{COLOR_YELLOW}no server named '{name}' in {}{COLOR_RESET}",
                                 path.display()
@@ -6256,6 +6631,24 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                         }
                         Err(e) => {
                             println!("{COLOR_YELLOW}remove failed: {e}{COLOR_RESET}");
+                        }
+                    }
+                }
+                SlashCommand::McpReauth { name } => {
+                    match crate::mcp::reauth_server(&name, None).await {
+                        Ok(crate::mcp::ReauthOutcome::Completed(msg)) => {
+                            println!("{COLOR_DIM}{msg}{COLOR_RESET}");
+                        }
+                        Ok(crate::mcp::ReauthOutcome::Pending { auth_url, server_name }) => {
+                            println!(
+                                "{COLOR_DIM}[mcp] click to authorize '{server_name}':{COLOR_RESET}\n{auth_url}"
+                            );
+                            println!(
+                                "{COLOR_DIM}[mcp] complete the flow in your browser; the pod's /v1/oauth/callback handles the redirect.{COLOR_RESET}"
+                            );
+                        }
+                        Err(e) => {
+                            println!("{COLOR_YELLOW}[mcp] reauth failed: {e}{COLOR_RESET}");
                         }
                     }
                 }
@@ -6280,6 +6673,23 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                         }
                     }
                 }
+                SlashCommand::Cost { reset } => {
+                    if reset {
+                        session_cost_usd = 0.0;
+                        #[cfg(feature = "cost_bridge")]
+                        let _ = cost_bridge.tx_cost.send(0.0);
+                        println!("{COLOR_DIM}session cost reset{COLOR_RESET}");
+                    } else if session_cost_usd > 0.0 {
+                        println!(
+                            "{COLOR_DIM}session cost: ${:.4}{COLOR_RESET}",
+                            session_cost_usd
+                        );
+                    } else {
+                        println!(
+                            "{COLOR_DIM}session cost: $0.0000 (no priced turns yet){COLOR_RESET}"
+                        );
+                    }
+                }
                 SlashCommand::Compact => {
                     let history = agent.history_snapshot();
                     let compacted = crate::compaction::compact(&history, agent.budget_tokens / 2);
@@ -6299,6 +6709,17 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                         history.len(),
                         compacted.len()
                     );
+                }
+                SlashCommand::Reload => {
+                    println!(
+                        "{COLOR_DIM}[reload] re-executing thclaws — in-memory state will be reset, on-disk sessions survive…{COLOR_RESET}"
+                    );
+                    // Best-effort flush of stdout before exec() vanishes the
+                    // process. On Unix exec() only returns on failure.
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                    let err = crate::util::reexec_self();
+                    println!("{COLOR_YELLOW}[reload] re-exec failed: {err}{COLOR_RESET}");
                 }
                 SlashCommand::Fork => {
                     // Save → build LLM summary → seed a fresh session
@@ -6441,9 +6862,11 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                             PermissionMode::Ask => "ask",
                             PermissionMode::Plan => "plan",
                             PermissionMode::LineGated => "linegated",
+                            PermissionMode::TelegramGated => "telegramgated",
+                            PermissionMode::MessengerGated => "messengergated",
                         };
                         println!(
-                            "{COLOR_DIM}permissions: {label} (auto = never prompt, ask = prompt on mutating tools, plan = read-only exploration, linegated = prompt routed to LINE chat){COLOR_RESET}"
+                            "{COLOR_DIM}permissions: {label} (auto = never prompt, ask = prompt on mutating tools, plan = read-only exploration; mutating tools blocked, linegated = approval routed to LINE chat — auto-active while LINE is paired, see chapter 21){COLOR_RESET}"
                         );
                     } else {
                         match mode.as_str() {
@@ -6461,8 +6884,19 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                                 );
                                 println!("{COLOR_DIM}permissions → ask{COLOR_RESET}");
                             }
+                            "linegated" | "line" => {
+                                // LINE bridge state lives in the
+                                // shared_session worker (GUI / --serve);
+                                // the CLI REPL doesn't host one. Tell the
+                                // user where to go instead of leaving them
+                                // wondering whether the command silently
+                                // worked.
+                                println!(
+                                    "{COLOR_YELLOW}linegated is only available in GUI / --serve mode (CLI REPL doesn't host the LINE bridge — see chapter 21){COLOR_RESET}"
+                                );
+                            }
                             _ => {
-                                println!("{COLOR_YELLOW}usage: /permissions auto|ask{COLOR_RESET}");
+                                println!("{COLOR_YELLOW}usage: /permissions auto|ask|linegated{COLOR_RESET}");
                             }
                         }
                     }
@@ -8354,6 +8788,201 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                         );
                     }
                 }
+                SlashCommand::Deploy {
+                    pod,
+                    token,
+                    dry_run,
+                    full,
+                    include_memory,
+                    allow_stdio_mcp,
+                    restart,
+                } => {
+                    let resolved_pod = pod.or_else(crate::remote_agent::url);
+                    let resolved_token = token.or_else(crate::remote_agent::token);
+                    let Some(pod_url) = resolved_pod else {
+                        println!(
+                            "{COLOR_YELLOW}[deploy] REMOTE_AGENT_URL not set — \
+                             open Settings → Provider API keys → Deploy target, \
+                             or pass --pod <URL>{COLOR_RESET}"
+                        );
+                        continue;
+                    };
+                    let Some(token_val) = resolved_token else {
+                        println!(
+                            "{COLOR_YELLOW}[deploy] REMOTE_AGENT_TOKEN not set — \
+                             open Settings → Provider API keys → Deploy target, \
+                             or pass --token <T>{COLOR_RESET}"
+                        );
+                        continue;
+                    };
+                    let args = crate::deploy_client::DeployArgs {
+                        pod: pod_url,
+                        token: Some(token_val),
+                        include_memory,
+                        allow_stdio_mcp,
+                        dry_run,
+                        full,
+                        restart,
+                    };
+                    let _ = crate::deploy_client::run(args).await;
+                }
+                SlashCommand::WorkflowRun(prompt) => {
+                    let prompt = prompt.trim();
+                    if prompt.is_empty() {
+                        println!("{COLOR_YELLOW}/workflow run: missing goal{COLOR_RESET}");
+                        continue;
+                    }
+                    let provider = match crate::repl::build_provider(&config) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            println!(
+                                "{COLOR_YELLOW}/workflow run: can't build provider: {e}{COLOR_RESET}"
+                            );
+                            continue;
+                        }
+                    };
+                    let mut revision_note: Option<String> = None;
+                    let approved_script: Option<String> = loop {
+                        println!(
+                            "{COLOR_DIM}/workflow run: authoring script (model={})…{COLOR_RESET}",
+                            config.model
+                        );
+                        let script = match crate::workflow::author(
+                            provider.as_ref(),
+                            &config.model,
+                            prompt,
+                            revision_note.as_deref(),
+                        )
+                        .await
+                        {
+                            Ok(s) => s,
+                            Err(e) => {
+                                println!(
+                                    "{COLOR_YELLOW}/workflow run: author failed: {e}{COLOR_RESET}"
+                                );
+                                break None;
+                            }
+                        };
+                        println!("{COLOR_DIM}────────── script ──────────{COLOR_RESET}");
+                        for (i, src_line) in script.lines().enumerate() {
+                            println!(
+                                "{COLOR_DIM}{:>3}{COLOR_RESET}  {src_line}",
+                                i + 1
+                            );
+                        }
+                        println!("{COLOR_DIM}────────────────────────────{COLOR_RESET}");
+                        print!(
+                            "{COLOR_DIM}[a]pprove · [c]ancel · [r]e-author: {COLOR_RESET}"
+                        );
+                        use std::io::{BufRead as _, Write as _};
+                        let _ = std::io::stdout().flush();
+                        let mut input = String::new();
+                        if std::io::stdin().lock().read_line(&mut input).is_err() {
+                            break None;
+                        }
+                        match input.trim().chars().next() {
+                            Some('c') | Some('C') => {
+                                println!("{COLOR_DIM}/workflow run: cancelled{COLOR_RESET}");
+                                break None;
+                            }
+                            Some('r') | Some('R') => {
+                                print!(
+                                    "{COLOR_DIM}revision note (one line): {COLOR_RESET}"
+                                );
+                                let _ = std::io::stdout().flush();
+                                let mut note = String::new();
+                                if std::io::stdin().lock().read_line(&mut note).is_err() {
+                                    break None;
+                                }
+                                revision_note = Some(note.trim().to_string());
+                                continue;
+                            }
+                            _ => break Some(script),
+                        }
+                    };
+
+                    if let Some(script) = approved_script {
+                        // Stage D: open a state.jsonl logger for this
+                        // run. Failure to create one is non-fatal — we
+                        // print a warning and proceed without
+                        // checkpointing, so a read-only / undeployable
+                        // .thclaws/ dir doesn't block /workflow run.
+                        let workflow_id = crate::workflow::generate_workflow_id();
+                        let logger_handle: Option<crate::workflow::LoggerHandle> = match std::env::current_dir()
+                            .ok()
+                            .and_then(|cwd| {
+                                crate::workflow::WorkflowLogger::new(workflow_id.clone(), &cwd).ok()
+                            }) {
+                            Some(mut l) => {
+                                let _ = l.start(prompt, &script);
+                                Some(std::sync::Arc::new(std::sync::Mutex::new(l)))
+                            }
+                            None => {
+                                println!(
+                                    "{COLOR_DIM}/workflow run: state.jsonl unavailable — proceeding without checkpoint{COLOR_RESET}"
+                                );
+                                None
+                            }
+                        };
+                        println!("{COLOR_DIM}/workflow run: id={workflow_id}{COLOR_RESET}");
+
+                        let wf_started = std::time::Instant::now();
+                        // Route thclaws.subagent through the parent's
+                        // Task tool. `None` is acceptable — the sandbox
+                        // falls back to a stub that echoes prompts,
+                        // useful if the registry doesn't have the tool
+                        // (e.g. a minimal config). spawn_blocking lets
+                        // the JS host functions use
+                        // `Handle::block_on` without nesting runtimes.
+                        let task_tool = tool_registry.get(crate::subagent::TOOL_NAME);
+                        let logger_for_thread = logger_handle.clone();
+                        // Boa's JsError contains Rc<> types and isn't
+                        // Send — stringify before crossing the
+                        // spawn_blocking boundary.
+                        let result: std::result::Result<
+                            std::result::Result<String, String>,
+                            tokio::task::JoinError,
+                        > = tokio::task::spawn_blocking(move || {
+                            crate::workflow::set_task_tool(task_tool);
+                            crate::workflow::set_logger(logger_for_thread);
+                            let res = (|| -> std::result::Result<String, String> {
+                                let mut sandbox = crate::workflow::WorkflowSandbox::new()
+                                    .map_err(|e| e.to_string())?;
+                                sandbox.run(&script).map_err(|e| e.to_string())
+                            })();
+                            crate::workflow::set_task_tool(None);
+                            crate::workflow::set_logger(None);
+                            res
+                        })
+                        .await;
+
+                        let mut workers_count: u32 = 0;
+                        if let Some(handle) = &logger_handle {
+                            if let Ok(mut l) = handle.lock() {
+                                let _ = match &result {
+                                    Ok(Ok(text)) => l.done(text),
+                                    Ok(Err(e)) => l.error(e),
+                                    Err(e) => l.error(&e.to_string()),
+                                };
+                                workers_count = l.worker_count();
+                            }
+                        }
+                        let total = crate::tool_display::format_duration(wf_started.elapsed());
+                        println!(
+                            "{COLOR_DIM}workflow done — {workers_count} workers, total {total}{COLOR_RESET}"
+                        );
+
+                        match result {
+                            Ok(Ok(text)) => println!("{COLOR_GREEN}{text}{COLOR_RESET}"),
+                            Ok(Err(e)) => println!(
+                                "{COLOR_YELLOW}/workflow run: script failed: {e}{COLOR_RESET}"
+                            ),
+                            Err(e) => println!(
+                                "{COLOR_YELLOW}/workflow run: worker thread panicked: {e}{COLOR_RESET}"
+                            ),
+                        }
+                    }
+                }
                 SlashCommand::Unknown(what) => {
                     println!("{COLOR_YELLOW}unknown command: {what}{COLOR_RESET}");
                 }
@@ -8397,27 +9026,84 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
         let mut stream = Box::pin(agent.run_turn(line.to_string()));
         let mut _cancelled = false;
         let mut last_was_thinking = false;
+        let mut active_tools: std::collections::HashMap<
+            String,
+            crate::tool_display::ActiveToolDisplay,
+        > = std::collections::HashMap::new();
+        let mut spinner_tick: u32 = 0;
+        let mut is_connecting = true;
+        let mut is_thinking_after_tool = false;
         loop {
+            let anim_delay = if is_connecting || is_thinking_after_tool || !active_tools.is_empty()
+            {
+                crate::tool_display::SPINNER_INTERVAL
+            } else {
+                std::time::Duration::from_secs(300)
+            };
             let ev = tokio::select! {
                 ev = stream.next() => ev,
                 _ = tokio::signal::ctrl_c() => {
+                    print!("{}", crate::tool_display::clear_thinking_line());
                     _cancelled = true;
                     println!("{COLOR_RESET}\n{COLOR_YELLOW}[cancelled by Ctrl-C]{COLOR_RESET}");
                     drop(stream);
                     break;
                 }
+                _ = tokio::time::sleep(anim_delay) => {
+                    spinner_tick += 1;
+                    if is_connecting {
+                        let elapsed = turn_start.elapsed();
+                        print!("{}", crate::tool_display::format_thinking_spinner(elapsed, spinner_tick));
+                        let _ = std::io::stdout().flush();
+                    } else if !active_tools.is_empty() {
+                        if let Some(id) = active_tools.iter().min_by_key(|(_, td)| td.started_at).map(|(k, _)| k.clone()) {
+                            if let Some(td) = active_tools.get_mut(&id) {
+                                print!("{}", crate::tool_display::format_tool_spinner(&td.label, td.elapsed(), spinner_tick));
+                                let _ = std::io::stdout().flush();
+                                td.last_heartbeat_at = std::time::Instant::now();
+                            }
+                        }
+                    } else if is_thinking_after_tool {
+                        let elapsed = turn_start.elapsed();
+                        print!("{}", crate::tool_display::format_thinking_spinner(elapsed, spinner_tick));
+                        let _ = std::io::stdout().flush();
+                    }
+                    continue;
+                }
             };
             let Some(ev) = ev else { break };
+            let is_content_event = matches!(
+                &ev,
+                Ok(AgentEvent::Text(_))
+                    | Ok(AgentEvent::Thinking(_))
+                    | Ok(AgentEvent::ToolCallStart { .. })
+                    | Ok(AgentEvent::ToolCallResult { .. })
+                    | Err(_)
+            );
+            if (is_connecting || is_thinking_after_tool) && is_content_event {
+                if !matches!(&ev, Ok(AgentEvent::ToolCallStart { .. })) {
+                    print!("{}", crate::tool_display::clear_thinking_line());
+                    print!("{COLOR_RESET}");
+                    let _ = std::io::stdout().flush();
+                }
+                is_connecting = false;
+                is_thinking_after_tool = false;
+                spinner_tick = 0;
+            }
             match ev {
                 Ok(AgentEvent::IterationStart { .. }) => {}
+                Ok(AgentEvent::UserMessageInjected { text }) => {
+                    println!("\n{COLOR_DIM}[injected mid-turn]{COLOR_RESET} {text}");
+                    let _ = std::io::stdout().flush();
+                }
                 Ok(AgentEvent::Text(s)) => {
                     if last_was_thinking {
                         println!();
                         last_was_thinking = false;
                     }
                     print!("{s}");
-                    lead_log!("{s}");
                     let _ = std::io::stdout().flush();
+                    lead_log!("{s}");
                 }
                 Ok(AgentEvent::Thinking(s)) => {
                     // Dim-italic so reasoning is visibly distinct from
@@ -8426,75 +9112,62 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                     last_was_thinking = true;
                     let _ = std::io::stdout().flush();
                 }
-                Ok(AgentEvent::ToolCallStart { name, input, .. }) => {
-                    // Tool-call line already starts with \n, so any prior
-                    // thinking is naturally separated; clear the flag.
+                Ok(AgentEvent::ToolCallStart {
+                    id, name, input, ..
+                }) => {
                     last_was_thinking = false;
-                    let detail = match name.as_str() {
-                        "Bash" => input
-                            .get("command")
-                            .and_then(|v| v.as_str())
-                            .map(|c| format!(": {}", c.chars().take(80).collect::<String>())),
-                        "Read" | "Write" | "Edit" => input
-                            .get("path")
-                            .and_then(|v| v.as_str())
-                            .map(|p| format!(": {p}")),
-                        "Glob" => input
-                            .get("pattern")
-                            .and_then(|v| v.as_str())
-                            .map(|p| format!(": {p}")),
-                        "Grep" => input
-                            .get("pattern")
-                            .and_then(|v| v.as_str())
-                            .map(|p| format!(": {p}")),
-                        "WebFetch" => input
-                            .get("url")
-                            .and_then(|v| v.as_str())
-                            .map(|u| format!(": {}", u.chars().take(60).collect::<String>())),
-                        "WebSearch" => input
-                            .get("query")
-                            .and_then(|v| v.as_str())
-                            .map(|q| format!(": {q}")),
-                        "Skill" => input
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .map(|n| format!(": {n}")),
-                        "Task" => input
-                            .get("agent")
-                            .and_then(|v| v.as_str())
-                            .map(|a| format!(": agent={a}")),
-                        _ => None,
-                    }
-                    .unwrap_or_default();
-                    print!("{COLOR_RESET}\n{COLOR_DIM}[tool: {name}{detail}]{COLOR_RESET}");
-                    lead_log!("{COLOR_RESET}\n{COLOR_DIM}[tool: {name}{detail}]{COLOR_RESET}");
+                    let label = crate::tool_display::tool_label(&name, &input);
+                    active_tools.insert(
+                        id,
+                        crate::tool_display::ActiveToolDisplay::new(label.clone()),
+                    );
+                    print!(
+                        "{}",
+                        crate::tool_display::format_tool_spinner(
+                            &label,
+                            std::time::Duration::ZERO,
+                            0
+                        )
+                    );
+                    lead_log!("{COLOR_RESET}\n{COLOR_DIM}[tool: {label}]{COLOR_RESET}");
                     let _ = std::io::stdout().flush();
                 }
-                Ok(AgentEvent::ToolCallResult { name, output, .. }) => {
+                Ok(AgentEvent::ToolCallResult {
+                    id, name, output, ..
+                }) => {
+                    let td = active_tools.remove(&id);
+                    if td.is_none() {
+                        eprintln!("{COLOR_DIM}[tool-display] result for '{name}' (id={id}) has no matching start{COLOR_RESET}");
+                    }
+                    let dur_val = td.as_ref().map(|t| t.elapsed()).unwrap_or_default();
                     match output {
                         Ok(ref body) => {
-                            // M6.38.9: surface the upstream source
-                            // next to the ✓ when the tool emits a
-                            // `Source: <engine>` line. The model can
-                            // drop it from its summary; the indicator
-                            // shows it regardless.
                             let src_suffix = crate::tools::extract_tool_source(body)
+                                .map(|s| crate::tool_display::sanitize_label_field(s))
                                 .map(|s| format!(" {COLOR_DIM}(via {s}){COLOR_RESET}"))
                                 .unwrap_or_default();
-                            print!(" {COLOR_DIM}✓{COLOR_RESET}{src_suffix}");
-                            lead_log!(" {COLOR_DIM}✓{COLOR_RESET}{src_suffix}\n{COLOR_GREEN}");
+                            let label = td.as_ref().map(|t| t.label.as_str()).unwrap_or(&name);
+                            print!(
+                                "{}{src_suffix}",
+                                crate::tool_display::format_tool_done(label, dur_val, false)
+                            );
+                            lead_log!(
+                                " {COLOR_DIM}✓ {}{COLOR_RESET}{src_suffix}\n{COLOR_GREEN}",
+                                crate::tool_display::format_duration(dur_val)
+                            );
                         }
                         Err(ref e) => {
-                            print!(" {COLOR_YELLOW}✗ {e}{COLOR_RESET}");
-                            lead_log!(" {COLOR_YELLOW}✗ {e}{COLOR_RESET}\n{COLOR_GREEN}");
+                            let label = td.as_ref().map(|t| t.label.as_str()).unwrap_or(&name);
+                            print!(
+                                "{}",
+                                crate::tool_display::format_tool_done(label, dur_val, true)
+                            );
+                            lead_log!(
+                                " {COLOR_YELLOW}✗ {} {e}{COLOR_RESET}\n{COLOR_GREEN}",
+                                crate::tool_display::format_duration(dur_val)
+                            );
                         }
                     }
-                    // CLI parity for plan-mode (M5). When a plan tool
-                    // mutates state, render the current plan as a
-                    // coloured ANSI block — analogue of the GUI
-                    // sidebar's live update. Only fires for the four
-                    // plan tools so we don't print a plan block
-                    // after every Read / Bash / Edit.
                     if PLAN_TOOL_NAMES.contains(&name.as_str()) {
                         if let Some(plan) = crate::tools::plan_state::get() {
                             let block = format_plan_for_cli(&plan);
@@ -8502,18 +9175,104 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                             lead_log!("{block}");
                         }
                     }
-                    print!("{COLOR_RESET}\n{COLOR_GREEN}");
-                    let _ = std::io::stdout().flush();
-                }
-                Ok(AgentEvent::ToolCallDenied { name, .. }) => {
-                    println!("{COLOR_RESET}\n{COLOR_YELLOW}[denied: {name}]{COLOR_RESET}");
-                    lead_log!(
-                        "{COLOR_RESET}\n{COLOR_YELLOW}[denied: {name}]{COLOR_RESET}\n{COLOR_GREEN}"
-                    );
+                    if active_tools.is_empty() {
+                        is_thinking_after_tool = true;
+                        spinner_tick = 0;
+                        print!(
+                            "{}",
+                            crate::tool_display::format_thinking_spinner(turn_start.elapsed(), 0)
+                        );
+                    }
                     print!("{COLOR_GREEN}");
                     let _ = std::io::stdout().flush();
                 }
+                Ok(AgentEvent::ToolCallDenied { id, name, .. }) => {
+                    let td = active_tools.remove(&id);
+                    let dur_str = td
+                        .as_ref()
+                        .map(|t| format!(" {}", crate::tool_display::format_duration(t.elapsed())))
+                        .unwrap_or_default();
+                    print!("{}", crate::tool_display::clear_thinking_line());
+                    println!("{COLOR_RESET}\n{COLOR_YELLOW}[denied: {name}{dur_str}]{COLOR_RESET}");
+                    lead_log!(
+                        "{COLOR_RESET}\n{COLOR_YELLOW}[denied: {name}{dur_str}]{COLOR_RESET}\n{COLOR_GREEN}"
+                    );
+                    if active_tools.is_empty() {
+                        is_thinking_after_tool = true;
+                        spinner_tick = 0;
+                        print!(
+                            "{}",
+                            crate::tool_display::format_thinking_spinner(turn_start.elapsed(), 0)
+                        );
+                    }
+                    print!("{COLOR_GREEN}");
+                    let _ = std::io::stdout().flush();
+                }
+                Ok(AgentEvent::Progress(kind)) => {
+                    use crate::providers::ProgressKind;
+                    match kind {
+                        ProgressKind::Thinking => {}
+                        ProgressKind::ToolStart { id, label } => {
+                            if is_connecting || is_thinking_after_tool {
+                                is_connecting = false;
+                                is_thinking_after_tool = false;
+                                spinner_tick = 0;
+                            }
+                            active_tools.insert(
+                                id,
+                                crate::tool_display::ActiveToolDisplay::new(label.clone()),
+                            );
+                            print!(
+                                "{}",
+                                crate::tool_display::format_tool_spinner(
+                                    &label,
+                                    std::time::Duration::ZERO,
+                                    0
+                                )
+                            );
+                            lead_log!("{COLOR_RESET}\n{COLOR_DIM}[tool: {label}]{COLOR_RESET}");
+                            let _ = std::io::stdout().flush();
+                        }
+                        ProgressKind::ToolDone {
+                            id,
+                            label,
+                            is_error,
+                        } => {
+                            let td = active_tools.remove(&id);
+                            let dur = td.as_ref().map(|t| t.elapsed()).unwrap_or_default();
+                            print!(
+                                "{}",
+                                crate::tool_display::format_tool_done(&label, dur, is_error)
+                            );
+                            lead_log!(
+                                " {COLOR_DIM}{} {}{COLOR_RESET}\n{COLOR_GREEN}",
+                                if is_error { "✗" } else { "✓" },
+                                crate::tool_display::format_duration(dur)
+                            );
+                            let _ = std::io::stdout().flush();
+                            if active_tools.is_empty() {
+                                is_thinking_after_tool = true;
+                                spinner_tick = 0;
+                                print!(
+                                    "{}",
+                                    crate::tool_display::format_thinking_spinner(
+                                        turn_start.elapsed(),
+                                        0
+                                    )
+                                );
+                                let _ = std::io::stdout().flush();
+                            }
+                            print!("{COLOR_GREEN}");
+                            let _ = std::io::stdout().flush();
+                        }
+                    }
+                }
                 Ok(AgentEvent::Done { stop_reason, usage }) => {
+                    if is_thinking_after_tool || is_connecting {
+                        print!("{}", crate::tool_display::clear_thinking_line());
+                        is_thinking_after_tool = false;
+                        is_connecting = false;
+                    }
                     print!("{COLOR_RESET}");
                     if let Some(reason) = stop_reason {
                         if reason == "max_iterations" {
@@ -8532,16 +9291,42 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
                         _ => String::new(),
                     };
                     let elapsed = format_duration(turn_start.elapsed());
+                    // Cost: convert provider Usage → catalogue TokenUsage
+                    // (different field names, same numbers), then look up
+                    // the active model's pricing. Unknown / tier-billed
+                    // models return None — we just skip the cost suffix.
+                    let token_usage = crate::model_catalogue::TokenUsage {
+                        prompt_tokens: usage.input_tokens,
+                        completion_tokens: usage.output_tokens,
+                        cached_input_tokens: usage.cache_read_input_tokens.unwrap_or(0),
+                        cache_creation_tokens: usage.cache_creation_input_tokens.unwrap_or(0),
+                        reasoning_tokens: usage.reasoning_output_tokens.unwrap_or(0),
+                    };
+                    let catalogue = crate::model_catalogue::EffectiveCatalogue::load();
+                    if let Some(c) = catalogue.compute_cost_usd(&config.model, &token_usage) {
+                        session_cost_usd += c;
+                    }
+                    // Push the running total to the Cardputer display.
+                    // Send fails silently when no device is paired —
+                    // we don't want a missing buddy to disrupt the REPL.
+                    #[cfg(feature = "cost_bridge")]
+                    let _ = cost_bridge.tx_cost.send(session_cost_usd);
+                    let cost_str = if session_cost_usd > 0.0 {
+                        format!(" · ${:.4} session", session_cost_usd)
+                    } else {
+                        String::new()
+                    };
                     println!(
-                        "\n{COLOR_DIM}[tokens: {}in/{}out{} · {}]{COLOR_RESET}",
-                        usage.input_tokens, usage.output_tokens, cache_info, elapsed
+                        "\n{COLOR_DIM}[tokens: {}in/{}out{} · {}{}]{COLOR_RESET}",
+                        usage.input_tokens, usage.output_tokens, cache_info, elapsed, cost_str
                     );
                     lead_log!(
-                        "\n{COLOR_DIM}[tokens: {}in/{}out{} · {}]{COLOR_RESET}\n",
+                        "\n{COLOR_DIM}[tokens: {}in/{}out{} · {}{}]{COLOR_RESET}\n",
                         usage.input_tokens,
                         usage.output_tokens,
                         cache_info,
-                        elapsed
+                        elapsed,
+                        cost_str
                     );
                     let _ = std::io::stdout().flush();
 
@@ -8620,6 +9405,22 @@ mod tests {
     }
 
     #[test]
+    fn grapheme_backspace_deletes_whole_cluster() {
+        // ASCII: one codepoint per grapheme.
+        assert_eq!(grapheme_backspace_chars("abc", 1), 1);
+        // Combining acute: "e" + U+0301 = one grapheme, two codepoints.
+        assert_eq!(grapheme_backspace_chars("abe\u{301}", 1), 2);
+        // Thai consonant + tone mark (U+0E48) = one cluster, two codepoints.
+        assert_eq!(grapheme_backspace_chars("ก\u{0E48}", 1), 2);
+        // Emoji ZWJ family = one grapheme, five codepoints.
+        assert_eq!(grapheme_backspace_chars("👨\u{200d}👩\u{200d}👧", 1), 5);
+        // Beginning-of-line: nothing to delete (handler defers to default).
+        assert_eq!(grapheme_backspace_chars("", 1), 0);
+        // Repeat count spans multiple clusters: last 2 of [a, b, é] = 1 + 2.
+        assert_eq!(grapheme_backspace_chars("abe\u{301}", 2), 3);
+    }
+
+    #[test]
     fn parse_slash_returns_none_for_plain_text() {
         assert!(parse_slash("hello").is_none());
         assert!(parse_slash("").is_none());
@@ -8673,6 +9474,26 @@ mod tests {
             Some(SlashCommand::Unknown(msg)) => assert!(msg.contains("key=value")),
             other => panic!("expected Unknown, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_slash_cost() {
+        assert_eq!(
+            parse_slash("/cost"),
+            Some(SlashCommand::Cost { reset: false })
+        );
+        assert_eq!(
+            parse_slash("/cost reset"),
+            Some(SlashCommand::Cost { reset: true })
+        );
+        assert_eq!(
+            parse_slash("/cost clear"),
+            Some(SlashCommand::Cost { reset: true })
+        );
+        assert!(matches!(
+            parse_slash("/cost bogus"),
+            Some(SlashCommand::Unknown(_))
+        ));
     }
 
     #[test]
@@ -8762,6 +9583,7 @@ mod tests {
                 name: "weather".into(),
                 url: "https://example.com/mcp".into(),
                 user: false,
+                headers: vec![],
             })
         );
         assert_eq!(
@@ -8770,8 +9592,68 @@ mod tests {
                 name: "weather".into(),
                 url: "https://example.com/mcp".into(),
                 user: true,
+                headers: vec![],
             })
         );
+        // --header "K: V" (quoted, space after colon) → one header pair.
+        assert_eq!(
+            parse_slash(
+                "/mcp add fd https://mcp.financialdatasets.ai/api --header \"X-API-KEY: abc123\""
+            ),
+            Some(SlashCommand::McpAdd {
+                name: "fd".into(),
+                url: "https://mcp.financialdatasets.ai/api".into(),
+                user: false,
+                headers: vec![("X-API-KEY".into(), "abc123".into())],
+            })
+        );
+        // Repeatable; -H alias; flags before positionals; ${VAR} preserved
+        // verbatim (resolved later at connect time).
+        assert_eq!(
+            parse_slash(
+                "/mcp add --user fd https://x.test/api -H \"X-API-KEY: ${FD_KEY}\" --header \"X-Trace: on\""
+            ),
+            Some(SlashCommand::McpAdd {
+                name: "fd".into(),
+                url: "https://x.test/api".into(),
+                user: true,
+                headers: vec![
+                    ("X-API-KEY".into(), "${FD_KEY}".into()),
+                    ("X-Trace".into(), "on".into()),
+                ],
+            })
+        );
+        // After a stdio (non-URL) command, --header is just a passed-through
+        // arg, not one of our flags.
+        assert_eq!(
+            parse_slash("/mcp add foo some-cmd --header bar"),
+            Some(SlashCommand::McpAddStdio {
+                name: "foo".into(),
+                command: "some-cmd".into(),
+                args: vec!["--header".into(), "bar".into()],
+                user: false,
+            })
+        );
+        // After a URL, only --header is accepted — a bare positional is rejected.
+        assert!(matches!(
+            parse_slash("/mcp add fd https://x.test/api bogus"),
+            Some(SlashCommand::Unknown(_))
+        ));
+        // Malformed --header (no colon) → Unknown.
+        assert!(matches!(
+            parse_slash("/mcp add fd https://x.test/api --header nocolon"),
+            Some(SlashCommand::Unknown(_))
+        ));
+        // Empty header key → Unknown.
+        assert!(matches!(
+            parse_slash("/mcp add fd https://x.test/api --header \": value\""),
+            Some(SlashCommand::Unknown(_))
+        ));
+        // --header with no following value → Unknown.
+        assert!(matches!(
+            parse_slash("/mcp add fd https://x.test/api --header"),
+            Some(SlashCommand::Unknown(_))
+        ));
         assert_eq!(
             parse_slash("/mcp remove weather"),
             Some(SlashCommand::McpRemove {
@@ -8789,6 +9671,22 @@ mod tests {
         // Missing url → Unknown with usage hint.
         assert!(matches!(
             parse_slash("/mcp add weather"),
+            Some(SlashCommand::Unknown(_))
+        ));
+        assert_eq!(
+            parse_slash("/mcp reauth weather"),
+            Some(SlashCommand::McpReauth {
+                name: "weather".into(),
+            })
+        );
+        assert_eq!(
+            parse_slash("/mcp login weather"),
+            Some(SlashCommand::McpReauth {
+                name: "weather".into(),
+            })
+        );
+        assert!(matches!(
+            parse_slash("/mcp reauth"),
             Some(SlashCommand::Unknown(_))
         ));
     }

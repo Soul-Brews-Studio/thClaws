@@ -11,7 +11,7 @@
 //! provider, aider, n8n, etc. See `dev-plan/19-thclaws-openai-compat.md`
 //! for the rationale + full scope.
 
-use axum::extract::FromRequestParts;
+use axum::extract::{DefaultBodyLimit, FromRequestParts};
 use axum::http::{request::Parts, StatusCode};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
@@ -20,9 +20,11 @@ use axum::Router;
 pub mod agent;
 pub mod callback;
 pub mod chat;
+pub mod deploy;
 pub mod errors;
 pub mod info;
 pub mod models;
+pub mod oauth_callback;
 
 /// Build the `/v1/*` sub-router. Mounted into the main server router
 /// by [`crate::server::run_with_engine`].
@@ -37,11 +39,28 @@ pub mod models;
 ///   orchestrators that treat this daemon as a sovereign freelancer
 ///   (see `dev-plan/26-thclaws-pod-as-freelancer.md`).
 pub fn router() -> Router {
+    // Deploy endpoints accept up to 100 MB tarballs (matches the
+    // dev-plan/28 bundle quota). Default axum body limit is 2 MB —
+    // raise it just on the deploy routes so unrelated endpoints stay
+    // protected from giant payloads.
+    const DEPLOY_BODY_LIMIT_BYTES: usize = 100 * 1024 * 1024;
+    let deploy_routes = Router::new()
+        .route("/v1/deploy", post(deploy::deploy_files))
+        .route("/v1/deploy/files", post(deploy::deploy_files))
+        .route("/v1/deploy/manifest", post(deploy::deploy_manifest))
+        .layer(DefaultBodyLimit::max(DEPLOY_BODY_LIMIT_BYTES));
+
     Router::new()
         .route("/v1/models", get(models::list_models))
         .route("/v1/chat/completions", post(chat::chat_completions))
         .route("/agent/run", post(agent::agent_run))
         .route("/v1/agent/info", get(info::get_info))
+        .route("/v1/restart", post(deploy::restart))
+        // OAuth callback is intentionally public — the provider's
+        // redirect won't carry the Bearer token. State-nonce match
+        // is the auth, not a header. See oauth_callback.rs.
+        .route("/v1/oauth/callback", get(oauth_callback::oauth_callback))
+        .merge(deploy_routes)
 }
 
 /// Bearer-token extractor enforcing [`auth_token`] policy. Returned by

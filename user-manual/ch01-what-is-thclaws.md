@@ -66,13 +66,17 @@ software hire thClaws to do work:
     pane and optional git worktree. One agent writes your backend
     while a teammate builds the frontend in parallel; lead calls
     `TeamMerge` when both are done.
-- **Hire-able as a working agent.** The inverse direction of orchestration:
-  thClaws itself runs as a *worker* for another orchestrator (e.g.
-  Paperclip / thcompany), in either the **Employee** shape
-  (`thclaws_local` — a process on the same machine) or the
-  **Freelancer** shape (`thclaws_pod` — a standalone pod that can run
-  on a VPS or cloud). The orchestrator drives it through the same
-  HTTP API users and IDEs use. See [Chapter 22](ch22-paperclip-adapter.md).
+- **Hire-able as a working agent — your self-hosted sandbox.** The
+  inverse direction of orchestration: thClaws itself runs as a
+  *worker* for another orchestrator (e.g. Paperclip / thcompany /
+  Anthropic Managed Agents), in either the **Employee** shape
+  (`thclaws_local` — a process on the same machine — equivalent to an
+  in-process sandbox) or the **Freelancer** shape (`thclaws_pod` — a
+  standalone pod that can run on a VPS, cloud, or your own k3s —
+  equivalent to a self-hosted sandbox where the agent loop is upstream
+  and tool execution stays inside *your* perimeter). The orchestrator
+  drives it through the same HTTP API users and IDEs use. See
+  [Chapter 22](ch22-paperclip-adapter.md).
 - **Three tiers of long-term memory.**
   - **`AGENTS.md` / `CLAUDE.md`** — drop one in your repo; thClaws
     walks up from cwd and injects every match into the system prompt,

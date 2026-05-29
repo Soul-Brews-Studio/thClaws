@@ -4,12 +4,36 @@ thClaws runs tools on your behalf: it edits files, runs shell commands,
 fetches URLs, and invokes MCP servers. **Permissions** decide which of
 those happen without your nod.
 
-## Two modes
+## Permission modes
 
-| Mode | Behaviour |
-|---|---|
-| `ask` (default) | Mutating / destructive tools prompt for approval before running. Read-only tools run automatically. |
-| `auto` | All tools run automatically. Agents can chain edits and bash calls without interruption. |
+| Mode | Behaviour | How to set |
+|---|---|---|
+| `auto` (default) | All tools run automatically. Agents can chain edits and bash calls without interruption. | `/permissions auto` or `--accept-all` |
+| `ask` | Mutating tools (Edit, Write, Bash) prompt for approval before running. Read-only tools run automatically. | `/permissions ask` or `--permission-mode ask` |
+| `plan` | Read-only exploration — all mutating tools are blocked. Use it to survey a codebase before doing any work. See [Chapter 18](ch18-plan-mode.md). | `/plan enter` (separate slash command — not via `/permissions`) |
+| `linegated` | Approval prompts route to your LINE chat on the phone instead of asking on the desktop. See [Chapter 21](ch21-line-and-browser-chat.md). | Auto-activates when the LINE bridge connects (pre-LINE mode is stashed and restored on disconnect). If you overrode with `/permissions auto` and want it back without disconnecting LINE, run `/permissions linegated` while the bridge is still connected — not persisted to `settings.json` (runtime state only). |
+
+> **While `linegated` is active, the surface you typed from doesn't
+> matter.** Every approval prompt routes to LINE — whether you typed
+> in the Terminal tab, Chat tab, REPL, or the LINE bubble itself. The
+> approver is a process-wide singleton (`shared_session.rs:1842`
+> swaps `state.approver` wholesale when the bridge connects) and has
+> no awareness of which surface originated the tool call. Design
+> rationale: your phone is the single "approval inbox" while paired,
+> so someone typing in via LINE can't trick you into approving their
+> `Bash` thinking it was yours. If browser chat (`/chat`) is also
+> open, the browser modal wins — better UX than LINE Quick Reply
+> chips for long argument previews.
+>
+> To bypass while LINE remains paired, run `/permissions auto` (no
+> prompts anywhere) or `/permissions ask` (prompt locally on the
+> desktop). Both also pull `state.approver` back to the desktop
+> approver, so even Ask-mode prompts surface in the Terminal /
+> Chat tab rather than continuing to push to your phone — the LINE
+> bridge connection itself stays up so the sidebar pill stays green
+> and `/permissions linegated` can swap back. Alternatively,
+> disconnect LINE from the GUI's LINE Connect modal to restore your
+> pre-LINE mode in one step.
 
 Set the mode at startup:
 
@@ -44,6 +68,39 @@ In `ask` mode, when the agent wants to run (say) `Bash`:
   usually revises its approach.
 - `yolo` — flip to `auto` for the rest of the session. The tool
   runs and every subsequent tool call runs without asking.
+
+#### What `yolo` is
+
+`yolo` ("you only live once") is a shortcut for "approve everything
+for this session." It's the same thing the GUI's **Allow for
+session** button does. When you type `yolo` (CLI) or click the
+button (GUI), thClaws:
+
+- runs the tool that was waiting (pass through)
+- flips the runtime mode to `auto` for the remainder of the current
+  session — every later tool call runs without prompting
+- sets a per-session "yolo" flag inside the approver — the flag is
+  **not** persisted to `settings.json`; it's runtime state only
+
+The flag is automatically cleared when:
+
+- you start a new session (`/new`, the GUI's "New session" button,
+  or restarting thclaws)
+- you load an older session via `/load <id>` or `--resume`
+- the LINE bridge disconnects (if it was active)
+- you run `/permissions ask` to return to per-call prompting
+
+If you want `auto` to stick across restart, use `/permissions auto`
+(persists to `settings.json`) or `--accept-all` instead — these are
+the same thing (`/permissions yolo` is an alias of
+`/permissions auto`), but they save to disk. The `yolo` answer at a
+prompt is deliberately session-scoped only.
+
+**The filesystem sandbox and tool allowlist still apply.** `yolo`
+only skips the approval prompt — it doesn't disable the filesystem
+sandbox (see below) and doesn't override `allowedTools` /
+`disallowedTools` in `settings.json`. Tools on the disallow list
+remain blocked even under `yolo`.
 
 A `⚠` marker appears alongside commands that look destructive —
 `rm -rf`, `sudo`, `curl … | sh`, `dd`, `mkfs`, etc. — so you look

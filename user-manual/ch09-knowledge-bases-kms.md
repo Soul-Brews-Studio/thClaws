@@ -235,7 +235,12 @@ The full surface, grouped by purpose:
 - **Lifecycle**: `/kms new`, `/kms use`, `/kms off`
 - **Capture**: `/kms ingest`, `/kms dump`, `/kms file-answer`
 - **Maintenance**: `/kms lint`, `/kms wrap-up`, `/kms reconcile`, `/kms migrate`
+- **Cross-linking**: `/kms link`
+- **Consolidation**: `/kms merge`
 - **Decision support**: `/kms challenge`
+- **Destruction**: `/kms drop`
+
+Most subcommands accept short aliases (e.g. `add` for `ingest`, `rm` for `drop`) — the aliases are listed inline under each section heading below.
 
 ### `/kms` (or `/kms list`)
 
@@ -252,7 +257,7 @@ List every discoverable KMS; `*` marks ones attached to the current project.
 
 ### `/kms show NAME`
 
-Print the KMS's `index.md` to inspect what's there.
+Print the KMS's `index.md` to inspect what's there. Aliases: `cat`.
 
 ```
 ❯ /kms show notes
@@ -264,7 +269,7 @@ Print the KMS's `index.md` to inspect what's there.
 
 ### `/kms new [--project] NAME`
 
-Create a new KMS and seed starter files (including `manifest.json`).
+Create a new KMS and seed starter files (including `manifest.json`). Aliases: `create`.
 
 ```
 ❯ /kms new meeting-notes
@@ -279,7 +284,7 @@ created KMS 'design-decisions' (project) → ./.thclaws/kms/design-decisions
 
 ### `/kms use NAME`
 
-Attach a KMS to the current project. The `KmsRead` / `KmsSearch` / `KmsWrite` / `KmsAppend` / `KmsDelete` tools are registered into the current session immediately and the `index.md` is spliced into the system prompt — no restart, works in the CLI REPL and either GUI tab.
+Attach a KMS to the current project. The `KmsRead` / `KmsSearch` / `KmsWrite` / `KmsAppend` / `KmsDelete` tools are registered into the current session immediately and the `index.md` is spliced into the system prompt — no restart, works in the CLI REPL and either GUI tab. Aliases: `on`.
 
 ```
 ❯ /kms use notes
@@ -288,7 +293,7 @@ KMS 'notes' attached (tools registered; available this turn)
 
 ### `/kms off NAME`
 
-Detach a KMS. Also live — when the last KMS detaches, the KMS tools are dropped from the registry so the model stops seeing them as options.
+Detach a KMS. Also live — when the last KMS detaches, the KMS tools are dropped from the registry so the model stops seeing them as options. Aliases: `unuse`.
 
 ```
 ❯ /kms off archived-docs
@@ -297,7 +302,7 @@ KMS 'archived-docs' detached (system prompt updated)
 
 ### `/kms ingest NAME <file-or-url-or-$>`
 
-Add a source. Auto-detects the source type and routes to the right ingest path. Two-step split: raw bytes go to `sources/<alias>.<ext>` (immutable), a stub page lands in `pages/<alias>.md` with frontmatter pointing back at the source. You then enrich the stub via natural prompting or another `/kms ingest --force`.
+Add a source. Auto-detects the source type and routes to the right ingest path. Aliases: `add`. Two-step split: raw bytes go to `sources/<alias>.<ext>` (immutable), a stub page lands in `pages/<alias>.md` with frontmatter pointing back at the source. You then enrich the stub via natural prompting or another `/kms ingest --force`.
 
 | Source pattern | Behaviour |
 |---|---|
@@ -342,7 +347,7 @@ Use `--force` to replace if the resolved page already exists.
 
 ### `/kms dump NAME <text>`
 
-Capture freeform content and route it. The agent classifies the dump into chunks (one decision, one observation, one new source per chunk), announces its routing plan in plain text, then executes via `KmsWrite` / `KmsAppend`.
+Capture freeform content and route it. The agent classifies the dump into chunks (one decision, one observation, one new source per chunk), announces its routing plan in plain text, then executes via `KmsWrite` / `KmsAppend`. Aliases: `capture`.
 
 > Requires KMS tools — run `/kms use <name>` first if no KMS is attached. Without it the command refuses with a clear error.
 
@@ -403,7 +408,7 @@ missing required frontmatter fields (1):
 
 ### `/kms wrap-up NAME [--fix]`
 
-Session-end review. Combines lint with a scan for stale-marker pages — pages flagged by the re-ingest cascade (`> ⚠ STALE: source <alias> was re-ingested on YYYY-MM-DD`) that are awaiting a refresh against the new source content.
+Session-end review. Combines lint with a scan for stale-marker pages — pages flagged by the re-ingest cascade (`> ⚠ STALE: source <alias> was re-ingested on YYYY-MM-DD`) that are awaiting a refresh against the new source content. Aliases: `wrapup`, `wrap`.
 
 ```
 ❯ /kms wrap-up notes
@@ -424,7 +429,7 @@ next steps: ask the agent to refresh stale pages and fix lint issues, or run `/k
 
 ### `/kms reconcile NAME [<focus>] [--apply]`
 
-Auto-resolve contradictions. Dispatches the built-in **`kms-reconcile`** subagent which runs four passes (claims / entities / decisions / source-freshness), classifies each finding (clear-winner / ambiguous / evolution), and either rewrites the outdated page with a `## History` section or creates a `Conflict — <topic>.md` page for genuinely-ambiguous cases. Dry-run by default; `--apply` executes writes. Optional second positional arg narrows the pass to a specific topic. GUI-only.
+Auto-resolve contradictions. Dispatches the built-in **`kms-reconcile`** subagent which runs four passes (claims / entities / decisions / source-freshness), classifies each finding (clear-winner / ambiguous / evolution), and either rewrites the outdated page with a `## History` section or creates a `Conflict — <topic>.md` page for genuinely-ambiguous cases. Dry-run by default; `--apply` executes writes. Optional second positional arg narrows the pass to a specific topic. GUI-only. Aliases: `resolve`.
 
 > Requires KMS tools — run `/kms use <name>` first if no KMS is attached.
 
@@ -454,7 +459,7 @@ this was a dry-run preview. re-run with `--apply` to execute.
 
 ### `/kms migrate NAME [--apply]`
 
-Schema migration. Defaults to dry-run (prints the plan without writing); pass `--apply` to execute. Idempotent — running on a KMS already at the latest version reports `already at schema version X — nothing to migrate`.
+Schema migration. Defaults to dry-run (prints the plan without writing); pass `--apply` to execute. Idempotent — running on a KMS already at the latest version reports `already at schema version X — nothing to migrate`. Aliases: `upgrade`.
 
 ```
 ❯ /kms migrate legacy-notes
@@ -505,6 +510,84 @@ point to the same risk. Recommend at minimum a manual smoke pass before merge.
 ```
 
 The agent's prompt explicitly tells it "don't be agreeable" — push back when the vault gives ammunition. The output is a written analysis, not vault writes; nothing is filed.
+
+### `/kms link [<name>] [--apply] [--llm] [--min-len N]`
+
+Auto-insert `[[wiki-style]]` cross-links across pages in a KMS. Without a name, it iterates every KMS in `kms_active` for this session. Aliases: `autolink`, `cross-link`.
+
+**Deterministic by default** — scans each page's `## Goal` / `## Links` headings and the body for occurrences of other page stems (case-insensitive, word-boundary aware) and rewrites them as `[[page-stem]]`. `--min-len N` (default `4`) suppresses links shorter than N characters so noise like `[[api]]` doesn't carpet every page.
+
+**`--llm` switches to a per-page LLM pass** — sends each page through the current model with the KMS index as context and asks it to surface non-obvious cross-link opportunities. Slower (one provider call per page) but catches semantic matches the deterministic pass misses ("session" ↔ "conversation", "token" ↔ "API key", etc.).
+
+**Dry-run is the default.** Pass `--apply` to actually write the changes.
+
+```
+❯ /kms link notes
+/kms link notes (deterministic, dry-run): scanned 23 page(s), 8 would gain link(s), 19 link insertion(s) total.
+    oauth-flow: "session" → [[session-management]]
+    oauth-flow: "refresh token" → [[token-refresh]]
+    incident-2026-01-12: "auth flow" → [[oauth-flow]]
+    …
+  re-run with --apply to write the changes.
+
+❯ /kms link notes --apply
+/kms link notes (deterministic, applied): scanned 23 page(s), 8 modified, 19 link insertion(s) total.
+```
+
+Use it after `/kms ingest` runs to weave new pages into the existing graph, or after `/kms merge` once the combined set settles.
+
+### `/kms merge <src> <dst>`
+
+Consolidate two KMSes — copy every page, source, and index entry from `src` into `dst`, with collision handling. Aliases: `combine`.
+
+- **Page name collision** → the incoming page is renamed `<stem>-1.md` (or `-2`, `-3`, …) so the destination's original wins.
+- **Aggregator pages** (those tagged `aggregator: true` in frontmatter, e.g. `architecture.md`) get **combined** instead of renamed — the src body is appended under the dst body so consolidated overview pages don't fragment.
+- **Source files** in `sources/` follow the same rename-on-collision rule.
+- **Index entries** in `dst/index.md` get appended for every new page.
+
+`src` is **left intact** — merge is non-destructive on the source side so you can verify before cleaning up.
+
+```
+❯ /kms merge old-notes new-notes
+merged 'old-notes' → 'new-notes': 47 page(s) copied (3 renamed, 2 combined), 14 source(s) copied (1 renamed), 47 index entr(ies) added.
+  aggregator pages combined (src body appended under dst body):
+    architecture.md
+    decisions.md
+  collision renames (kept original on dst, incoming was renamed):
+    page: oauth-flow.md → oauth-flow-1.md
+    page: session-id.md → session-id-1.md
+    page: README.md → README-1.md
+    source: spec.pdf → spec-1.pdf
+  'old-notes' is left intact; run `/kms drop old-notes` once you've verified.
+
+suggested workflow now:
+  /kms wrap-up new-notes --fix       # fix broken links + STALE markers
+  /kms link new-notes                # dry-run preview of auto-links
+  /kms link new-notes --apply        # write the wikilinks
+  /kms reconcile new-notes --apply   # resolve contradictions across pages
+  /kms drop old-notes --force        # remove the source KMS once happy
+```
+
+The output suggests the natural cleanup sequence — `wrap-up --fix` patches broken links from the rename pass, `link --apply` weaves new pages into the graph, `reconcile --apply` resolves contradictions where two KMSes covered the same topic differently, then `drop --force` retires the source KMS.
+
+### `/kms drop NAME [--force]`
+
+Destructive — removes the entire KMS directory tree (`<scope>/.thclaws/kms/<name>/` or `~/.config/thclaws/kms/<name>/`). Aliases: `delete`, `rm`.
+
+**Dry-run is the default.** Without `--force` it prints how many pages and sources *would* be removed but doesn't touch disk:
+
+```
+❯ /kms drop archived-notes
+/kms drop archived-notes: dry-run (would remove 12 page(s), 3 source(s) from /Users/you/.config/thclaws/kms/archived-notes).
+  re-run with --force to delete.
+
+❯ /kms drop archived-notes --force
+deleted KMS 'archived-notes' (12 page(s), 3 source(s)) from /Users/you/.config/thclaws/kms/archived-notes.
+```
+
+`--force` also detaches the KMS from this session's `kms_active` list (otherwise the next system-prompt rebuild would fail trying to resolve a dangling name). The GUI sidebar refreshes immediately so the dropped KMS disappears from the Knowledge section.
+
+No undo — the directory is gone after `--force`. If the KMS is in git (project-scope, committed), recover via `git checkout`; otherwise it's gone. Pair with `/kms merge` first when consolidating to keep a copy in the destination KMS before dropping the source.
 
 ## Schema versioning and frontmatter rules
 
@@ -743,7 +826,7 @@ The browser sidebar has a "Graph View" button above the page list. Clicking it r
 
 ### `/kms html NAME [OUT]` — single-file interactive site
 
-Generates a self-contained HTML site from a KMS's pages and writes it to your workspace (default `./<NAME>-site/index.html`). Unlike the in-app viewer, this is a **derived artifact** you can share, commit to git, host on S3, or hand to colleagues — it has no thClaws dependency.
+Generates a self-contained HTML site from a KMS's pages and writes it to your workspace (default `./<NAME>-site/index.html`). Unlike the in-app viewer, this is a **derived artifact** you can share, commit to git, host on S3, or hand to colleagues — it has no thClaws dependency. Aliases: `site`, `export`.
 
 The agent runs a three-phase workflow:
 

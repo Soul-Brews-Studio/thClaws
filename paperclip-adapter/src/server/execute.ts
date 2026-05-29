@@ -197,6 +197,17 @@ export async function execute(
     releaseAgentLock();
   }
 
+  // dev-plan/25 Phase B': session continuation. The thClaws server
+  // emits a `session` SSE event (sync path) or carries `session_id` on
+  // the 202 ACK (async path); surface it through the codec-shaped
+  // `sessionParams` so the orchestrator persists it for the next turn.
+  const sessionParams = result.sessionId
+    ? { sessionId: result.sessionId }
+    : null;
+  const sessionDisplayId = result.sessionId
+    ? result.sessionId.slice(0, 8)
+    : null;
+
   if (result.asyncAccepted) {
     await ctx.onLog(
       "stderr",
@@ -208,6 +219,7 @@ export async function execute(
       timedOut: false,
       status: "running_async",
       model,
+      ...(sessionParams ? { sessionParams, sessionDisplayId } : {}),
     } as AdapterExecutionResult & { status: "running_async" };
   }
 
@@ -230,6 +242,7 @@ export async function execute(
       summary: result.summary,
       usage: result.usage,
       ...(costUsd !== null ? { costUsd } : {}),
+      ...(sessionParams ? { sessionParams, sessionDisplayId } : {}),
     };
   }
 
@@ -243,6 +256,7 @@ export async function execute(
     model,
     summary: result.summary,
     usage: result.usage,
+    ...(sessionParams ? { sessionParams, sessionDisplayId } : {}),
   };
 }
 

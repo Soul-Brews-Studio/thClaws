@@ -61,6 +61,16 @@ pub enum AgentEvent {
     },
     /// Tool was denied by the approver. No call was made.
     ToolCallDenied { id: String, name: String },
+    /// A user message that was queued via `Agent::push_injection`
+    /// while the agent was mid-task has now been folded into the
+    /// conversation. Emitted once per drained injection, in queue
+    /// order, at the boundary after a tool_result lands. The frontend
+    /// uses this to flip a "queued" badge to "delivered" on the
+    /// corresponding chat bubble (see issue #106).
+    UserMessageInjected { text: String },
+    /// Display-only progress signal from the provider layer.
+    /// Not part of the conversation — never persisted or accumulated.
+    Progress(crate::providers::ProgressKind),
     /// Turn is complete. No further events follow.
     Done {
         stop_reason: Option<String>,
@@ -720,6 +730,15 @@ pub struct Agent {
     /// `stream_chunk_timeout_secs` setting. `None` means: defer to the
     /// global setting via `providers::stream_chunk_timeout()`.
     pub(crate) next_turn_chunk_timeout: Arc<Mutex<Option<std::time::Duration>>>,
+    /// Queue of user messages submitted while the agent was busy. Drained
+    /// at the boundary after a tool_result message lands in history, so
+    /// the user can "steer" the leader between tool calls without
+    /// waiting for the whole turn to end (issue #106). Each drained
+    /// item folds in as a `Text` content block on the same user-role
+    /// message that carries the tool_result blocks — that keeps the
+    /// user/assistant alternation valid for providers (e.g. Anthropic)
+    /// that reject two consecutive user messages.
+    pub(crate) injection_queue: Arc<Mutex<std::collections::VecDeque<String>>>,
 }
 
 impl Agent {
@@ -754,7 +773,46 @@ impl Agent {
             origin: crate::permissions::AgentOrigin::Main,
             model_override: Arc::new(Mutex::new(None)),
             next_turn_chunk_timeout: Arc::new(Mutex::new(None)),
+            injection_queue: Arc::new(Mutex::new(std::collections::VecDeque::new())),
         }
+    }
+
+    /// Append a user message to the injection queue. Drained at the
+    /// next tool_result boundary inside `run_turn`. Returns the new
+    /// queue length so the IPC layer can echo a queue position back
+    /// to the frontend.
+    pub fn push_injection(&self, text: String) -> usize {
+        let mut q = self.injection_queue.lock().expect("injection_queue lock");
+        q.push_back(text);
+        q.len()
+    }
+
+    /// Snapshot the injection queue length without mutating it.
+    /// Useful for the IPC layer's "what's pending right now?" probe.
+    pub fn pending_injections(&self) -> usize {
+        self.injection_queue.lock().map(|q| q.len()).unwrap_or(0)
+    }
+
+    /// Replace the agent's injection queue with an externally-owned
+    /// one so the IPC layer can hold a stable clone (independent of
+    /// agent reconstructions on ChangeCwd / NewSession). Call right
+    /// after each `new` / rebuild — drains any in-flight entries
+    /// from the old queue into the new one so a message queued
+    /// mid-rebuild isn't lost.
+    pub fn use_injection_queue(&mut self, queue: Arc<Mutex<std::collections::VecDeque<String>>>) {
+        let carry: Vec<String> = self
+            .injection_queue
+            .lock()
+            .map(|mut q| q.drain(..).collect())
+            .unwrap_or_default();
+        if !carry.is_empty() {
+            if let Ok(mut q) = queue.lock() {
+                for s in carry {
+                    q.push_back(s);
+                }
+            }
+        }
+        self.injection_queue = queue;
     }
 
     /// Mark the next `run_turn` as long-running so its `StreamRequest`
@@ -837,6 +895,16 @@ impl Agent {
     /// Append text to the system prompt.
     pub fn append_system(&mut self, text: &str) {
         self.system.push_str(text);
+    }
+
+    /// Replace the agent's system prompt wholesale. Used by the
+    /// `InstructionsChanged` path (GUI Settings → Folder Instructions
+    /// save) so the next provider.stream call sees the updated
+    /// AGENTS.md without an agent rebuild. Without this the agent's
+    /// captured `system` field stayed at construction-time content
+    /// and only a full restart picked up edits.
+    pub fn set_system(&mut self, text: impl Into<String>) {
+        self.system = text.into();
     }
 
     pub fn history_snapshot(&self) -> Vec<Message> {
@@ -931,6 +999,7 @@ impl Agent {
         let cancel = self.cancel.clone();
         let hooks = self.hooks.clone();
         let origin = self.origin.clone();
+        let injection_queue = self.injection_queue.clone();
 
         try_stream! {
             {
@@ -1175,6 +1244,9 @@ impl Agent {
                             }
                             turn_tool_uses.push(block);
                         }
+                        AssembledEvent::Progress(kind) => {
+                            yield AgentEvent::Progress(kind);
+                        }
                         AssembledEvent::Done { stop_reason, usage } => {
                             turn_stop_reason = stop_reason;
                             if let Some(u) = &usage {
@@ -1240,6 +1312,21 @@ impl Agent {
                         // Anthropic rejects any user message with empty
                         // content ("messages.N: user messages must have
                         // non-empty content").
+                        // Pop the partial assistant we just pushed at the
+                        // top of this block. The retry re-asks with a
+                        // larger token budget and the model produces a
+                        // fresh complete response — leaving the partial
+                        // in history would make the next provider.stream
+                        // call's messages end with role=assistant, which
+                        // claude-opus-4-7+ rejects ("This model does not
+                        // support assistant message prefill. The
+                        // conversation must end with a user message.").
+                        {
+                            let mut h = history.lock().expect("history lock");
+                            if h.last().map(|m| m.role) == Some(Role::Assistant) {
+                                h.pop();
+                            }
+                        }
                         continue;
                     } else {
                         // Clear any skill-recommended model override
@@ -1565,11 +1652,38 @@ impl Agent {
                 }
 
                 if !result_blocks.is_empty() {
-                    let mut h = history.lock().expect("history lock");
-                    h.push(Message {
-                        role: Role::User,
-                        content: result_blocks,
-                    });
+                    // Drain any user-typed messages that arrived while
+                    // we were mid-tool (issue #106). Fold each as an
+                    // extra Text block on the SAME user-role message
+                    // that carries the tool_result blocks so the
+                    // user/assistant alternation stays valid for
+                    // providers (Anthropic) that reject two
+                    // consecutive user messages. The model sees the
+                    // tool's effect *and* the user's mid-flight
+                    // correction in the next turn's context.
+                    //
+                    // Lock guards are scoped tightly — they must NOT
+                    // live across the `yield` below (Mutex from std
+                    // is `!Send`, and run_turn returns a `Send`
+                    // stream).
+                    let injected: Vec<String> = {
+                        let mut q = injection_queue.lock().expect("injection_queue lock");
+                        q.drain(..).collect()
+                    };
+                    let mut content = result_blocks;
+                    for text in &injected {
+                        content.push(ContentBlock::Text { text: text.clone() });
+                    }
+                    {
+                        let mut h = history.lock().expect("history lock");
+                        h.push(Message {
+                            role: Role::User,
+                            content,
+                        });
+                    }
+                    for text in injected {
+                        yield AgentEvent::UserMessageInjected { text };
+                    }
                 }
             }
 
@@ -1726,6 +1840,8 @@ where
             AgentEvent::ToolCallStart { name, .. } => out.tool_calls.push(name),
             AgentEvent::ToolCallResult { .. } => {}
             AgentEvent::ToolCallDenied { name, .. } => out.tool_denials.push(name),
+            AgentEvent::UserMessageInjected { .. } => {}
+            AgentEvent::Progress(_) => {}
             AgentEvent::Done { stop_reason, usage } => {
                 out.stop_reason = stop_reason;
                 out.usage = Some(usage);

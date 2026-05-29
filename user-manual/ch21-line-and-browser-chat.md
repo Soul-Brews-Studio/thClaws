@@ -117,17 +117,21 @@ for the full setup walk-through.
 
 ## Approvals from the phone or browser
 
-When the agent calls a tool that needs approval (Bash, Edit,
-Write — see [Chapter 5](ch05-permissions.md)) and a phone/browser
-session is active, the approval prompt routes through whichever
-surface is currently open:
+When LINE is bridged, the runtime permission mode is `linegated`
+(see [Chapter 5](ch05-permissions.md)) and **every approval
+request routes through LINE regardless of which surface you typed
+the original request on** — Terminal tab, Chat tab, REPL, or LINE
+itself. The approver is a process-wide singleton with no
+awareness of the originating surface; while paired, your phone is
+the single approval inbox.
 
-- **Browser chat open:** modal pops up with the tool name, full
-  argument preview, and **[Approve] [Deny]** buttons. The desktop
-  Approval modal stays in sync — approving in either surface
+- **Browser chat (`/chat`) open:** the approval modal pops up in
+  the browser with the tool name, a full argument preview, and
+  **[Approve] [Deny]** buttons — better UX than LINE Quick Reply
+  chips for long arg previews. Approving in either surface
   dismisses both.
-- **Browser chat NOT open:** falls back to LINE OA Quick Reply.
-  The bot pushes a bubble like:
+- **Browser chat closed (or never minted):** falls back to LINE
+  OA Quick Reply. The bot pushes a bubble like:
 
   ```
   thClaws wants to run:
@@ -137,9 +141,19 @@ surface is currently open:
   ```
 
   Tap a chip; the answer flows back to the desktop within ~1 s.
-- **Neither surface open:** the desktop's own approval modal
-  pops up as usual. Phone/browser routing is additive, not a
-  replacement.
+
+**Bypass while paired**, if you don't want approvals routing to
+your phone:
+
+- `/permissions auto` — overrides `linegated`; mutating tools then
+  run without prompting anywhere. Persists to `settings.json` and
+  survives LINE disconnect / reconnect.
+- Disconnect LINE from Settings → LINE Connect — restores your
+  pre-LINE mode (typically `auto` or `ask`) immediately.
+
+When LINE is **not** paired, the desktop's own approval modal
+pops up as usual — phone/browser routing is only active while the
+bridge is connected.
 
 ## Uploading files from the phone or browser
 

@@ -60,6 +60,17 @@ type ChatMessage = {
     /// except first-party widgets that explicitly opted in.
     autoSize?: boolean;
   };
+  /// Mid-turn injection state (issue #106): "queued" while the
+  /// message is waiting in the agent's injection queue,
+  /// "delivered" once the agent drained it at a tool_result
+  /// boundary. Absent for normal user messages submitted at turn
+  /// start. Drives the small badge next to the bubble.
+  injectionState?: "queued" | "delivered";
+  /// Local-only id used to match the optimistic queued bubble with
+  /// the `user_message_injected` event that arrives once the agent
+  /// drains the queue. Same value the IPC payload carries in
+  /// `id`. Not persisted.
+  injectionId?: string;
 };
 
 /// Shape of a TodoWrite tool input.todos entry. Mirrors the Rust-side
@@ -312,14 +323,35 @@ export function ChatView({ active, modalOpen }: Props) {
   useEffect(() => {
     const unsub = subscribe((msg) => {
       switch (msg.type) {
-        case "chat_user_message":
+        case "chat_user_message": {
           // Echo of a prompt the user submitted (possibly from the
           // Terminal tab — we render it as a user bubble either way).
-          setMessages((prev) => [
-            ...prev,
-            { role: "user", content: msg.text as string },
-          ]);
+          //
+          // Special case for mid-turn injection (issue #106): if there's
+          // a local optimistic bubble in `queued` state with matching
+          // text, flip it to `delivered` instead of appending a duplicate.
+          // The first match wins; only the first matching queued bubble
+          // is flipped.
+          const incoming = msg.text as string;
+          setMessages((prev) => {
+            const queuedIdx = prev.findIndex(
+              (m) =>
+                m.role === "user" &&
+                m.injectionState === "queued" &&
+                m.content === incoming,
+            );
+            if (queuedIdx >= 0) {
+              const next = prev.slice();
+              next[queuedIdx] = {
+                ...next[queuedIdx],
+                injectionState: "delivered",
+              };
+              return next;
+            }
+            return [...prev, { role: "user", content: incoming }];
+          });
           break;
+        }
         case "chat_text_delta":
           firstByteSeenRef.current = true;
           setWaitingFirstByte(false);
@@ -676,7 +708,29 @@ export function ChatView({ active, modalOpen }: Props) {
     }
     // Allow send when EITHER text or attachments are present —
     // "describe this image" with no text is a valid use case.
-    if ((!text && attachments.length === 0) || streaming) return;
+    if (!text && attachments.length === 0) return;
+
+    // Mid-turn injection path (issue #106): if the agent is already
+    // streaming, the message goes into the agent's injection queue
+    // instead of starting a new turn. The agent drains the queue at
+    // the next tool_result boundary and folds the text into the
+    // conversation so the user can steer mid-task. Attachments
+    // can't ride along — injection only supports plain text in v1.
+    if (streaming && text && !text.startsWith("/")) {
+      const injectionId = `inj-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setInput("");
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "user",
+          content: text,
+          injectionState: "queued",
+          injectionId,
+        },
+      ]);
+      send({ type: "user_input_inject", text, id: injectionId });
+      return;
+    }
     setInput("");
     const pendingAttachments = attachments;
     setAttachments([]);
@@ -1103,6 +1157,33 @@ export function ChatView({ active, modalOpen }: Props) {
                 ) : (
                   msg.content
                 )}
+                {msg.injectionState && (
+                  // Mid-turn injection badge (issue #106). "queued"
+                  // → message sits in the agent's queue; "delivered"
+                  // → agent drained it at a tool_result boundary and
+                  // the LLM now sees it in the next turn's context.
+                  <span
+                    className="ml-2 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider align-middle"
+                    style={{
+                      background:
+                        msg.injectionState === "queued"
+                          ? "color-mix(in srgb, var(--accent) 18%, transparent)"
+                          : "color-mix(in srgb, #22c55e 22%, transparent)",
+                      color:
+                        msg.injectionState === "queued"
+                          ? "var(--accent)"
+                          : "#22c55e",
+                      fontWeight: 600,
+                    }}
+                    title={
+                      msg.injectionState === "queued"
+                        ? "Queued — the agent will see this at the next tool boundary"
+                        : "Delivered — the agent has read this message"
+                    }
+                  >
+                    {msg.injectionState === "queued" ? "queued" : "delivered"}
+                  </span>
+                )}
                 <CopyMessageButton
                   copied={copied}
                   onCopy={() => copyMessage(msg, i)}
@@ -1113,10 +1194,20 @@ export function ChatView({ active, modalOpen }: Props) {
         }), [messages, copiedMessageIndex, copyMessage, handleChatLinkClick]);
 
   const awaitingUserAnswer = askPrompt !== null;
-  const inputDisabled = streaming && !awaitingUserAnswer;
+  // Allow typing while the agent is streaming so the user can queue
+  // a mid-turn correction (issue #106). The textarea is only locked
+  // when there's literally no place for input (e.g. AskUserQuestion
+  // path uses a different prompt component).
+  const inputDisabled = false;
+  // Submit-while-streaming is allowed for plain text (the message
+  // queues into the agent's injection buffer). Slash commands and
+  // file attachments don't take the inject path in v1 — keep the
+  // old gate for those.
   const submitDisabled = awaitingUserAnswer
     ? !input.trim()
-    : streaming || (!input.trim() && attachments.length === 0);
+    : streaming
+      ? !input.trim() || input.trim().startsWith("/") || attachments.length > 0
+      : (!input.trim() && attachments.length === 0);
   // The full question now renders as a markdown card above the input
   // (see `<AskCard>` below) — the placeholder is just a short hint
   // that points at the card. Truncating multi-line markdown into a

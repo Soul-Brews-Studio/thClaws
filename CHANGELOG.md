@@ -7,29 +7,366 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-05-26
+
+Telegram channels + forum topics + streaming preview, plus two
+community-driven hardening fixes.
+
+### Added
+
+- **Telegram channels + forum-topic routing (Tier 2).** The bot can post
+  to a broadcast **channel**, and comments on those posts (which land in
+  the channel's linked **discussion group**) reach the agent. Supergroup
+  **forum topics** route to different agents: `channels[].topicRouting`
+  maps a topic id to an `agentId` (an AgentDef under `.thclaws/agents/`),
+  falling back to the channel's default agent. Replies go back into the
+  originating topic, with the "General" topic's `message_thread_id=1`
+  send quirk handled. A `getChatMember` admin-rights probe returns a
+  clear error when the bot isn't an admin that can post. Per-topic
+  multi-agent routing is honoured by headless `thclaws --telegram`; the
+  GUI runs its single shared session.
+- **Telegram streaming preview edits (Tier 3.1).** Opt-in via
+  `streamPreview` in the Telegram config: instead of one reply at the end
+  of a turn, post a placeholder and **edit it in place** as the agent
+  generates (rate-limited to avoid Telegram's same-message edit
+  throttling), then swap in the final formatted reply. Headless-only for
+  now.
+
 ### Fixed
 
-- **Windows `--cli` readline whitespace and cursor offset.** Interactive
-  REPL input on Windows mishandled spaces and put the cursor in the wrong
-  column inside PowerShell / `cmd.exe`. Two root causes: the binary was
-  built with `#![windows_subsystem = "windows"]` and called
-  `AttachConsole(ATTACH_PARENT_PROCESS)` at startup, which detached stdio
-  from the parent terminal before rustyline could read keys; and the cyan
-  ANSI escapes embedded directly in the prompt string confused rustyline's
-  column accounting on Windows.
-  - Removed the `windows_subsystem = "windows"` attribute on
-    `crates/core/src/bin/app.rs` so the binary defaults to the console
-    subsystem and `--cli` keeps a working stdio.
-  - Replaced startup-wide `AttachConsole` with a GUI-only
-    `detach_console_for_gui()` that calls `FreeConsole()` immediately
-    before `gui::run_gui()`. Double-clicking still hides the console; the
-    REPL keeps it.
-  - Added `readline_config()` that sets `rustyline::Behavior::PreferTerm`
-    on Windows.
-  - Moved prompt coloring out of the prompt string into a
-    `highlight_prompt` impl on `SlashCompleter`, and routed the prompt
-    through a single `REPL_PROMPT` constant used by `readline()`, the
-    team-inbox reprint, and the turn-start log line.
+- **Grapheme-aware Backspace in the CLI REPL**
+  ([#126](https://github.com/thClaws/thClaws/pull/126),
+  [@modtanoii](https://github.com/modtanoii)). Backspace deleted one
+  codepoint per press, orphaning Thai/Lao/Hindi/Arabic combining marks
+  and splitting emoji ZWJ sequences. It now deletes a whole grapheme
+  cluster, via a rustyline `ConditionalEventHandler` + `unicode-segmentation`
+  (rather than vendoring rustyline).
+
+- **Shell-aware team bash seatbelts**
+  ([#125](https://github.com/thClaws/thClaws/issues/125),
+  [@ultramcu](https://github.com/ultramcu)). The team-lead / teammate
+  destructive-command guards matched by substring and were defeated by
+  shell quoting (`r''m -rf`, `$(printf rm)`, `${x:-rm}`, backticks,
+  `{rm,-rf,..}`, `IFS`-splicing, `eval $'\x72\x6d'`, arg-order swap,
+  quoted verb, line-continuation, wrapper prefixes) — letting an LLM
+  lead/teammate in `--accept-all` mode slip a destructive command past
+  the seatbelt. They now tokenize via `shell_words` (resolving quotes /
+  order / wrappers, recursing into `eval` / `sh -c` / `bash -c`) and
+  refuse obfuscated forms carrying a destructive signal; the substring
+  guard remains as a fallback.
+
+### Default model — no change
+
+Default stays `claude-sonnet-4-6`.
+
+## [0.19.0] — 2026-05-25
+
+Telegram bot adapter — chat with your local thClaws agent from Telegram.
+
+### Added
+
+- **Telegram bot adapter (Tier 1).** Create a bot with `@BotFather`,
+  connect it from the desktop (Settings → **Telegram Connect**) or run it
+  headless with `thclaws --telegram`, and DM your local agent from
+  anywhere. The agent and all its tools stay on your machine; Telegram is
+  only the chat surface, and there is **no relay** — thClaws talks to the
+  Bot API directly via long-polling (works behind NAT).
+
+  - DM + basic group support; pairing-code onboarding (the owner approves
+    new users from the GUI); HTML-formatted replies chunked to Telegram's
+    4096-character message limit.
+  - Tool calls that need approval surface as **inline-keyboard buttons**
+    (Allow / Always / Deny) via a new `telegramgated` permission mode —
+    approve `Bash`/`Edit`/`Write` from your phone.
+  - `thclaws telegram status | pair` CLI; env-first token
+    (`TELEGRAM_BOT_TOKEN`), `TELEGRAM_OWNER_ID` for instant headless
+    allowlisting.
+  - Docs: new Chapter 23 in the EN + TH user manuals and
+    `telegram-bridge.md` in the technical manual.
+
+### Fixed
+
+- **Agent SDK: avoid `ARG_MAX` on large system prompts**
+  ([#124](https://github.com/thClaws/thClaws/pull/124),
+  [@gobikom](https://github.com/gobikom)). The Agent SDK provider passed
+  the assembled system prompt as a single `--system-prompt` CLI argument;
+  with MCP tools + CLAUDE.md + skills + memory + KMS it can exceed Linux's
+  128 KB `MAX_ARG_STRLEN` → `spawn claude: Argument list too long`,
+  blocking `agent/claude-*` models in `--cli` when MCP servers are
+  registered. The prompt is now written to a temp file and passed via
+  `--system-prompt-file`.
+
+### Default model — no change
+
+Default stays `claude-sonnet-4-6`.
+
+## [0.18.0] — 2026-05-24
+
+One-shot schedules ("run once in 15 minutes / tomorrow at 9am"), plus
+two community fixes.
+
+### Added
+
+- **One-shot / relative-delay schedules**
+  ([#122](https://github.com/thClaws/thClaws/issues/122),
+  design by [@ultramcu](https://github.com/ultramcu)). Schedules can now
+  run **once** at a future time or after a relative delay, alongside the
+  existing recurring cron jobs:
+
+  ```sh
+  thclaws schedule add report --at "2026-05-24T15:30:00Z" --prompt "…"
+  thclaws schedule add check  --in 15m                    --prompt "…"
+  ```
+
+  `--in` accepts `s`/`m`/`h`/`d` (and a bare integer as seconds);
+  `--at` takes an RFC 3339 timestamp. Both are mutually exclusive with
+  `--cron`. A one-shot fires once, then auto-disables. **Catch-up by
+  design:** a fire time already in the past when the scheduler ticks
+  (e.g. the daemon was down over the slot) runs immediately rather than
+  being lost — the footgun of hand-writing a cron for a single minute,
+  where a missed slot silently waits a year. `schedule list` shows
+  `once@<time> (pending|fired)`; the new on-disk `runAt` field is
+  optional, so existing `schedules.json` files stay compatible.
+
+### Fixed
+
+- **Edit: reject an empty `old_string`**
+  ([#121](https://github.com/thClaws/thClaws/pull/121),
+  [@ultramcu](https://github.com/ultramcu)). An empty `old_string`
+  matches between every character, so with `replace_all` it would inject
+  the replacement throughout the file and corrupt it. The Edit tool now
+  rejects it up front.
+
+- **ChatGptCodex credentials detected from the auth file**
+  ([#123](https://github.com/thClaws/thClaws/pull/123),
+  [@gobikom](https://github.com/gobikom)). `kind_has_credentials()` only
+  probed env vars, but ChatGptCodex (ChatGPT subscription) authenticates
+  via a file-based OAuth token — so it was wrongly reported as having no
+  credentials, and interactive `--cli` / GUI / `--serve` triggered the
+  model-fallback path and overwrote `settings.json`. It now resolves the
+  Codex auth store (honoring token expiry), and the shared-session
+  worker delegates to the same canonical check so all surfaces agree.
+
+### Default model — no change
+
+Default stays `claude-sonnet-4-6`.
+
+## [0.17.1] — 2026-05-24
+
+KMS + Files management in the GUI, a LINE reconnect fix, and a clearer
+sandbox boundary message.
+
+### Added
+
+- **KMS sidebar create / rename / delete / edit.** The `+` buttons now
+  open proper modals (the old `window.prompt`/`confirm` silently failed
+  inside the wry webview): create a new KMS base (name + project/user
+  scope), and create a new blank page (title / topic / category / tags)
+  from the per-KMS browser panel. Right-click a page row to **Rename…**
+  (moves the file and rewrites inbound links + the index) or
+  **Delete…**. Edit the page you're viewing — a pencil opens the body
+  in the TipTap editor plus a modal for the raw YAML frontmatter; Save
+  writes it back.
+- **Files tab create file / folder.** Right-click the explorer (or the
+  new FilePlus / FolderPlus header buttons) for **New file…** /
+  **New folder…**, created in the current directory via a name modal.
+  Sandbox-checked; refuses to clobber an existing path. The explorer
+  header now shows a compact `../<last>` path (full path on hover)
+  since the viewer navbar already carries the full path.
+
+### Fixed
+
+- **LINE: reconnect storm after a clean websocket close**
+  ([#120](https://github.com/thClaws/thClaws/pull/120),
+  [@ultramcu](https://github.com/ultramcu)). `LineClient::run` reset
+  backoff and reconnected immediately on a clean close; a relay that
+  closes cleanly on every connect spun an unthrottled connect/close
+  loop. Adds a cancel-aware 1s pause mirroring the error path (shutdown
+  still returns `Cancelled` promptly).
+
+- **Clearer "outside the workspace" sandbox message**
+  ([#119](https://github.com/thClaws/thClaws/issues/119),
+  [@ruzerix](https://github.com/ruzerix)). When a path resolves outside
+  the workspace root, `Sandbox` now states plainly that this is a
+  workspace-path boundary, **not** a permission/approval issue
+  (approving a tool doesn't widen it). #119 turned out not to be a bug:
+  a small model fabricated an out-of-workspace absolute interpreter
+  path, the command failed as an ordinary shell error, and the model
+  paraphrased it as "rejected by the security policy." The Bash tool
+  description now steers models to invoke interpreters via PATH
+  (e.g. `python script.py`) rather than guessing absolute paths.
+
+### Default model — no change
+
+Default stays `claude-sonnet-4-6`.
+
+## [0.17.0] — 2026-05-24
+
+Two contributor-driven fixes: accurate Anthropic token/cost accounting,
+and a remote-MCP `/mcp add` that no longer hangs (with API-key header
+support).
+
+### Added
+
+- **`--header` on `/mcp add`** (part of
+  [#118](https://github.com/thClaws/thClaws/pull/118)).
+  `/mcp add <name> <url> --header "Key: Value"` — repeatable, `-H`
+  alias. Values support `${VAR}` interpolation resolved from the
+  environment at connect time, so an API key lives in your shell /
+  `.env` rather than plaintext in `mcp.json`:
+  ```
+  /mcp add financial-datasets https://mcp.financialdatasets.ai/api --header "X-API-KEY: ${FD_KEY}"
+  ```
+
+### Fixed
+
+- **Anthropic token usage + prompt-cache accounting**
+  ([#115](https://github.com/thClaws/thClaws/pull/115),
+  [@ultramcu](https://github.com/ultramcu)). The streaming parser read
+  usage only from `message_delta` (which carries just `output_tokens`)
+  and dropped `message_start.message.usage`, so every Anthropic turn
+  reported `input_tokens = 0` and no cache stats — making `/cost` and
+  the Cardputer cost display undercount the flagship provider. Now
+  merges `message_start` usage into the terminal result (terminal
+  `output_tokens` wins; cache fields preserved).
+
+- **Remote MCP `/mcp add` no longer hangs; supports API-key auth**
+  ([#114](https://github.com/thClaws/thClaws/issues/114),
+  [@ultramcu](https://github.com/ultramcu);
+  [#118](https://github.com/thClaws/thClaws/pull/118)). Adding an
+  OAuth-gated remote server (e.g. financial-datasets' root URL) froze
+  `/mcp add` for up to 5 minutes: the command ran the full connect
+  inline, hit a 401, and blocked on the OAuth browser callback. Four
+  fixes:
+  - `--header` lets you use the API-key endpoint (`/api` + `X-API-KEY`)
+    and skip OAuth entirely (see Added).
+  - The auth probe and `oauth::discover` now have hard timeouts (15s
+    request / 10s connect) so a stalled server can't hang the command
+    or a startup spawn indefinitely.
+  - `/mcp add` connects **non-interactively**: a server that needs
+    OAuth returns "run `/mcp reauth <name>`" instead of blocking on a
+    browser callback. The guard covers both the upfront probe and the
+    bridge's `initialize`-time 401. Startup / `/mcp reauth` stay
+    interactive (browser flow runs in the background as before).
+
+### Default model — no change
+
+Default stays `claude-sonnet-4-6`.
+
+## [0.16.1] — 2026-05-24
+
+Hotfix. macOS startup crash for every GUI / `--serve` user.
+
+### Fixed
+
+- **macOS: GUI / `--serve` build crashed on startup (TCC / Bluetooth SIGABRT)**
+  ([#116](https://github.com/thClaws/thClaws/issues/116),
+  [@ultramcu](https://github.com/ultramcu);
+  [#117](https://github.com/thClaws/thClaws/pull/117)).
+  The `cost_bridge` feature (Cardputer cost display, added in v0.15.0)
+  was enabled by default and started a Bluetooth LE scan on every
+  launch via `cost_bridge::spawn()` → `adapter.start_scan()`. On
+  macOS, any binary without an `NSBluetoothAlwaysUsageDescription`
+  `Info.plist` — every `cargo build` and every GitHub release archive
+  (none are `.app` bundles) — is killed by **TCC** with a hard
+  **SIGABRT** ~1–3s after startup, before serving any request. It also
+  popped a Bluetooth permission prompt for the ~99% of users who don't
+  own a thClaws-Cost Cardputer.
+  - Fix: `cost_bridge` is now **opt-in** (`default = []`). A stock
+    build never links `btleplug` or starts the BLE scan. Cardputer
+    users build with `--features cost_bridge`.
+  - No code changes — the call sites were already
+    `#[cfg(feature = "cost_bridge")]`-gated.
+  - **Affected releases v0.15.0 and v0.16.0**: macOS users on those
+    versions should upgrade to v0.16.1, or run with
+    `cargo run --no-default-features --features gui` as a workaround.
+
+## [0.16.0] — 2026-05-23
+
+Four user-facing fixes — three issue-driven, plus a Files-tab polish item
+caught while drafting a deck.
+
+### Fixed
+
+- **Windows: GUI launch no longer blocks the cmd.exe / PowerShell prompt**
+  ([#109](https://github.com/thClaws/thClaws/issues/109),
+  [@jubbyy](https://github.com/jubbyy);
+  [#111](https://github.com/thClaws/thClaws/pull/111)).
+  Typing `thclaws.exe` from a shell on Windows 11 used to leave the
+  prompt waiting until the GUI window closed. Root cause: PR #60 (May
+  2026) deliberately built the binary as the **console subsystem** so
+  `--cli`'s rustyline gets working stdio — the side effect was that
+  cmd.exe / PowerShell `WaitForSingleObject` on every console-subsystem
+  child, and `FreeConsole()` in the child can't undo that. Fix: at GUI
+  dispatch entry on Windows, respawn `current_exe()` with
+  `THCLAWS_GUI_DETACHED=1` and the `DETACHED_PROCESS` creation flag,
+  then `exit(0)` the parent. The detached child runs the GUI in-process
+  and survives parent / terminal closure; the parent exits in
+  microseconds so cmd's wait returns. Placed before the in-process
+  scheduler and `/v1` loopback bind so neither runs in the doomed
+  parent (no port-bind race on 18443). Spawn failure (antivirus
+  quarantine, ENOMEM, etc.) falls through to the in-process GUI run.
+  No-op on macOS / Linux.
+
+- **Agent: `max_tokens` escalation retry no longer rejected by claude-opus-4-7+**
+  ([#112](https://github.com/thClaws/thClaws/pull/112),
+  [@siharat-th](https://github.com/siharat-th)).
+  When the model hit `stop_reason=max_tokens` with no tool uses, the
+  loop escalated `max_tokens` to 64000 and retried. The partial
+  assistant message was already pushed to history, so the next
+  `provider.stream` call's messages ended with `role=assistant` —
+  which claude-opus-4-7+ rejects ("This model does not support
+  assistant message prefill. The conversation must end with a user
+  message."), failing the entire retry. Fix: pop the trailing
+  assistant (guarded on `role == Assistant` so an empty assistant
+  push is a no-op) before `continue`. The retry now sees a clean
+  conversation ending in `role=user` and the model produces a
+  complete response under the larger budget.
+
+- **CLI: `--model` flag now reaches GUI and `--serve` modes**
+  ([#110](https://github.com/thClaws/thClaws/pull/110),
+  [@dome](https://github.com/dome) — original diagnosis;
+  [#113](https://github.com/thClaws/thClaws/pull/113)).
+  `thclaws --model X` was applied only by the CLI/REPL branch in
+  `app.rs::main`, so the GUI and `--serve` paths silently ignored
+  it. Fix: route `--model` through a process-global override that
+  `AppConfig::load` applies last, after the project overlay — every
+  dispatch surface (CLI, GUI, `--serve`, `--serve --gui`) now honors
+  the flag without per-mode override plumbing. The GUI's
+  auto-fallback path clears the override after switching to a
+  working provider so a broken `--model` choice doesn't re-pin on
+  every reload. Closes #110.
+
+- **Files preview: relative `![alt](img/foo.png)` in markdown now renders.**
+  Comrak emits `<img src="img/foo.png">` verbatim, and the iframe's
+  `srcDoc` base URL is opaque, so relative paths had no directory to
+  resolve against and failed silently. Fix: inject a
+  `<base href="${origin}/file-asset/<dir>/">` into the rendered HTML
+  before `srcDoc` so relative refs resolve via the same
+  `/file-asset/` handler the `.html` branch already uses — same
+  sandbox check, no backend changes.
+
+### Added
+
+- **`--set-model VALUE` flag**
+  ([#113](https://github.com/thClaws/thClaws/pull/113)).
+  Persists a model to `.thclaws/settings.json` as the project
+  default *and* uses it for the current run. Kept separate from
+  `--model` (one-shot, in-memory) on purpose: a scripted
+  `thclaws --print --model gpt-4-mini "quick"` shouldn't silently
+  rewrite the default the user keeps for interactive work.
+  Distinguishes "file missing" (safe to create — falls back to
+  `ProjectConfig::load` so `.claude/settings.json` migrations
+  preserve existing settings) from "file exists but unreadable"
+  (bail with a clear error rather than silently nuking siblings
+  like `maxTokens` / `allowedTools` / `kms.active` with a
+  defaults-everywhere `ProjectConfig`). Save errors surface on
+  stderr; success prints a green confirmation with the resolved
+  path.
+
+### Default model — no change
+
+Default stays `claude-sonnet-4-6`.
 
 ## [0.6.2] — 2026-04-27
 

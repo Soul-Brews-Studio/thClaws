@@ -341,7 +341,10 @@ async fn chat_completions_stream(req: ChatRequest) -> Result<Response, Response>
                         &id, &name,
                     ));
                 }
-                Ok(AgentEvent::IterationStart { .. }) | Ok(AgentEvent::Thinking(_)) => {}
+                Ok(AgentEvent::IterationStart { .. })
+                | Ok(AgentEvent::Thinking(_))
+                | Ok(AgentEvent::Progress(_))
+                | Ok(AgentEvent::UserMessageInjected { .. }) => {}
                 Err(e) => {
                     // Surface as a content delta so the consumer sees the
                     // failure inline + still gets a terminal chunk to
