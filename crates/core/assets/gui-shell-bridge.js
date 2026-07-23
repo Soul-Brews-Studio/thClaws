@@ -783,6 +783,61 @@
       },
     },
 
+    // Sessions / chat-history API (dev-plan/33). Drives the SAME shared
+    // session Chat uses: list past sessions, load one (its history is
+    // returned AND the agent is primed so run() continues it), start a
+    // new one, rename, delete. Needs `session.list`/`session.read`
+    // (reads) and `session.write` (new/rename/delete) in the manifest.
+    sessions: {
+      // -> { sessions: [{ id, title, updatedAt, messageCount, model }] }
+      list() {
+        return send("session_list", {});
+      },
+      // -> { messages: [{ role: "user"|"bot", text }] }
+      load(id) {
+        if (typeof id !== "string" || !id) {
+          return Promise.reject(
+            new TypeError("thclaws.sessions.load: id must be a non-empty string"),
+          );
+        }
+        return send("session_load", { loadId: id });
+      },
+      // Start a fresh session (becomes the active one). -> { ok: true }
+      new() {
+        return send("session_new", {});
+      },
+      rename(id, title) {
+        if (typeof id !== "string" || !id) {
+          return Promise.reject(
+            new TypeError("thclaws.sessions.rename: id must be a non-empty string"),
+          );
+        }
+        return send("session_rename", { renameId: id, title: String(title ?? "") });
+      },
+      delete(id) {
+        if (typeof id !== "string" || !id) {
+          return Promise.reject(
+            new TypeError("thclaws.sessions.delete: id must be a non-empty string"),
+          );
+        }
+        return send("session_delete", { deleteId: id });
+      },
+    },
+
+    // Memory API (dev-plan/33 — settings "Memory" panel). Core memory is
+    // the MEMORY.md index injected into every turn. Needs `memory.read`
+    // (get) / `memory.write` (set).
+    memory: {
+      // -> { core: "<MEMORY.md contents>" }
+      getCore() {
+        return send("memory_get", {});
+      },
+      // Overwrite core memory. -> { ok: true }
+      setCore(text) {
+        return send("memory_set", { core: String(text ?? "") });
+      },
+    },
+
     // Deterministic knowledge-base API (needs `kms.read`). No LLM — reads
     // the KMS store directly instead of prompting the agent.
     kms: {

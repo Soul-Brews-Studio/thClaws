@@ -1846,6 +1846,11 @@ export function ChatView({ active, modalOpen }: Props) {
             placeholder={inputPlaceholder}
             disabled={inputDisabled}
             rows={1}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            autoComplete="off"
+            data-gramm="false"
             className="flex-1 px-3 py-2 rounded text-sm outline-none resize-none"
             style={{
               background: "var(--bg-tertiary)",

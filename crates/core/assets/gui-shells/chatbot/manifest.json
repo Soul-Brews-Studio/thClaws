@@ -1,10 +1,10 @@
 {
   "id": "chatbot",
-  "name": "Chatbot",
-  "version": "0.1.0",
-  "description": "Minimal conversational shell — demonstrates thclaws.run() + thclaws.storage end-to-end. Works with any configured model; no tools required.",
+  "name": "Chat",
+  "version": "0.2.0",
+  "description": "White-label conversational shell — a branded ChatGPT-style chat surface over the agent loop. Branding (product name, logo, accent, greeting, quick actions) is read from a workspace-level brand.json at runtime, so one shell white-labels per tenant. Model picker + client-side conversation history included.",
   "entry": "index.html",
   "icon": "icon.svg",
   "minBridgeVersion": "1",
-  "permissions": ["agent.run"]
+  "permissions": ["agent.run", "model.read", "model.write", "session.read", "session.list", "session.write", "memory.read", "memory.write"]
 }

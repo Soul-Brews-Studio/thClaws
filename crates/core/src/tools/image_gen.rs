@@ -64,7 +64,7 @@ fn build_image_result(bytes: &[u8], path: &std::path::Path) -> ToolResultContent
 }
 
 const MODEL_DESC: &str = "Which image model. Provider is inferred from the model. \
-Gemini: `flash` (default; gemini-3.1-flash-image) or `pro` (gemini-3.1-pro-image). \
+Gemini: `flash` (default; gemini-3.1-flash-image) or `pro` (gemini-3-pro-image). \
 OpenAI: `gpt-image-2` (alias `openai`). Qwen: `qwen-image-2.0` (alias `qwen`) or \
 `qwen-image-2.0-pro` — strong at multi-image editing + text rendering. Default: flash.";
 const PROVIDER_DESC: &str = "Optional explicit provider (`gemini` | `openai` | `qwen`). \

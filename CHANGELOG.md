@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.102.0] — 2026-07-23
+
+White-label GUI Shell with sessions and memory bridge APIs, new RenderSlides built-in tool, plugin .zip installs, and catalogue refresh.
+
+### Added
+- **GUI Shell: white-label chat shell replaces the chatbot example — markdown, chat bubbles, dark theme, sessions history, and memory panel.**
+- **GUI Shell: "Set as default" button on picker cards.**
+- **RenderSlides: new built-in tool relays Marp slide decks to the slide-render service.**
+- **Plugins: install from a local `.zip` file, not just HTTP URLs.**
+
+### Fixed
+- **GUI Shell: settings drawer no longer appears on load and can be closed.**
+- **Multiuser: per-user memory root prevents cross-tenant memory leaks.**
+- **Chat: autocorrect and spellcheck disabled on the chat input.**
+- **RenderSlides: PNG output normalised to `slide-NN.png` (dash separator).**
+- **Media: Gemini pro image model corrected to `gemini-3-pro-image` (was returning 404).**
+
+### Changed
+- **Catalogue: 2026-07-22 model catalogue refresh.**
+
 ## [0.101.0] — 2026-07-21
 
 New built-in TextToSpeech tool, MCP plugin-contributed server fixes, plugin install improvements, and catalogue refresh.

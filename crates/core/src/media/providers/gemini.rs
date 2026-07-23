@@ -28,9 +28,9 @@ const MODELS: &[ImageModelInfo] = &[
         label: "Gemini 3.1 Flash Image",
     },
     ImageModelInfo {
-        id: "gemini-3.1-pro-image",
-        aliases: &["pro", "gemini-pro-image"],
-        label: "Gemini 3.1 Pro Image",
+        id: "gemini-3-pro-image",
+        aliases: &["pro", "gemini-pro-image", "gemini-3.1-pro-image"],
+        label: "Gemini 3 Pro Image",
     },
 ];
 

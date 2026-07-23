@@ -134,6 +134,7 @@ pub async fn build_runtime_with_provider(
         tool_registry.register(Arc::new(crate::tools::TextToImageTool));
         tool_registry.register(Arc::new(crate::tools::ImageToImageTool));
         tool_registry.register(Arc::new(crate::tools::TextToSpeechTool));
+        tool_registry.register(Arc::new(crate::tools::RenderSlidesTool));
         tool_registry.register(Arc::new(crate::tools::TextToVideoTool));
         tool_registry.register(Arc::new(crate::tools::ImageToVideoTool));
         tool_registry.register(Arc::new(crate::tools::MediaJobStatusTool));

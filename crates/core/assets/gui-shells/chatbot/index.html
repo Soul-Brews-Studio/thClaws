@@ -4,39 +4,91 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Chatbot</title>
+  <title>Chat</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="app">
-    <header class="bar">
-      <h1>Chatbot</h1>
-      <p class="session-meta">
-        Sends your messages to the agent loop. Replies stream back via
-        <code>thclaws.run()</code>. Replace
-        <code>AGENTS.md</code> at the project root to tailor the
-        bot's behaviour.
-      </p>
-      <button id="clear-btn" class="clear-btn" title="Clear conversation history">Clear</button>
-      <!-- Full-screen escape hatch: shown only when the host displays
-           this shell full-screen; tells the host to hide its fallback
-           chip (see thclaws.ui in gui-shell-bridge.js). -->
-      <button id="exit-fullscreen" class="clear-btn" title="Exit full screen (⌘⇧U)" hidden>⤢ Exit full screen</button>
-    </header>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="logo" id="brand-logo">TC</span>
+        <span class="brand-name" id="brand-name">thClaws Chat</span>
+      </div>
 
-    <main class="transcript" id="transcript">
-      <div class="empty" id="empty">No messages yet — type below and hit Send.</div>
+      <button class="new-chat" id="new-chat-btn">
+        <span class="ic-plus">+</span> <span id="new-chat-label">New chat</span>
+      </button>
+
+      <div class="search">
+        <span class="ic-search">⌕</span>
+        <input id="search-input" type="text" placeholder="Search chats…" autocomplete="off">
+      </div>
+
+      <nav class="history" id="history"></nav>
+
+      <div class="account" id="account">
+        <button class="acct-row" id="acct-toggle">
+          <span class="ic-user">◔</span>
+          <span class="acct-name" id="acct-name">there</span>
+          <span class="chev" id="acct-chev">⌄</span>
+        </button>
+        <div class="acct-menu" id="acct-menu" hidden>
+          <button class="acct-item" id="settings-btn"><span>⚙</span> Settings</button>
+          <button class="acct-item" id="logout-btn"><span>⇥</span> Log out</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">☰</button>
+
+      <section class="greeting" id="greeting">
+        <div class="greeting-inner">
+          <span class="glyph" id="greeting-glyph">TC</span>
+          <h1 id="greeting-text">Hello, there</h1>
+        </div>
+      </section>
+
+      <section class="transcript" id="transcript"></section>
+
+      <p class="status" id="status"></p>
+
+      <div class="composer-wrap">
+        <div class="composer">
+          <textarea id="prompt-input" rows="1"
+            placeholder="What can Claw help you with today?"></textarea>
+          <div class="composer-row">
+            <div class="composer-left">
+              <button class="cbtn" id="attach-btn" title="Attach">+</button>
+              <button class="cbtn mode" id="mode-btn" title="Response mode">🛡 Auto ⌄</button>
+            </div>
+            <div class="composer-right">
+              <div class="model-pick">
+                <span class="ic-cube">◈</span>
+                <select id="model-select" title="Model"></select>
+              </div>
+              <button class="send" id="send-btn" title="Send (Cmd/Ctrl-Enter)">↑</button>
+            </div>
+          </div>
+        </div>
+        <div class="chips" id="chips"></div>
+      </div>
     </main>
 
-    <p class="status" id="status"></p>
-
-    <div class="composer">
-      <textarea
-        id="prompt-input"
-        rows="2"
-        placeholder="Type a message… (Cmd/Ctrl-Enter to send)"
-      ></textarea>
-      <button id="send-btn">Send</button>
+    <!-- Settings drawer (nav scaffold; panels land with the bridge API) -->
+    <div class="drawer" id="drawer" hidden>
+      <div class="drawer-panel">
+        <header class="drawer-head">
+          <h2 id="drawer-title">Settings</h2>
+          <button class="drawer-close" id="drawer-close">✕</button>
+        </header>
+        <div class="drawer-body">
+          <nav class="settings-nav" id="settings-nav"></nav>
+          <section class="settings-content" id="settings-content"></section>
+        </div>
+      </div>
     </div>
   </div>
 

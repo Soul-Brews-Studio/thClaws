@@ -85,6 +85,7 @@ pub async fn run(
         tools.register(Arc::new(crate::tools::TextToImageTool));
         tools.register(Arc::new(crate::tools::ImageToImageTool));
         tools.register(Arc::new(crate::tools::TextToSpeechTool));
+        tools.register(Arc::new(crate::tools::RenderSlidesTool));
         tools.register(Arc::new(crate::tools::TextToVideoTool));
         tools.register(Arc::new(crate::tools::ImageToVideoTool));
         tools.register(Arc::new(crate::tools::MediaJobStatusTool));

@@ -35,6 +35,19 @@ let nextRequestId = 1;
 export function UIPicker({ onSelect, honourDefault = true }: UIPickerProps) {
   const [shells, setShells] = useState<ShellInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The workspace default shell (guiShell.tabDefault), so the picker can
+  // mark it and toggle it via the "Set as default" button.
+  const [defaultId, setDefaultId] = useState<string | null>(null);
+
+  const setDefault = (shellId: string, makeDefault: boolean) => {
+    setDefaultId(makeDefault ? shellId : null);
+    send({
+      type: "gui_shell_set_default",
+      id: nextRequestId++,
+      shellId,
+      clear: !makeDefault,
+    });
+  };
 
   const requestList = () => {
     const id = nextRequestId++;
@@ -59,6 +72,7 @@ export function UIPicker({ onSelect, honourDefault = true }: UIPickerProps) {
       if (msg?.type !== "gui_shell_list_result") return;
       if (!Array.isArray(msg.shells)) return;
       setShells(msg.shells as ShellInfo[]);
+      setDefaultId(typeof msg.tabDefault === "string" && msg.tabDefault ? msg.tabDefault : null);
       // settings.json::guiShell tabDefault — auto-open without showing
       // the grid when the user has pinned a preferred shell. Only fires
       // when the resolved id matches a shell that actually exists in
@@ -130,7 +144,13 @@ export function UIPicker({ onSelect, honourDefault = true }: UIPickerProps) {
       {shells !== null && shells.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {shells.map((s) => (
-            <ShellCard key={`${s.source}:${s.id}`} shell={s} onSelect={onSelect} />
+            <ShellCard
+              key={`${s.source}:${s.id}`}
+              shell={s}
+              onSelect={onSelect}
+              isDefault={s.id === defaultId}
+              onSetDefault={setDefault}
+            />
           ))}
         </div>
       )}
@@ -138,7 +158,17 @@ export function UIPicker({ onSelect, honourDefault = true }: UIPickerProps) {
   );
 }
 
-function ShellCard({ shell, onSelect }: { shell: ShellInfo; onSelect: (id: string) => void }) {
+function ShellCard({
+  shell,
+  onSelect,
+  isDefault,
+  onSetDefault,
+}: {
+  shell: ShellInfo;
+  onSelect: (id: string) => void;
+  isDefault: boolean;
+  onSetDefault: (id: string, makeDefault: boolean) => void;
+}) {
   const badge = sourceBadge(shell.source);
   // Mode A (desktop wry): `thclaws://` protocol handler serves the
   // icon. Mode C (cloud --serve over http(s)): use the relative HTTP
@@ -224,6 +254,32 @@ function ShellCard({ shell, onSelect }: { shell: ShellInfo; onSelect: (id: strin
                 +{shell.permissions.length - 3}
               </span>
             )}
+          </div>
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSetDefault(shell.id, !isDefault);
+              }}
+              className="text-[11px] px-2 py-1 rounded border inline-flex items-center gap-1"
+              style={
+                isDefault
+                  ? { background: badge.bg, borderColor: badge.fg, color: badge.fg }
+                  : {
+                      background: "var(--bg-primary)",
+                      borderColor: "var(--border)",
+                      color: "var(--text-secondary)",
+                    }
+              }
+              title={
+                isDefault
+                  ? "This shell opens by default for this workspace — click to unset"
+                  : "Open this shell by default for this workspace (writes guiShell to .thclaws/settings.json)"
+              }
+            >
+              {isDefault ? "✓ Default UI" : "Set as default"}
+            </button>
           </div>
         </div>
       </div>

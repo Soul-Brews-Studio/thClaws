@@ -4914,6 +4914,7 @@ pub async fn run_print_mode_with(
         tool_registry.register(Arc::new(crate::tools::TextToImageTool));
         tool_registry.register(Arc::new(crate::tools::ImageToImageTool));
         tool_registry.register(Arc::new(crate::tools::TextToSpeechTool));
+        tool_registry.register(Arc::new(crate::tools::RenderSlidesTool));
         tool_registry.register(Arc::new(crate::tools::TextToVideoTool));
         tool_registry.register(Arc::new(crate::tools::ImageToVideoTool));
         tool_registry.register(Arc::new(crate::tools::MediaJobStatusTool));
@@ -5322,6 +5323,7 @@ pub async fn run_agent_workflow(
         tool_registry.register(Arc::new(crate::tools::TextToImageTool));
         tool_registry.register(Arc::new(crate::tools::ImageToImageTool));
         tool_registry.register(Arc::new(crate::tools::TextToSpeechTool));
+        tool_registry.register(Arc::new(crate::tools::RenderSlidesTool));
         tool_registry.register(Arc::new(crate::tools::TextToVideoTool));
         tool_registry.register(Arc::new(crate::tools::ImageToVideoTool));
         tool_registry.register(Arc::new(crate::tools::MediaJobStatusTool));
@@ -5531,6 +5533,7 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
         tool_registry.register(Arc::new(crate::tools::TextToImageTool));
         tool_registry.register(Arc::new(crate::tools::ImageToImageTool));
         tool_registry.register(Arc::new(crate::tools::TextToSpeechTool));
+        tool_registry.register(Arc::new(crate::tools::RenderSlidesTool));
         tool_registry.register(Arc::new(crate::tools::TextToVideoTool));
         tool_registry.register(Arc::new(crate::tools::ImageToVideoTool));
         tool_registry.register(Arc::new(crate::tools::MediaJobStatusTool));

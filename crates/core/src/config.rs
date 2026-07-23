@@ -1653,6 +1653,14 @@ impl ProjectConfig {
         self.gateway_use_for = None;
     }
 
+    /// Set (or clear with `None`) the workspace's default GUI Shell. Uses
+    /// the shorthand form so it applies to BOTH the GUI Shell tab
+    /// (`tabDefault`) and `--serve` (`serveDefault`) — i.e. "the default UI
+    /// for this workspace". Persisted to the project `.thclaws/settings.json`.
+    pub fn set_gui_shell_default(&mut self, shell_id: Option<&str>) {
+        self.gui_shell = shell_id.map(|id| GuiShellSetting::Shorthand(id.to_string()));
+    }
+
     /// Load project-level MCP servers. Checks (in order):
     /// 1. `.mcp.json` (project root — Claude Code primary location)
     /// 2. `.thclaws/mcp.json`

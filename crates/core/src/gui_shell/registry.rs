@@ -481,6 +481,11 @@ fn chatbot() -> EmbeddedShell {
                 include_bytes!("../../assets/gui-shells/chatbot/AGENTS.md"),
                 "text/markdown; charset=utf-8",
             ),
+            (
+                "brand.json",
+                include_bytes!("../../assets/gui-shells/chatbot/brand.json"),
+                "application/json; charset=utf-8",
+            ),
         ],
         "chatbot",
     )

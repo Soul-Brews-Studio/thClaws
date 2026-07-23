@@ -82,6 +82,26 @@ fn ipc_session_store(ctx: &IpcContext) -> Option<crate::session::SessionStore> {
         })
 }
 
+/// Per-user-aware memory store for the IPC thread. Runs OFF the worker's
+/// task-local scope, so it can't rely on `current_workdir()` — it takes
+/// the per-user `workspace_root` from `session_roots` (multi-tenant
+/// "workspace per user") and roots memory at `<workspace_root>/.thclaws/
+/// memory`, matching where the agent's turn resolves it. Falls back to
+/// `MemoryStore::default_path()` for single-tenant / desktop.
+fn ipc_memory_store(ctx: &IpcContext) -> Option<crate::memory::MemoryStore> {
+    if let Some(ws) = ctx
+        .shared
+        .session_roots
+        .as_ref()
+        .and_then(|r| r.workspace_root.as_ref())
+    {
+        return Some(crate::memory::MemoryStore::new(
+            ws.join(".thclaws").join("memory"),
+        ));
+    }
+    crate::memory::MemoryStore::default_path().map(crate::memory::MemoryStore::new)
+}
+
 /// Everything the IPC dispatch needs from its surrounding transport.
 /// Construct one per session in the transport's setup; pass `&` to
 /// [`handle_ipc`] for each inbound message.
@@ -137,6 +157,52 @@ fn shell_has_permission(shell_id: &str, perm: &str) -> bool {
         .resolve(shell_id)
         .map(|s| s.manifest().permissions.iter().any(|p| p == perm))
         .unwrap_or(false)
+}
+
+/// Serialize a session's messages into the flat `{role, text}` shape a
+/// chat-style GUI Shell renders (dev-plan/33 sessions bridge). User →
+/// "user", Assistant → "bot"; System and empty/tool-only turns are
+/// dropped (they don't render as chat bubbles).
+fn serialize_shell_history(messages: &[crate::types::Message]) -> Vec<serde_json::Value> {
+    use crate::types::Role;
+    messages
+        .iter()
+        .filter_map(|m| {
+            let role = match m.role {
+                Role::User => "user",
+                Role::Assistant => "bot",
+                Role::System => return None,
+            };
+            let text = m
+                .content
+                .iter()
+                .filter_map(|c| match c {
+                    crate::types::ContentBlock::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("");
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            Some(serde_json::json!({ "role": role, "text": trimmed }))
+        })
+        .collect()
+}
+
+/// Build the correlated `gui_shell_event` reply envelope for a sessions
+/// bridge call (either `result` or `error`).
+fn shell_reply(request_id: u64, body: serde_json::Value) -> String {
+    let mut ev = serde_json::json!({ "type": "gui_shell_event", "replyTo": request_id });
+    if let Some(obj) = ev.as_object_mut() {
+        if let Some(bobj) = body.as_object() {
+            for (k, v) in bobj {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    ev.to_string()
 }
 
 /// dev-plan/39 Tier 3: is `tool_name` invokable by `shell_id` per its
@@ -414,6 +480,209 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
             ctx.shared.request_cancel();
         }
 
+        // GUI Shell memory bridge (dev-plan/33 — settings "Memory" panel).
+        // Core memory = the `MEMORY.md` index the agent injects into every
+        // turn. get reads it; set overwrites it (the user editing what the
+        // agent remembers). Gated by memory.read / memory.write.
+        "gui_shell_memory_get" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let body = if !shell_has_permission(shell_id, "memory.read")
+                && !shell_has_permission(shell_id, "memory.write")
+            {
+                serde_json::json!({ "error": "permission 'memory.read' not declared" })
+            } else {
+                let core = ipc_memory_store(ctx)
+                    .and_then(|s| s.index())
+                    .unwrap_or_default();
+                serde_json::json!({ "result": { "core": core } })
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_memory_set" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let text = msg
+                .get("core")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "memory.write") {
+                serde_json::json!({ "error": "permission 'memory.write' not declared" })
+            } else {
+                match ipc_memory_store(ctx) {
+                    Some(store) => {
+                        let path = store.root.join("MEMORY.md");
+                        match std::fs::create_dir_all(&store.root)
+                            .and_then(|_| std::fs::write(&path, &text))
+                        {
+                            Ok(_) => serde_json::json!({ "result": { "ok": true } }),
+                            Err(e) => serde_json::json!({ "error": e.to_string() }),
+                        }
+                    }
+                    None => serde_json::json!({ "error": "no memory store" }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        // GUI Shell sessions bridge (dev-plan/33 — chat-history surface).
+        // Exposes the SAME shared session Chat uses: list past sessions,
+        // load one (replacing the agent's history so run() continues it),
+        // start a new one, rename, delete. Lets a chat-style shell drive
+        // real engine sessions instead of a single bound one. Each replies
+        // via the `gui_shell_event` correlator (result/error).
+        "gui_shell_session_list" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let body = if !shell_has_permission(shell_id, "session.list")
+                && !shell_has_permission(shell_id, "session.read")
+            {
+                serde_json::json!({ "error": "permission 'session.list' not declared" })
+            } else {
+                let store = ipc_session_store(ctx);
+                let items = store
+                    .as_ref()
+                    .and_then(|s| s.list().ok())
+                    .unwrap_or_default();
+                let arr: Vec<serde_json::Value> = items
+                    .iter()
+                    .map(|m| {
+                        serde_json::json!({
+                            "id": m.id,
+                            "title": m.title,
+                            "updatedAt": m.updated_at,
+                            "messageCount": m.message_count,
+                            "model": m.model,
+                        })
+                    })
+                    .collect();
+                serde_json::json!({ "result": { "sessions": arr } })
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_session_load" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let sid = msg
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let load_id = msg
+                .get("loadId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "session.read") {
+                serde_json::json!({ "error": "permission 'session.read' not declared" })
+            } else if load_id.is_empty() {
+                serde_json::json!({ "error": "id required" })
+            } else {
+                let store = ipc_session_store(ctx);
+                let msgs = store
+                    .as_ref()
+                    .and_then(|s| s.load(&load_id).ok())
+                    .map(|sess| serialize_shell_history(&sess.messages))
+                    .unwrap_or_default();
+                // Prime the shared agent to continue this session so a
+                // subsequent gui_shell_run appends to it.
+                let _ = ctx
+                    .shared
+                    .input_tx
+                    .send(crate::shared_session::ShellInput::LoadSession(
+                        load_id.clone(),
+                    ));
+                serde_json::json!({ "result": { "messages": msgs } })
+            };
+            let _ = sid;
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_session_new" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let body = if !shell_has_permission(shell_id, "session.write") {
+                serde_json::json!({ "error": "permission 'session.write' not declared" })
+            } else {
+                let _ = ctx
+                    .shared
+                    .input_tx
+                    .send(crate::shared_session::ShellInput::NewSession);
+                serde_json::json!({ "result": { "ok": true } })
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_session_rename" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let sess_id = msg
+                .get("renameId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let title = msg
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "session.write") {
+                serde_json::json!({ "error": "permission 'session.write' not declared" })
+            } else if sess_id.is_empty() {
+                serde_json::json!({ "error": "id required" })
+            } else {
+                match ipc_session_store(ctx)
+                    .as_ref()
+                    .map(|s| s.rename(&sess_id, &title))
+                {
+                    Some(Ok(_)) => {
+                        let _ = ctx.shared.input_tx.send(
+                            crate::shared_session::ShellInput::SessionRenamedExternal {
+                                id: sess_id.clone(),
+                                title: title.clone(),
+                            },
+                        );
+                        serde_json::json!({ "result": { "ok": true } })
+                    }
+                    Some(Err(e)) => serde_json::json!({ "error": e.to_string() }),
+                    None => serde_json::json!({ "error": "no session store" }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_session_delete" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let sess_id = msg
+                .get("deleteId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "session.write") {
+                serde_json::json!({ "error": "permission 'session.write' not declared" })
+            } else if sess_id.is_empty() {
+                serde_json::json!({ "error": "id required" })
+            } else {
+                match ipc_session_store(ctx).as_ref().map(|s| s.delete(&sess_id)) {
+                    Some(Ok(())) => {
+                        let _ = ctx.shared.input_tx.send(
+                            crate::shared_session::ShellInput::SessionDeletedExternal {
+                                id: sess_id.clone(),
+                            },
+                        );
+                        serde_json::json!({ "result": { "ok": true } })
+                    }
+                    Some(Err(e)) => serde_json::json!({ "error": e.to_string() }),
+                    None => serde_json::json!({ "error": "no session store" }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
         // GUI Shell (dev-plan/33 Tier 2/3) — direct tool invocation
         // bypassing the agent loop. The shell's domain UI uses this
         // for deterministic actions (Media Studio's "Generate" button
@@ -507,6 +776,7 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
                         registry.register(Arc::new(crate::tools::TextToImageTool));
                         registry.register(Arc::new(crate::tools::ImageToImageTool));
                         registry.register(Arc::new(crate::tools::TextToSpeechTool));
+                        registry.register(Arc::new(crate::tools::RenderSlidesTool));
                         registry.register(Arc::new(crate::tools::TextToVideoTool));
                         registry.register(Arc::new(crate::tools::ImageToVideoTool));
                         registry.register(Arc::new(crate::tools::MediaJobStatusTool));
@@ -3439,6 +3709,34 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
                 .shared
                 .input_tx
                 .send(crate::shared_session::ShellInput::ReloadConfig);
+        }
+
+        // Set (or clear) the workspace default GUI Shell from the picker's
+        // "Set as default" button. Writes the `guiShell` shorthand to the
+        // project .thclaws/settings.json so this shell auto-opens in the
+        // GUI tab and is the --serve default.
+        "gui_shell_set_default" => {
+            let shell_id = msg
+                .get("shellId")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            let clear = msg.get("clear").and_then(|v| v.as_bool()).unwrap_or(false);
+            let mut cfg = crate::config::ProjectConfig::load().unwrap_or_default();
+            cfg.set_gui_shell_default(if clear { None } else { shell_id.as_deref() });
+            let (ok, error) = match cfg.save() {
+                Ok(()) => (true, String::new()),
+                Err(e) => (false, e.to_string()),
+            };
+            (ctx.dispatch)(
+                serde_json::json!({
+                    "type": "gui_shell_set_default_result",
+                    "shellId": shell_id,
+                    "cleared": clear,
+                    "ok": ok,
+                    "error": error,
+                })
+                .to_string(),
+            );
         }
 
         // ── KMS sidebar mutators (M6.36 SERVE9f) ───────────────────

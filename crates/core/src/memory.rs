@@ -60,8 +60,14 @@ impl MemoryStore {
     pub fn default_path() -> Option<PathBuf> {
         // Project-scoped: if we're inside a thClaws project (./.thclaws/
         // exists), keep memory with the project. Create the memory/ dir as
-        // needed.
-        if let Ok(cwd) = std::env::current_dir() {
+        // needed. Use the task-local working dir (not the process cwd) so
+        // that under the multi-tenant "workspace per user" model each
+        // user's turn resolves memory in THEIR workspace_root — process
+        // cwd is shared across the one worker and would leak memory across
+        // tenants. `current_workdir()` falls back to process cwd outside a
+        // task scope, so single-tenant / desktop behaviour is unchanged.
+        {
+            let cwd = crate::workdir::current_workdir();
             let project_root = cwd.join(".thclaws");
             if project_root.is_dir() {
                 return Some(project_root.join("memory"));

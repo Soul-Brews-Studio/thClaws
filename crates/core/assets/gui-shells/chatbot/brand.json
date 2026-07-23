@@ -1,0 +1,17 @@
+{
+  "productName": "thClaws Chat",
+  "tabTitle": "thClaws Chat",
+  "assistantName": "Claw",
+  "logoText": "TC",
+  "accent": "#E4002B",
+  "greeting": "Hello, {name}",
+  "userName": "there",
+  "composerPlaceholder": "What can {assistant} help you with today?",
+  "quickActions": [
+    { "label": "Write", "icon": "pencil", "prompt": "Help me write " },
+    { "label": "Analyze data", "icon": "chart", "prompt": "Analyze this data: " },
+    { "label": "HR", "icon": "people", "prompt": "Help me with an HR task: " },
+    { "label": "System / code", "icon": "code", "prompt": "Help me with code: " },
+    { "label": "{assistant} suggests", "icon": "sparkle", "prompt": "What can you help me with today?" }
+  ]
+}

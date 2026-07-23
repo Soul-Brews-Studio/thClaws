@@ -1,7 +1,7 @@
 {
   "schema": 4,
   "source": "baseline 2026-06-10 — pricing synced from LiteLLM (github.com/BerriAI/litellm)",
-  "fetched_at": "2026-07-21T00:00:00Z",
+  "fetched_at": "2026-07-23T00:00:00Z",
   "providers": {
     "anthropic": {
       "list_url": "https://api.anthropic.com/v1/models",
@@ -1271,6 +1271,20 @@
           "input_per_mtok": 1.5,
           "output_per_mtok": 9.0,
           "cached_input_per_mtok": 0.15
+        },
+        "gemini-3.5-flash-lite": {
+          "context": 1048576,
+          "source": "https://generativelanguage.googleapis.com/v1beta/models + litellm:gemini-3.5-flash-lite",
+          "verified_at": "2026-07-22",
+          "input_per_mtok": 0.3,
+          "output_per_mtok": 2.5
+        },
+        "gemini-3.6-flash": {
+          "context": 1048576,
+          "source": "https://generativelanguage.googleapis.com/v1beta/models + litellm:gemini-3.6-flash",
+          "verified_at": "2026-07-22",
+          "input_per_mtok": 1.5,
+          "output_per_mtok": 7.5
         },
         "gemini-flash-latest": {
           "context": 1048576,
@@ -2839,6 +2853,11 @@
           "context": 131072,
           "source": "https://opencode.ai/zen/go/v1/models",
           "verified_at": "2026-07-17"
+        },
+        "opencode-go/hy3": {
+          "context": 131072,
+          "source": "https://opencode.ai/zen/go/v1/models",
+          "verified_at": "2026-07-23"
         },
         "opencode-go/hy3-preview": {
           "context": 131072,
@@ -7078,6 +7097,16 @@
           "source": "https://api.tokenrouter.com/v1/models",
           "verified_at": "2026-06-14"
         },
+        "tokenrouter/google/gemini-3.5-flash-lite": {
+          "context": 128000,
+          "source": "https://api.tokenrouter.com/v1/models",
+          "verified_at": "2026-07-22"
+        },
+        "tokenrouter/google/gemini-3.6-flash": {
+          "context": 128000,
+          "source": "https://api.tokenrouter.com/v1/models",
+          "verified_at": "2026-07-22"
+        },
         "tokenrouter/google/gemma-4-26b-a4b-it": {
           "context": 128000,
           "source": "https://api.tokenrouter.com/v1/models",
@@ -7749,6 +7778,11 @@
           "context": 1000000,
           "source": "https://api.atlascloud.ai/v1/models",
           "verified_at": "2026-07-15"
+        },
+        "atlascloud/anthropic/claude-sonnet-5-ccmax": {
+          "context": 1000000,
+          "source": "https://api.atlascloud.ai/v1/models",
+          "verified_at": "2026-07-23"
         },
         "atlascloud/bytedance/doubao-seed-1.6-251015": {
           "context": 1000000,

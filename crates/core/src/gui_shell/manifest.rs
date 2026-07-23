@@ -39,6 +39,13 @@ const ALLOWED_PERMISSION_PREFIXES: &[&str] = &[
     "agent.run",
     "session.read",
     "session.list",
+    // Sessions bridge (thclaws.sessions.*): write = new/rename/delete a
+    // session. read/list gate the read side.
+    "session.write",
+    // Memory bridge (thclaws.memory.*): read = view core memory (MEMORY.md);
+    // write = overwrite it.
+    "memory.read",
+    "memory.write",
     "fs.shell-scoped",
     "tools.invoke:",
     "network.outbound:",

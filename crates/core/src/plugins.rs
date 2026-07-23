@@ -3,8 +3,8 @@
 //!
 //! ## Layout
 //!
-//! A plugin is a directory (git repo, zip, or a plain local folder)
-//! containing a manifest:
+//! A plugin is a directory (git repo, a zip — remote URL or local file, or
+//! a plain local folder) containing a manifest:
 //!
 //! - `.thclaws-plugin/plugin.json` (thClaws-native) — preferred
 //! - `.claude-plugin/plugin.json` (Claude Code compat) — fallback
@@ -642,7 +642,14 @@ pub fn plugin_mcp_servers() -> Vec<McpServerConfig> {
 
 async fn fetch_into(url: &str, dest: &Path) -> Result<()> {
     if is_zip_url(url) {
-        let bytes = download_zip(url).await?;
+        // Read a local `.zip` off disk (no host required); otherwise fetch
+        // it over HTTP. Mirrors the local-folder path so `/plugin install
+        // ./pack.zip` works the same as a remote `.zip` URL.
+        let bytes = match local_zip_file(url) {
+            Some(path) => std::fs::read(&path)
+                .map_err(|e| Error::Config(format!("read zip {}: {e}", path.display())))?,
+            None => download_zip(url).await?,
+        };
         extract_zip(&bytes, dest)
     } else if let Some(src) = local_source_dir(url) {
         // Install from a plain on-disk folder — no `git init` required.
@@ -658,6 +665,20 @@ async fn fetch_into(url: &str, dest: &Path) -> Result<()> {
 fn is_zip_url(url: &str) -> bool {
     let without_query = url.split(['?', '#']).next().unwrap_or(url);
     without_query.to_ascii_lowercase().ends_with(".zip")
+}
+
+/// If `url` names an existing local `.zip` file, return its path — so it can
+/// be read off disk instead of fetched over HTTP. A `file://` prefix is
+/// stripped (mirroring [`local_source_dir`]). Remote `.zip` URLs return
+/// `None` (their string is never an existing local file), falling through to
+/// `download_zip`.
+fn local_zip_file(url: &str) -> Option<PathBuf> {
+    let raw = url.strip_prefix("file://").unwrap_or(url);
+    if !raw.to_ascii_lowercase().ends_with(".zip") {
+        return None;
+    }
+    let p = PathBuf::from(raw);
+    p.is_file().then_some(p)
 }
 
 /// If `url` points at an existing local directory, resolve it to the folder
@@ -1036,6 +1057,30 @@ mod tests {
         assert!(is_zip_url("https://example.com/a.ZIP?t=1"));
         assert!(is_zip_url("https://example.com/a.zip#frag"));
         assert!(!is_zip_url("https://github.com/u/r.git"));
+    }
+
+    #[test]
+    fn local_zip_file_matches_existing_file_not_remote_url() {
+        let dir = tempdir().unwrap();
+        let zip = dir.path().join("pack.zip");
+        std::fs::write(&zip, b"PK\x03\x04").unwrap();
+        // Existing local .zip → resolved (bare path + file:// prefix).
+        assert_eq!(local_zip_file(zip.to_str().unwrap()), Some(zip.clone()));
+        assert_eq!(
+            local_zip_file(&format!("file://{}", zip.display())),
+            Some(zip.clone())
+        );
+        // Remote URL string is never an existing local file.
+        assert_eq!(local_zip_file("https://example.com/a.zip"), None);
+        // Non-.zip and missing paths decline.
+        assert_eq!(
+            local_zip_file(dir.path().join("nope.zip").to_str().unwrap()),
+            None
+        );
+        assert_eq!(
+            local_zip_file(zip.with_extension("tar").to_str().unwrap()),
+            None
+        );
     }
 
     /// M6.16 BUG M1: `manifest.name` must be a single safe path
