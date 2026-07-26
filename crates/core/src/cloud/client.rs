@@ -46,6 +46,13 @@ impl Client {
                 .user_agent(ua)
                 .connect_timeout(std::time::Duration::from_secs(30))
                 .tcp_keepalive(std::time::Duration::from_secs(60))
+                // Force HTTP/1.1 for bulk sync transfers. A single large
+                // streaming POST gains nothing from h2 multiplexing but
+                // inherits its failure modes (flow-control stalls,
+                // RST_STREAM on proxy churn) — a mid-upload cut surfaces
+                // as an opaque "error sending request". h1 keeps the
+                // byte stream dumb and robust through Traefik.
+                .http1_only()
                 .build()
                 .expect("reqwest bulk client"),
             token,

@@ -15,9 +15,12 @@ import {
   Library,
   Languages,
   FileText,
+  Code2,
+  Type,
 } from "lucide-react";
 import { send, subscribe } from "../hooks/useIPC";
 import { assetUrl, workspacePrefix } from "../lib/assetUrl";
+import { parentDir } from "../lib/markdownRoundTrip";
 import { useTheme } from "../hooks/useTheme";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { CodeEditor } from "./CodeEditor";
@@ -310,6 +313,13 @@ export function FilesView({ active }: Props) {
   // raw text.
   const [editorSource, setEditorSource] = useState<string>("");
   const [editorDirty, setEditorDirty] = useState(false);
+  // Edit a `.md` as raw markdown instead of through the WYSIWYG. The
+  // rich editor round-trips through HTML, which preserves content but
+  // normalizes formatting — it reflows hard-wrapped prose, respaces list
+  // markers, and rewrites raw HTML blocks as markdown. Files with a
+  // machine-read format (agent definitions, `{{screenshot:…}}` book
+  // chapters) want the bytes left alone. Sticks for the tab's lifetime.
+  const [mdSourceEdit, setMdSourceEdit] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
   // True while files are being dragged over the tree panel (drop-to-upload).
   const [dragActive, setDragActive] = useState(false);
@@ -1203,6 +1213,21 @@ export function FilesView({ active }: Props) {
                     Edit
                   </button>
                 )}
+                {mode === "edit" && isMarkdownPath(preview.path) && (
+                  <button
+                    onClick={() => setMdSourceEdit((v) => !v)}
+                    className="flex items-center gap-1 text-[11px] px-2 py-1 rounded hover:bg-white/5"
+                    style={{ color: "var(--text-secondary)" }}
+                    title={
+                      mdSourceEdit
+                        ? "Switch to the rich-text editor (reformats markdown on save)"
+                        : "Edit the raw markdown — leaves formatting exactly as written"
+                    }
+                  >
+                    {mdSourceEdit ? <Type size={12} /> : <Code2 size={12} />}
+                    {mdSourceEdit ? "Rich text" : "Source"}
+                  </button>
+                )}
                 {mode === "edit" && (
                   <>
                     <button
@@ -1239,9 +1264,10 @@ export function FilesView({ active }: Props) {
 
             {/* Body: preview or editor */}
             {mode === "edit" ? (
-              isMarkdownPath(preview.path) ? (
+              isMarkdownPath(preview.path) && !mdSourceEdit ? (
                 <MarkdownEditor
                   source={editorSource}
+                  baseDir={parentDir(preview.path)}
                   onChange={(md) => {
                     setEditorSource(md);
                     setEditorDirty(true);

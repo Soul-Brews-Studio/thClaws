@@ -92,41 +92,95 @@ fn norm(rel: &Path) -> String {
 /// root), so a monorepo's `frontend/node_modules/` is dropped too. Everything
 /// NOT in this list teleports verbatim — sessions/state, `.git/`, secrets —
 /// which is the whole point of push|pull vs. a catalog publish.
-pub const SYNC_STRIP_DIRS: &[&str] = &[
-    "node_modules",
-    "target",
-    ".venv",
-    "__pycache__",
-    ".next",
-    "dist",
-    "build",
+/// Always-stripped tool dirs — unambiguously regenerable caches.
+pub const SYNC_STRIP_DIRS: &[&str] = &["node_modules", ".venv", "__pycache__", ".next"];
+
+/// Conditionally-stripped names: real toolchain OUTPUT only when the
+/// marker file that generates them sits beside them. `build/` in a JS
+/// project (sibling `package.json`) is regenerable; `build/` in a
+/// book-production workspace (sibling `book.yaml`, no `package.json`)
+/// is the DELIVERABLES — epub/pdf/rendered slides/TTS audio that cost
+/// real money to produce — and was being silently dropped from
+/// /cloud push (544MB of a 1GB workspace in the reported case).
+pub const SYNC_STRIP_IF_MARKER: &[(&str, &str)] = &[
+    ("target", "Cargo.toml"),
+    ("build", "package.json"),
+    ("dist", "package.json"),
 ];
 
-fn in_stripped_dir(rel: &Path) -> bool {
-    rel.components().any(|c| {
-        matches!(c, Component::Normal(seg)
-            if seg.to_str().is_some_and(|s| SYNC_STRIP_DIRS.contains(&s)))
-    })
+fn in_stripped_dir(root: &Path, rel: &Path) -> bool {
+    let mut parent = PathBuf::new();
+    for c in rel.components() {
+        if let Component::Normal(seg) = c {
+            if let Some(s) = seg.to_str() {
+                if SYNC_STRIP_DIRS.contains(&s) {
+                    return true;
+                }
+                for (name, marker) in SYNC_STRIP_IF_MARKER {
+                    if s == *name && root.join(&parent).join(marker).is_file() {
+                        return true;
+                    }
+                }
+            }
+        }
+        parent.push(c);
+    }
+    false
 }
 
 /// Inside the sync exclude set? Only the regenerable build dirs
-/// ([`SYNC_STRIP_DIRS`]) plus the `.sync-trash/` tree itself (never sync the
-/// trash). NOT `pack::is_strippable` — push|pull keeps runtime state.
-fn excluded(rel: &Path) -> bool {
+/// ([`SYNC_STRIP_DIRS`] + marker-confirmed [`SYNC_STRIP_IF_MARKER`])
+/// plus the `.sync-trash/` tree itself (never sync the trash). NOT
+/// `pack::is_strippable` — push|pull keeps runtime state.
+fn excluded(root: &Path, rel: &Path) -> bool {
     let s = norm(rel);
     s == SYNC_BASE_REL
         || s == TRASH_PREFIX
         || s.starts_with(&format!("{TRASH_PREFIX}/"))
-        || in_stripped_dir(rel)
+        || in_stripped_dir(root, rel)
 }
 
 /// Collect files relative to `root`. `keep` decides inclusion; symlinks are
 /// always skipped (never followed — traversal safety).
 fn walk(root: &Path, keep: &dyn Fn(&Path) -> bool) -> Result<Vec<PathBuf>, String> {
+    Ok(walk_with_dirs(root, keep)?.0)
+}
+
+/// Like [`walk`] but also returns every kept DIRECTORY (for empty-dir
+/// preservation: dirs with no synced file beneath still ride the tar as
+/// directory entries so scaffolding like `media/screenshots/` survives
+/// a push).
+fn walk_with_dirs(
+    root: &Path,
+    keep: &dyn Fn(&Path) -> bool,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), String> {
     let mut out = Vec::new();
-    walk_inner(root, root, keep, &mut out)?;
+    let mut dirs = Vec::new();
+    walk_inner(root, root, keep, &mut out, &mut dirs)?;
     out.sort();
-    Ok(out)
+    dirs.sort();
+    Ok((out, dirs))
+}
+
+/// Kept directories with no synced file beneath them.
+fn empty_dirs_for(root: &Path, keep: &dyn Fn(&Path) -> bool) -> Result<Vec<PathBuf>, String> {
+    let (files, dirs) = walk_with_dirs(root, keep)?;
+    let file_norms: Vec<String> = files.iter().map(|f| norm(f)).collect();
+    Ok(dirs
+        .into_iter()
+        .filter(|d| {
+            let prefix = format!("{}/", norm(d));
+            !file_norms.iter().any(|f| f.starts_with(&prefix))
+        })
+        .collect())
+}
+
+/// Empty dirs under the standard synced view (strip set + syncignore).
+fn empty_synced_dirs(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let ignores = load_syncignore(root);
+    empty_dirs_for(root, &|rel| {
+        !excluded(root, rel) && !ignored_by(&norm(rel), &ignores)
+    })
 }
 
 fn walk_inner(
@@ -134,6 +188,7 @@ fn walk_inner(
     dir: &Path,
     keep: &dyn Fn(&Path) -> bool,
     out: &mut Vec<PathBuf>,
+    dirs: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
     let rd = match std::fs::read_dir(dir) {
         Ok(rd) => rd,
@@ -154,7 +209,8 @@ fn walk_inner(
         if ft.is_symlink() {
             continue; // never follow or sync symlinks
         } else if ft.is_dir() {
-            walk_inner(root, &path, keep, out)?;
+            dirs.push(rel.clone());
+            walk_inner(root, &path, keep, out, dirs)?;
         } else if ft.is_file() {
             out.push(rel);
         }
@@ -208,7 +264,7 @@ fn ignored_by(rel: &str, patterns: &[String]) -> bool {
 fn walk_synced(root: &Path) -> Result<Vec<PathBuf>, String> {
     let ignores = load_syncignore(root);
     walk(root, &|rel| {
-        !excluded(rel) && !ignored_by(&norm(rel), &ignores)
+        !excluded(root, rel) && !ignored_by(&norm(rel), &ignores)
     })
 }
 
@@ -249,10 +305,24 @@ pub fn write_binding(root: &Path, b: &Binding) -> Result<(), String> {
     std::fs::write(&p, data).map_err(|e| format!("write binding: {}", e))
 }
 
-/// Tar+gzip a list of rel paths under `root` into `w`.
-fn write_tar<W: Write>(root: &Path, files: &[PathBuf], w: W) -> Result<(), String> {
+/// Tar+gzip a list of rel paths under `root` into `w`. `empty_dirs`
+/// ride as directory entries (~0 bytes) so scaffold folders survive;
+/// receivers that predate dir handling skip them harmlessly.
+fn write_tar<W: Write>(
+    root: &Path,
+    files: &[PathBuf],
+    empty_dirs: &[PathBuf],
+    w: W,
+) -> Result<(), String> {
     let enc = GzEncoder::new(w, Compression::default());
     let mut tar = tar::Builder::new(enc);
+    for rel in empty_dirs {
+        let abs = root.join(rel);
+        if abs.is_dir() {
+            tar.append_dir(rel, &abs)
+                .map_err(|e| format!("tar append dir {}: {}", rel.display(), e))?;
+        }
+    }
     for rel in files {
         let abs = root.join(rel);
         let mut f =
@@ -269,13 +339,17 @@ fn write_tar<W: Write>(root: &Path, files: &[PathBuf], w: W) -> Result<(), Strin
 /// the strip set (still skips `.sync-trash/`). Enforces `MAX_SYNC_BYTES`.
 /// Returns the uncompressed byte total.
 pub fn tar_workspace_to<W: Write>(root: &Path, include_runtime: bool, w: W) -> Result<u64, String> {
-    let files = if include_runtime {
-        walk(root, &|rel| {
-            let s = norm(rel);
-            s != TRASH_PREFIX && !s.starts_with(&format!("{TRASH_PREFIX}/"))
-        })?
+    let runtime_keep = |rel: &Path| {
+        let s = norm(rel);
+        s != TRASH_PREFIX && !s.starts_with(&format!("{TRASH_PREFIX}/"))
+    };
+    let (files, empty_dirs) = if include_runtime {
+        (
+            walk(root, &runtime_keep)?,
+            empty_dirs_for(root, &runtime_keep)?,
+        )
     } else {
-        walk_synced(root)?
+        (walk_synced(root)?, empty_synced_dirs(root)?)
     };
     let total: u64 = files
         .iter()
@@ -292,7 +366,7 @@ pub fn tar_workspace_to<W: Write>(root: &Path, include_runtime: bool, w: W) -> R
             MAX_SYNC_BYTES / 1_048_576
         ));
     }
-    write_tar(root, &files, w)?;
+    write_tar(root, &files, &empty_dirs, w)?;
     Ok(total)
 }
 
@@ -336,6 +410,10 @@ fn extract_tarball<R: Read>(reader: R, root: &Path) -> Result<(usize, BTreeSet<P
             return Err(format!("refused unsafe entry path: {}", path.display()));
         }
         if entry.header().entry_type().is_dir() {
+            // Empty-dir preservation: materialize directory entries so
+            // scaffold folders (media/screenshots/, output/, …) survive.
+            std::fs::create_dir_all(root.join(&path))
+                .map_err(|e| format!("mkdir {}: {}", path.display(), e))?;
             continue;
         }
         let out = root.join(&path);
@@ -556,7 +634,11 @@ pub fn tar_paths_to<W: Write>(root: &Path, paths: &[String], w: W) -> Result<u64
             MAX_SYNC_BYTES / 1_048_576
         ));
     }
-    write_tar(root, &valid, w)?;
+    // Every incremental push also carries the CURRENT empty dirs — dir
+    // entries are ~free, create_dir_all on the receiver is idempotent,
+    // and the manifest (files-only, fixed wire shape) can't express them.
+    let empty_dirs = empty_synced_dirs(root)?;
+    write_tar(root, &valid, &empty_dirs, w)?;
     Ok(total)
 }
 
@@ -815,7 +897,7 @@ mod tests {
             "a changed session must read as divergence"
         );
         // The base file itself never travels.
-        assert!(excluded(Path::new(".thclaws/cloud-sync-base.json")));
+        assert!(excluded(&root, Path::new(".thclaws/cloud-sync-base.json")));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -831,8 +913,16 @@ mod tests {
         // Regenerable / arch-specific — never ride, incl. a NESTED node_modules.
         write(&root, "node_modules/pkg/index.js", "js");
         write(&root, "frontend/node_modules/x.js", "js");
+        write(&root, "Cargo.toml", "[package]");
         write(&root, "target/debug/app", "bin");
         write(&root, "__pycache__/m.pyc", "x");
+        // Marker heuristic: a book-style build/ (no package.json) is
+        // CONTENT and must ride; a JS build/ (sibling package.json) is
+        // regenerable output and must not.
+        write(&root, "build/slides/ch01.pdf", "pdf");
+        write(&root, "web/package.json", "{}");
+        write(&root, "web/build/bundle.js", "js");
+        write(&root, "tools/target/data.csv", "csv"); // no Cargo.toml → content
         let files: Vec<String> = walk_synced(&root)
             .unwrap()
             .iter()
@@ -848,7 +938,65 @@ mod tests {
         );
         assert!(!files.iter().any(|f| f.starts_with("target/")));
         assert!(!files.iter().any(|f| f.contains("__pycache__")));
+        assert!(
+            files.contains(&"build/slides/ch01.pdf".to_string()),
+            "book-style build/ (no package.json) must sync"
+        );
+        assert!(
+            !files.iter().any(|f| f.starts_with("web/build/")),
+            "JS build/ beside package.json must strip"
+        );
+        assert!(
+            files.contains(&"tools/target/data.csv".to_string()),
+            "target/ without Cargo.toml must sync"
+        );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn empty_dirs_survive_roundtrip() {
+        let root = tmp("emptydirs-src");
+        write(&root, "chapters/ch01.md", "# ch1");
+        // Scaffold dirs with no files — must survive a push.
+        std::fs::create_dir_all(root.join("media/screenshots")).unwrap();
+        std::fs::create_dir_all(root.join("media/generated")).unwrap();
+        std::fs::create_dir_all(root.join("output")).unwrap();
+        // A stripped empty dir must NOT ride.
+        std::fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+        // A dir that DOES have a file is not an "empty dir" but still lands.
+        write(&root, "reports/r.md", "r");
+
+        let empties: Vec<String> = empty_synced_dirs(&root)
+            .unwrap()
+            .iter()
+            .map(|d| norm(d))
+            .collect();
+        assert!(empties.contains(&"media/screenshots".to_string()));
+        assert!(empties.contains(&"media/generated".to_string()));
+        assert!(empties.contains(&"output".to_string()));
+        assert!(!empties.iter().any(|d| d.contains("node_modules")));
+        assert!(
+            !empties.contains(&"reports".to_string()),
+            "reports has a file"
+        );
+
+        // Full round-trip: tar → untar into a fresh root.
+        let bytes = tar_workspace(&root, false).unwrap();
+        let dst = tmp("emptydirs-dst");
+        untar_workspace(&bytes, &dst, false).unwrap();
+        assert!(
+            dst.join("media/screenshots").is_dir(),
+            "empty scaffold dir teleported"
+        );
+        assert!(dst.join("media/generated").is_dir());
+        assert!(dst.join("output").is_dir());
+        assert!(dst.join("chapters/ch01.md").is_file());
+        assert!(
+            !dst.join("node_modules").exists(),
+            "stripped dir not teleported"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&dst);
     }
 
     #[test]

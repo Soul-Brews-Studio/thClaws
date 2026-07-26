@@ -1,101 +1,38 @@
-import { useEditor, EditorContent, Node } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
-import { marked } from "marked";
-import TurndownService from "turndown";
+import { useEditor, EditorContent } from "@tiptap/react";
 import { useEffect, useRef } from "react";
+import {
+  MARKDOWN_NODE_CSS,
+  editorHtmlToMarkdown,
+  markdownExtensions,
+  markdownToEditorHtml,
+  joinFrontmatter,
+  splitFrontmatter,
+} from "../lib/markdownRoundTrip";
 
 interface Props {
   source: string;
   onChange: (markdown: string) => void;
+  /// Directory of the file being edited, so relative `![](img/x.png)`
+  /// references resolve through the /file-asset handler. Omit for
+  /// content with no on-disk location — images still round-trip, they
+  /// just won't render.
+  baseDir?: string;
 }
 
-// Markdown ↔ HTML round-trip via marked + turndown. TipTap works in
-// HTML natively; `tiptap-markdown` does not parse markdown on
-// `setContent`, which is why clicking Edit on a `.md` used to render
-// the raw `#` / `-` markers as plain paragraphs. `async: false`
-// forces `marked.parse` to return a string synchronously so TipTap
-// never sees `[object Promise]`.
-marked.setOptions({ gfm: true, breaks: false, async: false });
-
-// ── Preserve raw HTML comments through the round-trip ────────────────
-// ProseMirror's DOM parser silently DROPS comment nodes (`<!-- … -->`),
-// so wrapper markers like `<!-- img:foo -->` were lost on every save. We
-// pre-transform each comment into a `<div data-html-comment>` placeholder
-// that survives DOM parsing, hold it as an atom node (shown as a muted
-// chip via CSS), and turn it back into a real comment on serialize.
-const HtmlComment = Node.create({
-  name: "htmlComment",
-  group: "block",
-  atom: true,
-  selectable: true,
-  addAttributes() {
-    return {
-      text: {
-        default: "",
-        parseHTML: (el: HTMLElement) => el.getAttribute("data-html-comment") || "",
-        renderHTML: (attrs: Record<string, unknown>) => ({
-          "data-html-comment": String(attrs.text ?? ""),
-        }),
-      },
-    };
-  },
-  parseHTML() {
-    return [{ tag: "div[data-html-comment]" }];
-  },
-  renderHTML({ HTMLAttributes }: { HTMLAttributes: Record<string, unknown> }) {
-    return ["div", { ...HTMLAttributes, class: "md-html-comment" }];
-  },
-});
-
-function escapeAttr(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-// Turn marked's emitted `<!-- … -->` into placeholder divs. Comments
-// inside code blocks are already entity-escaped by marked (`&lt;!--`),
-// so this only matches real, block-level comments.
-function commentsToPlaceholders(html: string): string {
-  return html.replace(
-    /<!--([\s\S]*?)-->/g,
-    (_m, inner: string) => `<div data-html-comment="${escapeAttr(inner)}"></div>`,
-  );
-}
-
-const turndownService = new TurndownService({
-  headingStyle: "atx",
-  bulletListMarker: "-",
-  codeBlockStyle: "fenced",
-  emDelimiter: "_",
-});
-// Placeholder div → real HTML comment. (Images use turndown's built-in
-// rule → `![alt](src)`.)
-turndownService.addRule("htmlComment", {
-  filter: (node) =>
-    node.nodeName === "DIV" && node.getAttribute("data-html-comment") !== null,
-  replacement: (_content, node) =>
-    "<!--" + ((node as HTMLElement).getAttribute("data-html-comment") || "") + "-->",
-});
-
-export function MarkdownEditor({ source, onChange }: Props) {
+export function MarkdownEditor({ source, onChange, baseDir }: Props) {
   // Track the last markdown we emitted so an echoed `source` prop
   // doesn't reset the editor and jump the caret on every keystroke.
   const lastEmittedRef = useRef<string | null>(null);
+  // YAML frontmatter is held aside rather than edited: it isn't
+  // markdown, and the converter mangles it into a thematic break plus a
+  // heading. Re-attached verbatim on every save.
+  const frontmatterRef = useRef("");
 
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({}),
-      Image.configure({ inline: false, allowBase64: true }),
-      HtmlComment,
-    ],
+    extensions: markdownExtensions,
     content: "",
     onUpdate: ({ editor }) => {
-      const html = editor.getHTML();
-      const md = turndownService.turndown(html).trim() + "\n";
+      const md = joinFrontmatter(frontmatterRef.current, editorHtmlToMarkdown(editor.getHTML()));
       lastEmittedRef.current = md;
       onChange(md);
     },
@@ -106,8 +43,7 @@ export function MarkdownEditor({ source, onChange }: Props) {
         // typography plugin isn't installed, and Tailwind 4 preflight
         // strips heading sizes + list markers — so without these rules
         // headings and bullets render as plain paragraphs.
-        class:
-          "tiptap-compact max-w-none focus:outline-none px-4 py-3",
+        class: "tiptap-compact max-w-none focus:outline-none px-4 py-3",
         spellcheck: "false",
       },
     },
@@ -116,16 +52,18 @@ export function MarkdownEditor({ source, onChange }: Props) {
   useEffect(() => {
     if (!editor) return;
     if (lastEmittedRef.current === source) return;
-    const parsed = marked.parse(source);
-    const html = commentsToPlaceholders(typeof parsed === "string" ? parsed : "");
+    const { frontmatter, body } = splitFrontmatter(source);
+    frontmatterRef.current = frontmatter;
+    const html = markdownToEditorHtml(body, baseDir);
     queueMicrotask(() => {
+      if (editor.isDestroyed) return;
       editor.commands.setContent(html, {
         emitUpdate: false,
         parseOptions: { preserveWhitespace: false },
       });
       lastEmittedRef.current = source;
     });
-  }, [source, editor]);
+  }, [source, baseDir, editor]);
 
   return (
     <div
@@ -173,18 +111,7 @@ export function MarkdownEditor({ source, onChange }: Props) {
         .tiptap-compact strong { font-weight: 600; }
         .tiptap-compact em { font-style: italic; }
         .tiptap-compact hr { border: none; border-top: 1px solid var(--border); margin: 0.8em 0; }
-        .tiptap-compact img { max-width: 100%; height: auto; border-radius: 4px; margin: 0.4em 0; }
-        .tiptap-compact .md-html-comment {
-          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-          font-size: 11px;
-          color: var(--text-secondary);
-          opacity: 0.65;
-          margin: 0.25em 0;
-          white-space: pre-wrap;
-          user-select: none;
-        }
-        .tiptap-compact .md-html-comment::before { content: "<!--" attr(data-html-comment) "-->"; }
-        .tiptap-compact .md-html-comment.ProseMirror-selectednode { outline: 2px solid var(--accent, #61afef); border-radius: 3px; opacity: 1; }
+        ${MARKDOWN_NODE_CSS}
       `}</style>
       <EditorContent editor={editor} className="h-full" />
     </div>

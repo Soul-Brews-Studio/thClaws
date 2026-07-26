@@ -410,3 +410,16 @@ html, body, #root {
 .running-chip .running-chip-dot {
   animation: running-chip-pulse 1.6s ease-in-out infinite;
 }
+
+/* Inactive tab panels are hidden with `visibility: hidden` (NOT
+   display:none — that would zero xterm's grid; see App.tsx). But
+   WebKit renders <video>/<audio> native controls in the element's UA
+   shadow DOM, which sets its own visibility — a descendant CAN override
+   an ancestor's visibility:hidden, so the controls bar kept painting
+   over other tabs after leaving Files with a player open. display:none
+   is not overridable by descendants, and toggling it on media elements
+   doesn't reset playback (audio keeps playing across tabs). */
+.tab-inactive video,
+.tab-inactive audio {
+  display: none !important;
+}

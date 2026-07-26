@@ -365,6 +365,68 @@ button { font: inherit; cursor: pointer; }
   border: 1px dashed var(--border); border-radius: 999px; padding: 4px 12px;
 }
 
+/* ── Settings panel widgets ──────────────────────────── */
+.pcard {
+  border: 1px solid var(--border); background: var(--bg);
+  border-radius: 12px; padding: 14px 16px; margin: 10px 0;
+}
+.pcard-title { font-weight: 600; font-size: 14px; }
+.prow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.prow .spacer { flex: 1; }
+.pbtn {
+  border: 1px solid var(--border); background: var(--bg-elev); color: var(--text);
+  border-radius: 8px; padding: 6px 12px; font-size: 12.5px;
+}
+.pbtn:hover { background: var(--bg-hover); }
+.pbtn.accent { background: var(--brand-accent); border-color: var(--brand-accent); color: #fff; }
+.pbtn.accent:hover { filter: brightness(1.08); background: var(--brand-accent); }
+.pbtn.danger { color: #d93025; }
+.pbtn.danger:hover { background: color-mix(in srgb, #d93025 8%, var(--bg-elev)); }
+.pinput {
+  display: block; width: 100%; margin: 8px 0;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  border-radius: 9px; padding: 9px 11px; outline: none; font: inherit;
+}
+.pinput:focus { border-color: color-mix(in srgb, var(--brand-accent) 45%, var(--border)); }
+.pta {
+  width: 100%; min-height: 220px; margin-top: 8px;
+  font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+  resize: vertical; color: var(--text); background: var(--bg); outline: none;
+}
+.pta.tall { min-height: 320px; }
+.badge {
+  font-size: 10.5px; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text-dim);
+}
+.badge.editable { border-color: var(--brand-accent); color: var(--brand-accent); }
+.muted.small, .small { font-size: 12px; }
+.model-row { border-bottom: 1px solid var(--border); padding: 6px 2px; margin: 0; }
+.model-row:last-child { border-bottom: 0; }
+
+/* Heartbeat segmented control */
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; margin-top: 6px; }
+.seg-btn {
+  border: 0; background: var(--bg-elev); color: var(--text-dim);
+  padding: 8px 14px; font-size: 12.5px; border-right: 1px solid var(--border);
+}
+.seg-btn:last-child { border-right: 0; }
+.seg-btn:hover { background: var(--bg-hover); color: var(--text); }
+.seg-btn.active { background: var(--text); color: var(--bg); font-weight: 550; }
+
+/* Composer attachment chips */
+.attach-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 8px; }
+.attach-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); background: var(--bg);
+  border-radius: 999px; padding: 3px 6px 3px 10px; font-size: 12px;
+}
+.attach-chip button {
+  border: 0; background: transparent; color: var(--text-dim);
+  font-size: 11px; padding: 2px 4px; border-radius: 999px;
+}
+.attach-chip button:hover { color: var(--text); background: var(--bg-hover); }
+
 .transport-badge {
   position: fixed; bottom: 6px; right: 8px;
   font-size: 10px; color: var(--text-dim); opacity: .55; pointer-events: none;

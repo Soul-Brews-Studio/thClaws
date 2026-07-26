@@ -1,30 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Save, FileText } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import { marked } from "marked";
-import TurndownService from "turndown";
 import { send, subscribe } from "../hooks/useIPC";
+import {
+  MARKDOWN_NODE_CSS,
+  editorHtmlToMarkdown,
+  markdownExtensions,
+  markdownToEditorHtml,
+  parentDir,
+  joinFrontmatter,
+  splitFrontmatter,
+} from "../lib/markdownRoundTrip";
 
-// Markdown ↔ HTML round-trip for the TipTap editor. The file on disk
-// stays markdown (AGENTS.md / CLAUDE.md are canonically markdown and
-// the LLM/Claude Code expect that format), but TipTap works natively
-// in HTML — so we convert on load + on save. `marked` handles MD →
-// HTML (GFM tables, task lists, fenced code). `turndown` handles HTML
-// → MD on the way back; tuned to use `#` headings (ATX) and `-`
-// bullets so the saved file doesn't drift styles on every round-trip.
-// `async: false` forces `marked.parse()` to return a string instead of
-// a Promise. Without it, any async extension would flip the whole
-// instance async and TipTap would receive `[object Promise]` as its
-// "HTML", which it renders as plain text — exactly what was showing up
-// in the round-trip when markdown survived through unconverted.
-marked.setOptions({ gfm: true, breaks: false, async: false });
-const turndownService = new TurndownService({
-  headingStyle: "atx",
-  bulletListMarker: "-",
-  codeBlockStyle: "fenced",
-  emDelimiter: "_",
-});
+// The file on disk stays markdown (AGENTS.md / CLAUDE.md are
+// canonically markdown and the LLM/Claude Code expect that format) but
+// TipTap works natively in HTML, so we convert on load + on save. The
+// conversion itself — GFM tables, images, task lists, fenced code, raw
+// HTML comments — lives in `lib/markdownRoundTrip` and is shared with
+// the Files-tab / KMS editors so the two can't serialize the same file
+// differently.
 
 type Scope = "global" | "folder";
 
@@ -51,15 +45,16 @@ export function InstructionsEditorModal({
   const [loaded, setLoaded] = useState(false);
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Held aside, not edited — see splitFrontmatter.
+  const frontmatterRef = useRef("");
 
   const editor = useEditor({
-    // StarterKit gives us the ProseMirror nodes for paragraphs,
-    // headings, lists, code blocks, blockquote, bold / italic / code /
-    // link — everything AGENTS.md typically uses. We drop the
-    // tiptap-markdown extension because marked/turndown handle the
-    // round-trip at the IPC boundary; the editor itself only ever
-    // sees HTML.
-    extensions: [StarterKit.configure({})],
+    // Paragraphs, headings, lists, code blocks, blockquote, marks —
+    // plus the table / image / html-comment nodes AGENTS.md files
+    // actually use. We drop the tiptap-markdown extension because
+    // marked/turndown handle the round-trip at the IPC boundary; the
+    // editor itself only ever sees HTML.
+    extensions: markdownExtensions,
     content: "",
     editorProps: {
       attributes: {
@@ -130,26 +125,24 @@ export function InstructionsEditorModal({
       if (msg.type === "instructions_content" && msg.scope === scope) {
         if (typeof msg.path === "string") setPath(msg.path);
         if (editor) {
-          const md = (msg.content as string) ?? "";
+          const { frontmatter, body: md } = splitFrontmatter((msg.content as string) ?? "");
+          frontmatterRef.current = frontmatter;
           // Convert markdown from disk to HTML for TipTap. We run the
           // conversion on a microtask delay so the editor's DOM view
           // is definitely mounted before setContent fires — otherwise
           // TipTap silently discards the update on a freshly-created
           // editor and the original raw markdown ends up in the doc
           // as plain text.
+          const baseDir = typeof msg.path === "string" ? parentDir(msg.path) : undefined;
           queueMicrotask(() => {
             if (editor.isDestroyed) return;
-            let html = "";
-            if (md.length > 0) {
-              const out = marked.parse(md, { async: false });
-              html = typeof out === "string" ? out : md;
-            }
-            // marked already emits block-level HTML (<h1>, <p>, <ul>)
-            // so we pass it straight to setContent. TipTap parses it
-            // via ProseMirror's DOMParser, which walks the nodes and
-            // maps them to schema-registered types (StarterKit covers
-            // all the common markdown primitives).
-            editor.commands.setContent(html, {
+            // Block-level HTML (<h1>, <p>, <ul>, <table>) goes straight
+            // to setContent. TipTap parses it via ProseMirror's
+            // DOMParser, which walks the nodes and maps them to
+            // schema-registered types — anything the extension set
+            // above doesn't cover gets flattened, which is why tables
+            // and images have to be registered there.
+            editor.commands.setContent(markdownToEditorHtml(md, baseDir), {
               emitUpdate: false,
               parseOptions: { preserveWhitespace: false },
             });
@@ -183,12 +176,10 @@ export function InstructionsEditorModal({
   const handleSave = () => {
     if (!editor) return;
     setBusy(true);
-    // HTML from TipTap → markdown via turndown. We strip a trailing
-    // newline and add exactly one so every save lands on a tidy POSIX
-    // line-ending, which `git diff` and editors prefer over "no final
-    // newline".
-    const html = editor.getHTML();
-    const md = turndownService.turndown(html).replace(/\n+$/, "") + "\n";
+    // HTML from TipTap → markdown, normalized to exactly one trailing
+    // newline so every save lands on a tidy POSIX line-ending, which
+    // `git diff` and editors prefer over "no final newline".
+    const md = joinFrontmatter(frontmatterRef.current, editorHtmlToMarkdown(editor.getHTML()));
     send({ type: "instructions_save", scope, content: md });
   };
 
@@ -283,6 +274,7 @@ export function InstructionsEditorModal({
             .tiptap-compact code { font-size: 12px; }
             .tiptap-compact pre { font-size: 12px; padding: 0.5em 0.7em; }
             .tiptap-compact blockquote { font-size: 13px; margin: 0.4em 0; }
+            ${MARKDOWN_NODE_CSS}
           `}</style>
           {loaded ? (
             <EditorContent editor={editor} />

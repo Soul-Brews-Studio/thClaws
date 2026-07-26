@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.103.0] — 2026-07-26
+
+GUI Shell settings suite, cloud sync reliability improvements, and WYSIWYG editor hardening.
+
+### Added
+- **GUI Shell: full settings suite — schedule, heartbeat, skills, knowledge, mode, and profile configuration.**
+- **Cloud Sync: push and pull now preserve empty subfolders.**
+- **Files: Source ⇄ Rich text toggle when editing a `.md` — edit the raw markdown when byte-exact formatting matters.**
+
+### Fixed
+- **Files: WYSIWYG markdown editor destroyed tables, images, HTML comments, `{{…}}` placeholder tokens, and YAML frontmatter on save.**
+- **Cloud Sync: divergence detection now bases off the runner manifest instead of local state, preventing false conflicts.**
+- **Cloud Sync: content directories named `build`, `dist`, or `target` are no longer silently dropped during sync.**
+- **Cloud: bulk sync transfers force HTTP/1.1 to avoid connection failures.**
+- **Files: media controls bar no longer bleeds into other tabs.**
+
 ## [0.102.0] — 2026-07-23
 
 White-label GUI Shell with sessions and memory bridge APIs, new RenderSlides built-in tool, plugin .zip installs, and catalogue refresh.

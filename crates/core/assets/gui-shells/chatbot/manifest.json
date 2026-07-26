@@ -6,5 +6,5 @@
   "entry": "index.html",
   "icon": "icon.svg",
   "minBridgeVersion": "1",
-  "permissions": ["agent.run", "model.read", "model.write", "session.read", "session.list", "session.write", "memory.read", "memory.write"]
+  "permissions": ["agent.run", "model.read", "model.write", "session.read", "session.list", "session.write", "memory.read", "memory.write", "schedule.read", "schedule.write", "skills.read", "skills.write", "kms.read", "kms.write", "mode.write", "profile.read"]
 }

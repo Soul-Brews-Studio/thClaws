@@ -368,7 +368,7 @@ export function KmsViewerOverlay({ initial, onClose }: Props) {
                   {saveError}
                 </div>
               )}
-              <MarkdownEditor source={editBody} onChange={setEditBody} />
+              <MarkdownEditor source={editBody} onChange={setEditBody} baseDir={assetBase} />
             </>
           )}
         </div>

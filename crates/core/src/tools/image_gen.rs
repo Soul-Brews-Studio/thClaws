@@ -253,7 +253,13 @@ mod tests {
     fn aliases_route_to_the_right_provider() {
         assert_eq!(
             registry::resolve("", "pro").unwrap().1,
-            "gemini-3.1-pro-image"
+            "gemini-3-pro-image"
+        );
+        // The 3.1 id 404s upstream (d5a17692) but stays an alias so
+        // existing callers keep working — it must resolve to the real one.
+        assert_eq!(
+            registry::resolve("", "gemini-3.1-pro-image").unwrap().1,
+            "gemini-3-pro-image"
         );
         let (p, m) = registry::resolve("", "gpt-image-2").unwrap();
         assert_eq!(p.id(), "openai");

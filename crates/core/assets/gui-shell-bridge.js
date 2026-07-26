@@ -824,6 +824,86 @@
       },
     },
 
+    // Schedule API (settings "Schedule" panel). Needs `schedule.read`
+    // (list) / `schedule.write` (create/delete/toggle).
+    schedule: {
+      // -> { schedules: [{ id, cron, runAt, prompt, enabled, lastRun }] }
+      list() {
+        return send("schedule_list", {});
+      },
+      create(prompt, cron) {
+        return send("schedule_create", { prompt: String(prompt ?? ""), cron: String(cron ?? "") });
+      },
+      delete(id) {
+        return send("schedule_delete", { scheduleId: String(id ?? "") });
+      },
+      setEnabled(id, enabled) {
+        return send("schedule_toggle", { scheduleId: String(id ?? ""), enabled: !!enabled });
+      },
+    },
+
+    // Heartbeat API (settings "Heartbeat" panel) — proactive check-ins as
+    // a reserved schedule. Intervals: "off" | "30m" | "1h" | "4h" | "1d".
+    // Needs `schedule.read` / `schedule.write`.
+    heartbeat: {
+      get() {
+        return send("heartbeat_get", {});
+      },
+      set(interval) {
+        return send("heartbeat_set", { interval: String(interval ?? "off") });
+      },
+    },
+
+    // Skills API (settings "Skills" panel). list/view need `skills.read`;
+    // save/delete operate on PROJECT skills and need `skills.write`.
+    skills: {
+      // -> { skills: [{ name, description, whenToUse, editable }] }
+      list() {
+        return send("skills_list", {});
+      },
+      // -> { content, editable }
+      get(name) {
+        return send("skills_get", { skillName: String(name ?? "") });
+      },
+      save(name, content) {
+        return send("skills_save", { skillName: String(name ?? ""), content: String(content ?? "") });
+      },
+      delete(name) {
+        return send("skills_delete", { skillName: String(name ?? "") });
+      },
+    },
+
+    // Knowledge write API (settings "Knowledge" panel) — pairs with the
+    // read-only thclaws.kms.*. Needs `kms.write`. Upload flow: uploadFile()
+    // the document first, then ingest(kmsName, uploadedPath).
+    knowledge: {
+      create(name) {
+        return send("kms_create", { kmsName: String(name ?? "") });
+      },
+      ingest(kmsName, path) {
+        return send("kms_ingest", { kmsName: String(kmsName ?? ""), path: String(path ?? "") });
+      },
+    },
+
+    // Composer mode selector — permission mode "auto" | "ask". get is
+    // ungated; set needs `mode.write`.
+    mode: {
+      get() {
+        return send("mode_get", {});
+      },
+      set(mode) {
+        return send("mode_set", { mode: String(mode ?? "auto") });
+      },
+    },
+
+    // Profile facts (engine-side): { memberId, workspace, multiuser }.
+    // Needs `profile.read`. Email/password live in the cloud control plane.
+    profile: {
+      get() {
+        return send("profile_get", {});
+      },
+    },
+
     // Memory API (dev-plan/33 — settings "Memory" panel). Core memory is
     // the MEMORY.md index injected into every turn. Needs `memory.read`
     // (get) / `memory.write` (set).

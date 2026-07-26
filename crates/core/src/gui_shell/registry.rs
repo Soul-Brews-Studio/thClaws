@@ -448,10 +448,12 @@ fn session_explorer() -> EmbeddedShell {
 /// Chatbot — minimal example shell. Sends user messages to the
 /// agent loop via `thclaws.run()`, streams replies back via
 /// `thclaws.on("text"/"done"/"error")`, persists history with
-/// `thclaws.storage`. Declares only `agent.run` permission — no
-/// tool dependencies, no MCP requirements. Works with any
-/// configured model out of the box. Reference example for shell
-/// authors who want a conversational UI.
+/// `thclaws.storage`. Declares `agent.run` plus the scoped bridge
+/// permissions its settings suite needs (model / session / memory /
+/// schedule / skills / kms / mode / profile) — no tool execution, no
+/// filesystem, no MCP requirements. Works with any configured model
+/// out of the box. Reference example for shell authors who want a
+/// conversational UI.
 fn chatbot() -> EmbeddedShell {
     build_embedded_shell(
         include_str!("../../assets/gui-shells/chatbot/manifest.json"),
@@ -574,10 +576,19 @@ mod tests {
         let s = r.resolve("chatbot").expect("built-in present");
         assert_eq!(s.manifest().id, "chatbot");
         assert_eq!(s.source(), ShellSource::Builtin);
-        // Must declare only the minimum permission (agent.run) — no
-        // tool / fs perms that could escalate. Important security
-        // invariant for the "minimal example" framing.
-        assert_eq!(s.manifest().permissions, vec!["agent.run".to_string()]);
+        // The shell grew a settings suite (2ef27b5d), so the permission
+        // list is no longer just `agent.run`. What still has to hold is
+        // the security invariant behind the original assertion: every
+        // permission is a scoped bridge capability — nothing that hands
+        // the shell tool execution or raw filesystem access.
+        let perms = &s.manifest().permissions;
+        assert!(perms.contains(&"agent.run".to_string()));
+        for p in perms {
+            assert!(
+                !p.starts_with("tool.") && !p.starts_with("fs.") && !p.starts_with("shell."),
+                "chatbot must not request an escalating permission: {p}"
+            );
+        }
     }
 
     #[test]

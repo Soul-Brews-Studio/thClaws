@@ -46,6 +46,21 @@ const ALLOWED_PERMISSION_PREFIXES: &[&str] = &[
     // write = overwrite it.
     "memory.read",
     "memory.write",
+    // Schedule bridge (thclaws.schedule.* + thclaws.heartbeat.*): read =
+    // list; write = create/delete/toggle + heartbeat interval.
+    "schedule.read",
+    "schedule.write",
+    // Skills bridge (thclaws.skills.*): read = list/view; write =
+    // save/delete PROJECT skills.
+    "skills.read",
+    "skills.write",
+    // KMS write side (thclaws.knowledge.*): create a KMS + ingest docs.
+    // (Read side is the existing `kms.read`.)
+    "kms.write",
+    // Composer mode selector (thclaws.mode.*): switch auto/ask.
+    "mode.write",
+    // Profile panel (thclaws.profile.*): engine-side identity facts.
+    "profile.read",
     "fs.shell-scoped",
     "tools.invoke:",
     "network.outbound:",

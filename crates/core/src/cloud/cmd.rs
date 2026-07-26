@@ -1168,9 +1168,22 @@ async fn sync_inner(
         }
     }
     // Record the now-agreed content state so the NEXT sync can tell whether
-    // either end drifted. Best-effort — a watermark failure must not fail the
-    // sync itself. (dry-run paths already returned above.)
-    if let Ok(m) = wssync::build_manifest(cwd) {
+    // the CLOUD end drifted. Best-effort — a watermark failure must not fail
+    // the sync itself. (dry-run paths already returned above.)
+    //
+    // Base off the RUNNER's export manifest (re-fetched), NOT the local
+    // manifest. The divergence guard compares the runner's manifest against
+    // this base, so both sides of that comparison must be computed the SAME
+    // way. A local manifest can legitimately differ from the runner's export
+    // across engine versions — e.g. when the client's sync strip rules change
+    // (build/ handling) before the runner's do — which would otherwise read
+    // as perpetual divergence and force `--force` on every push. Comparing
+    // runner-to-runner makes the guard fire only on genuine cloud-side edits.
+    if let Ok(Some(remote)) = client.ws_sync_manifest(&ws.url, &jwt).await {
+        let _ = wssync::write_sync_base(cwd, &wssync::manifest_fingerprint(&remote));
+    } else if let Ok(m) = wssync::build_manifest(cwd) {
+        // Runner predates the manifest endpoint (P2 404) — fall back to the
+        // local fingerprint (the pre-P2 whole-tarball behaviour).
         let _ = wssync::write_sync_base(cwd, &wssync::manifest_fingerprint(&m));
     }
     Ok(())

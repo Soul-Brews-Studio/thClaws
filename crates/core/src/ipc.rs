@@ -82,6 +82,17 @@ fn ipc_session_store(ctx: &IpcContext) -> Option<crate::session::SessionStore> {
         })
 }
 
+/// Heartbeat schedule id, scoped per workspace: the ScheduleStore is a
+/// GLOBAL file, so a bare "heartbeat" id would collide across
+/// workspaces (and one workspace's shell could clobber another's).
+fn heartbeat_id_for_workspace() -> String {
+    use std::hash::{Hash, Hasher};
+    let cwd = crate::workdir::current_workdir();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    cwd.hash(&mut h);
+    format!("heartbeat-{:08x}", (h.finish() & 0xffff_ffff) as u32)
+}
+
 /// Per-user-aware memory store for the IPC thread. Runs OFF the worker's
 /// task-local scope, so it can't rely on `current_workdir()` — it takes
 /// the per-user `workspace_root` from `session_roots` (multi-tenant
@@ -525,6 +536,524 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
                 }
             };
             (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        // GUI Shell schedule bridge (settings "Schedule" + "Heartbeat"
+        // panels). Reuses the ScheduleStore (schedules.json) the /schedule
+        // command + scheduler daemon already run. Heartbeat is a reserved
+        // schedule id ("heartbeat") with a fixed review-memory prompt so it
+        // needs no new engine machinery.
+        "gui_shell_schedule_list" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let body = if !shell_has_permission(shell_id, "schedule.read")
+                && !shell_has_permission(shell_id, "schedule.write")
+            {
+                serde_json::json!({ "error": "permission 'schedule.read' not declared" })
+            } else {
+                match crate::schedule::ScheduleStore::load() {
+                    Ok(store) => {
+                        let ws_cwd = crate::workdir::current_workdir();
+                        let arr: Vec<serde_json::Value> = store
+                            .schedules
+                            .iter()
+                            .filter(|s| s.cwd == ws_cwd && !s.id.starts_with("heartbeat"))
+                            .map(|s| {
+                                serde_json::json!({
+                                    "id": s.id,
+                                    "cron": s.cron,
+                                    "runAt": s.run_at,
+                                    "prompt": s.prompt,
+                                    "enabled": s.enabled,
+                                    "lastRun": s.last_run,
+                                })
+                            })
+                            .collect();
+                        serde_json::json!({ "result": { "schedules": arr } })
+                    }
+                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_schedule_create" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let prompt = msg
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let cron = msg
+                .get("cron")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "schedule.write") {
+                serde_json::json!({ "error": "permission 'schedule.write' not declared" })
+            } else if prompt.is_empty() || cron.is_empty() {
+                serde_json::json!({ "error": "prompt and cron are required" })
+            } else if let Err(e) = crate::schedule::validate_cron(&cron) {
+                serde_json::json!({ "error": format!("invalid cron: {e}") })
+            } else {
+                let sched = crate::schedule::Schedule {
+                    id: format!(
+                        "sch-{:x}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis())
+                            .unwrap_or(0)
+                    ),
+                    cron,
+                    run_at: None,
+                    cwd: crate::workdir::current_workdir(),
+                    prompt,
+                    model: None,
+                    resume_session: None,
+                    max_iterations: None,
+                    timeout_secs: None,
+                    enabled: true,
+                    watch_workspace: false,
+                    last_run: None,
+                    last_exit: None,
+                };
+                match crate::schedule::ScheduleStore::load().and_then(|mut st| {
+                    st.add(sched)?;
+                    st.save()
+                }) {
+                    Ok(()) => serde_json::json!({ "result": { "ok": true } }),
+                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_schedule_delete" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let sid = msg
+                .get("scheduleId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "schedule.write") {
+                serde_json::json!({ "error": "permission 'schedule.write' not declared" })
+            } else if sid.is_empty() {
+                serde_json::json!({ "error": "scheduleId required" })
+            } else {
+                match crate::schedule::ScheduleStore::load().and_then(|mut st| {
+                    // Workspace-scoped: a shell may only delete schedules
+                    // whose cwd is THIS workspace (a scratch shell must
+                    // never reach another workspace's schedules).
+                    let ws_cwd = crate::workdir::current_workdir();
+                    let in_ws = st.get(&sid).map(|s| s.cwd == ws_cwd).unwrap_or(false);
+                    if !in_ws {
+                        return Err(crate::error::Error::Tool(
+                            "schedule not found in this workspace".into(),
+                        ));
+                    }
+                    let removed = st.remove(&sid);
+                    st.save()?;
+                    Ok(removed)
+                }) {
+                    Ok(removed) => serde_json::json!({ "result": { "ok": removed } }),
+                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_schedule_toggle" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let sid = msg
+                .get("scheduleId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let enabled = msg.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+            let body = if !shell_has_permission(shell_id, "schedule.write") {
+                serde_json::json!({ "error": "permission 'schedule.write' not declared" })
+            } else {
+                match crate::schedule::ScheduleStore::load().and_then(|mut st| {
+                    let ws_cwd = crate::workdir::current_workdir();
+                    match st.get_mut(&sid).filter(|s| s.cwd == ws_cwd) {
+                        Some(s) => {
+                            s.enabled = enabled;
+                            st.save()?;
+                            Ok(true)
+                        }
+                        None => Ok(false),
+                    }
+                }) {
+                    Ok(found) => serde_json::json!({ "result": { "ok": found } }),
+                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        // Heartbeat: reserved schedule id with interval presets. "off"
+        // removes the entry; any interval upserts it enabled.
+        "gui_shell_heartbeat_get" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let body = if !shell_has_permission(shell_id, "schedule.read")
+                && !shell_has_permission(shell_id, "schedule.write")
+            {
+                serde_json::json!({ "error": "permission 'schedule.read' not declared" })
+            } else {
+                let hb_id = heartbeat_id_for_workspace();
+                let interval = crate::schedule::ScheduleStore::load()
+                    .ok()
+                    .and_then(|st| {
+                        st.get(&hb_id).filter(|s| s.enabled).map(|s| {
+                            match s.cron.as_str() {
+                                "*/30 * * * *" => "30m",
+                                "0 * * * *" => "1h",
+                                "0 */4 * * *" => "4h",
+                                "0 9 * * *" => "1d",
+                                _ => "custom",
+                            }
+                            .to_string()
+                        })
+                    })
+                    .unwrap_or_else(|| "off".into());
+                serde_json::json!({ "result": { "interval": interval } })
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_heartbeat_set" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let interval = msg
+                .get("interval")
+                .and_then(|v| v.as_str())
+                .unwrap_or("off")
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "schedule.write") {
+                serde_json::json!({ "error": "permission 'schedule.write' not declared" })
+            } else if !matches!(interval.as_str(), "off" | "30m" | "1h" | "4h" | "1d") {
+                serde_json::json!({ "error": format!("unknown interval '{interval}'") })
+            } else {
+                let cron = match interval.as_str() {
+                    "30m" => Some("*/30 * * * *"),
+                    "1h" => Some("0 * * * *"),
+                    "4h" => Some("0 */4 * * *"),
+                    "1d" => Some("0 9 * * *"),
+                    _ => None, // "off"
+                };
+                let hb_id = heartbeat_id_for_workspace();
+                match crate::schedule::ScheduleStore::load().and_then(|mut st| {
+                    st.remove(&hb_id);
+                    if let Some(cron) = cron {
+                        st.add(crate::schedule::Schedule {
+                            id: hb_id.clone(),
+                            cron: cron.into(),
+                            run_at: None,
+                            cwd: crate::workdir::current_workdir(),
+                            prompt: "Heartbeat check-in: review your core memory (MEMORY.md) \
+                                     and any recent notes. If — and only if — something genuinely \
+                                     deserves the user's attention right now (a due follow-up, a \
+                                     promised reminder, an anomaly), write a short friendly message \
+                                     about it. Otherwise reply exactly: HEARTBEAT-OK"
+                                .into(),
+                            model: None,
+                            resume_session: None,
+                            max_iterations: Some(10),
+                            timeout_secs: Some(300),
+                            enabled: true,
+                            watch_workspace: false,
+                            last_run: None,
+                            last_exit: None,
+                        })?;
+                    }
+                    st.save()
+                }) {
+                    Ok(()) => serde_json::json!({ "result": { "interval": interval } }),
+                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        // GUI Shell skills bridge (settings "Skills" panel). list = the
+        // full discovered registry (builtin/user/plugin/project); get/save/
+        // delete operate on the PROJECT skills dir (./.thclaws/skills/) —
+        // per-user under multi-tenant workspace_root, and the highest-
+        // precedence layer so a saved skill immediately wins.
+        "gui_shell_skills_list" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let body = if !shell_has_permission(shell_id, "skills.read")
+                && !shell_has_permission(shell_id, "skills.write")
+            {
+                serde_json::json!({ "error": "permission 'skills.read' not declared" })
+            } else {
+                let store = crate::skills::SkillStore::discover();
+                let project_dir = crate::workdir::current_workdir()
+                    .join(".thclaws")
+                    .join("skills");
+                let mut arr: Vec<serde_json::Value> = store
+                    .skills
+                    .values()
+                    .map(|s| {
+                        let editable = project_dir.join(&s.name).join("SKILL.md").is_file();
+                        serde_json::json!({
+                            "name": s.name,
+                            "description": s.description,
+                            "whenToUse": s.when_to_use,
+                            "editable": editable,
+                        })
+                    })
+                    .collect();
+                arr.sort_by(|a, b| {
+                    a["name"]
+                        .as_str()
+                        .unwrap_or("")
+                        .cmp(b["name"].as_str().unwrap_or(""))
+                });
+                serde_json::json!({ "result": { "skills": arr } })
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_skills_get" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let name = msg
+                .get("skillName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "skills.read")
+                && !shell_has_permission(shell_id, "skills.write")
+            {
+                serde_json::json!({ "error": "permission 'skills.read' not declared" })
+            } else if !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                serde_json::json!({ "error": "invalid skill name" })
+            } else {
+                let path = crate::workdir::current_workdir()
+                    .join(".thclaws")
+                    .join("skills")
+                    .join(&name)
+                    .join("SKILL.md");
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        serde_json::json!({ "result": { "content": content, "editable": true } })
+                    }
+                    Err(_) => {
+                        // Not a project skill — report the registry entry read-only.
+                        let store = crate::skills::SkillStore::discover();
+                        match store.skills.get(&name) {
+                            Some(s) => serde_json::json!({ "result": {
+                                "content": format!("# {}\n\n{}\n\n{}", s.name, s.description, s.when_to_use),
+                                "editable": false,
+                            }}),
+                            None => serde_json::json!({ "error": "skill not found" }),
+                        }
+                    }
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_skills_save" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let name = msg
+                .get("skillName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let content = msg
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "skills.write") {
+                serde_json::json!({ "error": "permission 'skills.write' not declared" })
+            } else if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                serde_json::json!({ "error": "skill name must be alphanumeric/-/_" })
+            } else if content.trim().is_empty() {
+                serde_json::json!({ "error": "content required" })
+            } else {
+                let dir = crate::workdir::current_workdir()
+                    .join(".thclaws")
+                    .join("skills")
+                    .join(&name);
+                match std::fs::create_dir_all(&dir)
+                    .and_then(|_| std::fs::write(dir.join("SKILL.md"), &content))
+                {
+                    Ok(_) => serde_json::json!({ "result": { "ok": true } }),
+                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_skills_delete" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let name = msg
+                .get("skillName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "skills.write") {
+                serde_json::json!({ "error": "permission 'skills.write' not declared" })
+            } else if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                serde_json::json!({ "error": "invalid skill name" })
+            } else {
+                let dir = crate::workdir::current_workdir()
+                    .join(".thclaws")
+                    .join("skills")
+                    .join(&name);
+                if dir.join("SKILL.md").is_file() {
+                    match std::fs::remove_dir_all(&dir) {
+                        Ok(_) => serde_json::json!({ "result": { "ok": true } }),
+                        Err(e) => serde_json::json!({ "error": e.to_string() }),
+                    }
+                } else {
+                    serde_json::json!({ "error": "not a project skill (built-in/user skills are read-only here)" })
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        // GUI Shell knowledge-write bridge (settings "Knowledge" panel).
+        // Read side already exists (kms.list/browse, `kms.read`). create =
+        // new project-scoped KMS; ingest = add an uploaded document
+        // (thclaws.uploadFile → _uploads/<name>) into a KMS.
+        "gui_shell_kms_create" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let name = msg
+                .get("kmsName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "kms.write") {
+                serde_json::json!({ "error": "permission 'kms.write' not declared" })
+            } else if name.is_empty() {
+                serde_json::json!({ "error": "name required" })
+            } else {
+                match crate::kms::create(&name, crate::kms::KmsScope::Project) {
+                    Ok(r) => serde_json::json!({ "result": { "ok": true, "name": r.name } }),
+                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        "gui_shell_kms_ingest" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let kms_name = msg
+                .get("kmsName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let path = msg
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = if !shell_has_permission(shell_id, "kms.write") {
+                serde_json::json!({ "error": "permission 'kms.write' not declared" })
+            } else if kms_name.is_empty() || path.is_empty() {
+                serde_json::json!({ "error": "kmsName and path required" })
+            } else {
+                match crate::sandbox::Sandbox::check(&path) {
+                    Err(e) => serde_json::json!({ "error": format!("path: {e}") }),
+                    Ok(abs) => match crate::kms::resolve(&kms_name) {
+                        None => {
+                            serde_json::json!({ "error": format!("no KMS named '{kms_name}'") })
+                        }
+                        Some(kref) => match crate::kms::ingest(&kref, &abs, None, false) {
+                            Ok(_) => serde_json::json!({ "result": { "ok": true } }),
+                            Err(e) => serde_json::json!({ "error": e.to_string() }),
+                        },
+                    },
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        // Composer "Auto ⌄" mode selector — read/switch the permission mode.
+        "gui_shell_mode_get" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let mode = match crate::permissions::current_mode() {
+                crate::permissions::PermissionMode::Auto => "auto",
+                crate::permissions::PermissionMode::Ask => "ask",
+                _ => "plan",
+            };
+            (ctx.dispatch)(shell_reply(
+                request_id,
+                serde_json::json!({ "result": { "mode": mode } }),
+            ));
+        }
+
+        "gui_shell_mode_set" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            let mode = msg.get("mode").and_then(|v| v.as_str()).unwrap_or("");
+            let body = if !shell_has_permission(shell_id, "mode.write") {
+                serde_json::json!({ "error": "permission 'mode.write' not declared" })
+            } else {
+                let parsed = match mode {
+                    "auto" => Some(crate::permissions::PermissionMode::Auto),
+                    "ask" => Some(crate::permissions::PermissionMode::Ask),
+                    _ => None,
+                };
+                match parsed {
+                    Some(m) => {
+                        crate::permissions::set_current_mode_and_broadcast(m);
+                        serde_json::json!({ "result": { "mode": mode } })
+                    }
+                    None => serde_json::json!({ "error": "mode must be 'auto' or 'ask'" }),
+                }
+            };
+            (ctx.dispatch)(shell_reply(request_id, body));
+        }
+
+        // Profile panel: engine-side identity facts. Password/email live in
+        // the cloud control plane — the shell shows those as cloud-managed.
+        "gui_shell_profile_get" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let member = ctx
+                .shared
+                .session_roots
+                .as_ref()
+                .and_then(|r| r.member_id.clone());
+            let workspace = crate::workdir::current_workdir()
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            (ctx.dispatch)(shell_reply(
+                request_id,
+                serde_json::json!({ "result": {
+                    "memberId": member,
+                    "workspace": workspace,
+                    "multiuser": ctx.shared.session_roots.is_some(),
+                }}),
+            ));
         }
 
         // GUI Shell sessions bridge (dev-plan/33 — chat-history surface).

@@ -958,7 +958,11 @@ export default function App() {
             // let the viewer's absolute-positioned pane cover them.
             const tabsHidden =
               !isActive || viewerTarget !== null || graphKms !== null;
-            const cls = `absolute inset-0 ${tabsHidden ? "invisible pointer-events-none" : ""}`;
+            // `tab-inactive` additionally display:none's media elements —
+            // WebKit's native <video>/<audio> controls (UA shadow DOM) set
+            // their own visibility and pierce the ancestor `invisible`,
+            // leaving a floating controls bar over other tabs (index.css).
+            const cls = `absolute inset-0 ${tabsHidden ? "invisible pointer-events-none tab-inactive" : ""}`;
             return (
               <div key={id} className={cls}>
                 {id === "terminal" && <TerminalView active={isActive} modalOpen={modalOpen} />}
