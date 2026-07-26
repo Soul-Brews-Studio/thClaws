@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.104.0] — 2026-07-26
+
+Plugins survive a workspace move, per-file cloud-sync divergence, and a catalogue refresh.
+
+### Fixed
+- **Plugins: a plugin's skills, commands, and agents no longer vanish after the workspace is pushed to a hosted workspace or moved on disk.** The registry recorded an absolute install path, so it stopped resolving anywhere else; it's now stored relative to the registry file itself, and an existing absolute entry is repaired on load.
+- **Cloud Sync: divergence is judged per file against each end's own recorded manifest.** A single changed byte on the far end no longer blocks the whole push with `--force` as the only way out — the guard names the files and blocks only on work the other end did.
+- **Serve: the "working" indicator comes back when a browser reconnects mid-turn.**
+
+### Changed
+- **Catalogue: 2026-07-26 refresh — adds the qwen3.7-flash family, priced from the Alibaba international page.**
+
 ## [0.103.0] — 2026-07-26
 
 GUI Shell settings suite, cloud sync reliability improvements, and WYSIWYG editor hardening.

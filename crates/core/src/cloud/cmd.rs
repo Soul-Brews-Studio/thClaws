@@ -757,6 +757,95 @@ mod tests {
         serde_json::from_slice(&raw).unwrap()
     }
 
+    fn ent(path: &str, sha: &str) -> wssync::FileEntry {
+        wssync::FileEntry {
+            path: path.to_string(),
+            size: sha.len() as u64,
+            sha256: sha.to_string(),
+        }
+    }
+
+    #[test]
+    fn guard_blocks_only_the_far_end_and_names_the_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path();
+        let base = vec![ent("mine.rs", "a"), ent("theirs.rs", "b")];
+        wssync::write_sync_base_manifests(cwd, &base, &base).unwrap();
+
+        // Only THIS machine moved: a push is free to proceed, a pull would
+        // destroy the edit and must stop.
+        let local = vec![ent("mine.rs", "a2"), ent("theirs.rs", "b")];
+        let remote = base.clone();
+        assert!(guard_divergence(cwd, "ws", &local, &remote, true).is_ok());
+        let err = guard_divergence(cwd, "ws", &local, &remote, false).unwrap_err();
+        assert!(err.contains("1 changed on local only: mine.rs"), "{err}");
+        assert!(err.contains("Push first to reconcile"), "{err}");
+
+        // Only the CLOUD moved: mirror image.
+        let remote2 = vec![ent("mine.rs", "a"), ent("theirs.rs", "b2")];
+        assert!(guard_divergence(cwd, "ws", &base, &remote2, false).is_ok());
+        let err = guard_divergence(cwd, "ws", &base, &remote2, true).unwrap_err();
+        assert!(err.contains("1 changed on cloud only: theirs.rs"), "{err}");
+        assert!(err.contains("Pull first to reconcile"), "{err}");
+
+        // Both ends moved the SAME file differently — blocked either way.
+        let local_c = vec![ent("mine.rs", "a_local"), ent("theirs.rs", "b")];
+        let remote_c = vec![ent("mine.rs", "a_cloud"), ent("theirs.rs", "b")];
+        for is_push in [true, false] {
+            let err = guard_divergence(cwd, "ws", &local_c, &remote_c, is_push).unwrap_err();
+            assert!(err.contains("1 changed on BOTH ends: mine.rs"), "{err}");
+        }
+
+        // Each end moved a DIFFERENT file: still one-directional, so each
+        // direction reports only the far end's file.
+        let err = guard_divergence(cwd, "ws", &local, &remote2, true).unwrap_err();
+        assert!(err.contains("1 changed on cloud only: theirs.rs"), "{err}");
+        assert!(!err.contains("BOTH ends"), "{err}");
+        let err = guard_divergence(cwd, "ws", &local, &remote2, false).unwrap_err();
+        assert!(err.contains("1 changed on local only: mine.rs"), "{err}");
+    }
+
+    #[test]
+    fn guard_stays_quiet_when_only_plumbing_or_pre_base_skew_differs() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path();
+        // The runner's recorded view carries a path the client strips.
+        let base_local = vec![ent("src/main.rs", "m")];
+        let base_remote = vec![ent("src/main.rs", "m"), ent("build/out.js", "stale")];
+        wssync::write_sync_base_manifests(cwd, &base_local, &base_remote).unwrap();
+
+        // Same skew today, plus per-end plumbing churn: neither is a change.
+        let local = vec![ent("src/main.rs", "m"), ent(".thclaws/settings.json", "s1")];
+        let remote = vec![
+            ent("src/main.rs", "m"),
+            ent("build/out.js", "stale"),
+            ent(".thclaws/settings.json", "s2_gateway_overlay"),
+        ];
+        assert!(guard_divergence(cwd, "ws", &local, &remote, true).is_ok());
+        assert!(guard_divergence(cwd, "ws", &local, &remote, false).is_ok());
+    }
+
+    #[test]
+    fn guard_falls_back_to_the_v1_fingerprint_without_a_per_file_base() {
+        let dir = tempfile::tempdir().unwrap();
+        let cwd = dir.path();
+        let agreed = vec![ent("a.rs", "1")];
+        let moved = vec![ent("a.rs", "2")];
+        // A base written by a pre-3-way engine: fingerprint only.
+        wssync::write_sync_base(cwd, &wssync::manifest_fingerprint(&agreed)).unwrap();
+        assert!(wssync::read_sync_base_manifests(cwd).is_none());
+
+        // Push judges the REMOTE side, pull judges the LOCAL side.
+        assert!(guard_divergence(cwd, "ws", &moved, &agreed, true).is_ok());
+        assert!(guard_divergence(cwd, "ws", &agreed, &moved, true).is_err());
+        assert!(guard_divergence(cwd, "ws", &agreed, &moved, false).is_ok());
+        assert!(guard_divergence(cwd, "ws", &moved, &agreed, false).is_err());
+
+        // No base at all → first sync, nothing to clobber.
+        let fresh = tempfile::tempdir().unwrap();
+        assert!(guard_divergence(fresh.path(), "ws", &moved, &agreed, true).is_ok());
+    }
+
     #[test]
     fn restore_carries_gateway_proxy_over_an_agent_overwrite() {
         let dir = tempfile::tempdir().unwrap();
@@ -913,6 +1002,88 @@ async fn resolve_workspace(
     ))
 }
 
+/// Name the paths at stake, capped so a wide divergence stays readable.
+fn name_paths(paths: &[String]) -> String {
+    const MAX: usize = 5;
+    let shown = paths
+        .iter()
+        .take(MAX)
+        .map(|s| s.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    if paths.len() > MAX {
+        format!("{}, +{} more", shown, paths.len() - MAX)
+    } else {
+        shown
+    }
+}
+
+/// Refuse a one-directional sync that would destroy work the OTHER end did
+/// since the last agreed state. Per-file when a v2 base exists (says which end
+/// moved what), whole-workspace otherwise.
+fn guard_divergence(
+    cwd: &Path,
+    slug: &str,
+    local: &[wssync::FileEntry],
+    remote: &[wssync::FileEntry],
+    is_push: bool,
+) -> Result<(), String> {
+    let Some((base_local, base_remote)) = wssync::read_sync_base_manifests(cwd) else {
+        // Pre-3-way base (or none): fall back to the fingerprint of whichever
+        // side this sync would overwrite.
+        let overwritten = if is_push { remote } else { local };
+        if wssync::diverged_from_base(cwd, overwritten) {
+            return Err(if is_push {
+                format!("'{}' has changes since your last sync — pushing would overwrite them (recoverable in .sync-trash). Pull first to reconcile, or re-run with --force.", slug)
+            } else {
+                format!("this folder has changes since your last sync — pulling '{}' would overwrite them (recoverable in .sync-trash). Push first to reconcile, or re-run with --force.", slug)
+            });
+        }
+        return Ok(());
+    };
+    let r = wssync::reconcile(&base_local, &base_remote, local, remote);
+    // Only the far end's edits are at risk: a push is free to overwrite files
+    // that only this machine changed, and vice-versa.
+    let theirs = if is_push { &r.pull } else { &r.push };
+    if theirs.is_empty() && r.conflicts.is_empty() {
+        return Ok(());
+    }
+    let (head, side, fix) = if is_push {
+        (
+            format!("'{}' changed on the cloud since your last sync — pushing would overwrite that work", slug),
+            "cloud",
+            "Pull first to reconcile",
+        )
+    } else {
+        (
+            format!(
+                "this folder changed since your last sync — pulling '{}' would overwrite that work",
+                slug
+            ),
+            "local",
+            "Push first to reconcile",
+        )
+    };
+    let mut msg = format!("{} (recoverable in .sync-trash):", head);
+    if !theirs.is_empty() {
+        msg.push_str(&format!(
+            "\n  {} changed on {} only: {}",
+            theirs.len(),
+            side,
+            name_paths(theirs)
+        ));
+    }
+    if !r.conflicts.is_empty() {
+        msg.push_str(&format!(
+            "\n  {} changed on BOTH ends: {}",
+            r.conflicts.len(),
+            name_paths(&r.conflicts)
+        ));
+    }
+    msg.push_str(&format!("\n{}, or re-run with --force.", fix));
+    Err(msg)
+}
+
 async fn sync_inner(
     cwd: &Path,
     cloud_url: Option<&str>,
@@ -973,22 +1144,15 @@ async fn sync_inner(
             ));
         }
         // P2: incremental when the runner exposes a manifest; else full tarball.
-        let remote_manifest = client.ws_sync_manifest(&ws.url, &jwt).await?;
-        // Divergence guard: refuse to clobber work the cloud did since the last
-        // sync. Best-effort — only checkable when the runner exposes a manifest.
-        if !opts.force {
-            if let Some(remote) = &remote_manifest {
-                if wssync::diverged_from_base(cwd, remote) {
-                    return Err(format!(
-                        "'{}' has changes since your last sync — pushing would overwrite them (recoverable in .sync-trash). Pull first to reconcile, or re-run with --force.",
-                        ws.slug
-                    ));
-                }
-            }
-        }
-        match remote_manifest {
+        match client.ws_sync_manifest(&ws.url, &jwt).await? {
             Some(remote) => {
                 let local = wssync::build_manifest(cwd)?;
+                // Divergence guard: refuse to clobber work the cloud did since
+                // the last sync. Best-effort — only checkable here, where the
+                // runner exposes a manifest to compare against.
+                if !opts.force {
+                    guard_divergence(cwd, &ws.slug, &local, &remote, true)?;
+                }
                 let (upload, extraneous) = wssync::diff(&local, &remote);
                 if opts.dry_run {
                     emit(format!(
@@ -1080,17 +1244,16 @@ async fn sync_inner(
                 ws.slug, bound_note
             ));
         }
-        // Divergence guard: refuse to clobber local work done since the last
-        // sync. `local_manifest` is reused by the incremental branch below.
+        // `local_manifest` is both the divergence-guard input and the
+        // incremental branch's diff input — hash the tree once.
         let local_manifest = wssync::build_manifest(cwd)?;
-        if !opts.force && wssync::diverged_from_base(cwd, &local_manifest) {
-            return Err(format!(
-                "this folder has changes since your last sync — pulling '{}' would overwrite them (recoverable in .sync-trash). Push first to reconcile, or re-run with --force.",
-                ws.slug
-            ));
-        }
         match client.ws_sync_manifest(&ws.url, &jwt).await? {
             Some(remote) => {
+                // Divergence guard: refuse to clobber local work done since the
+                // last sync. Needs both sides, so it sits after the fetch.
+                if !opts.force {
+                    guard_divergence(cwd, &ws.slug, &local_manifest, &remote, false)?;
+                }
                 let local = local_manifest;
                 let (download, extraneous) = wssync::diff(&remote, &local);
                 if opts.dry_run {
@@ -1131,6 +1294,14 @@ async fn sync_inner(
                 ));
             }
             None => {
+                // Runner predates the manifest endpoint — no cloud-side view to
+                // reconcile against, so guard on the local fingerprint alone.
+                if !opts.force && wssync::diverged_from_base(cwd, &local_manifest) {
+                    return Err(format!(
+                        "this folder has changes since your last sync — pulling '{}' would overwrite them (recoverable in .sync-trash). Push first to reconcile, or re-run with --force.",
+                        ws.slug
+                    ));
+                }
                 if opts.dry_run {
                     let local = wssync::stat_workspace(cwd)?;
                     emit(format!(
@@ -1167,24 +1338,32 @@ async fn sync_inner(
             }
         }
     }
-    // Record the now-agreed content state so the NEXT sync can tell whether
-    // the CLOUD end drifted. Best-effort — a watermark failure must not fail
-    // the sync itself. (dry-run paths already returned above.)
+    // Record the now-agreed content state so the NEXT sync can tell WHICH end
+    // drifted, per file. Best-effort — a watermark failure must not fail the
+    // sync itself. (dry-run paths already returned above.)
     //
-    // Base off the RUNNER's export manifest (re-fetched), NOT the local
-    // manifest. The divergence guard compares the runner's manifest against
-    // this base, so both sides of that comparison must be computed the SAME
-    // way. A local manifest can legitimately differ from the runner's export
-    // across engine versions — e.g. when the client's sync strip rules change
-    // (build/ handling) before the runner's do — which would otherwise read
-    // as perpetual divergence and force `--force` on every push. Comparing
-    // runner-to-runner makes the guard fire only on genuine cloud-side edits.
-    if let Ok(Some(remote)) = client.ws_sync_manifest(&ws.url, &jwt).await {
-        let _ = wssync::write_sync_base(cwd, &wssync::manifest_fingerprint(&remote));
-    } else if let Ok(m) = wssync::build_manifest(cwd) {
-        // Runner predates the manifest endpoint (P2 404) — fall back to the
-        // local fingerprint (the pre-P2 whole-tarball behaviour).
-        let _ = wssync::write_sync_base(cwd, &wssync::manifest_fingerprint(&m));
+    // Store BOTH ends' manifests, each re-read from its own end. A local
+    // manifest can legitimately differ from the runner's export for identical
+    // work — e.g. when the client's sync strip rules change (build/ handling)
+    // before the runner's do — so each side must be judged against its OWN
+    // recorded view. Comparing local-to-local and runner-to-runner keeps that
+    // skew from reading as perpetual divergence and forcing `--force` forever.
+    match client.ws_sync_manifest(&ws.url, &jwt).await {
+        Ok(Some(remote)) => {
+            if let Ok(local) = wssync::build_manifest(cwd) {
+                let _ = wssync::write_sync_base_manifests(cwd, &local, &remote);
+            }
+        }
+        Ok(None) => {
+            // Runner predates the manifest endpoint (P2 404) — no cloud-side
+            // view exists, so fall back to the v1 whole-workspace watermark.
+            if let Ok(local) = wssync::build_manifest(cwd) {
+                let _ = wssync::write_sync_base(cwd, &wssync::manifest_fingerprint(&local));
+            }
+        }
+        // Transient fetch failure: keep the previous base rather than record a
+        // half-known one that would misattribute the next change.
+        Err(_) => {}
     }
     Ok(())
 }

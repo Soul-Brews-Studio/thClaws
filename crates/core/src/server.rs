@@ -1931,6 +1931,14 @@ fn build_initial_state_payload(sessions_dir: Option<std::path::PathBuf>) -> Stri
         "team_enabled": team_enabled,
         "shell_tab_enabled": shell_tab_enabled,
         "browser_enabled": config.browser_enabled,
+        // Whether the worker has an agent turn in flight RIGHT NOW. A
+        // browser that (re)connects mid-turn — e.g. after detaching during
+        // a long TextToSpeech/video render — must restore its "working"
+        // indicator, otherwise the still-running turn looks stopped even
+        // though it keeps producing output server-side and the result
+        // streams in when it finishes. The frontend re-subscribes to the
+        // live event stream on connect, so the terminal `done` clears it.
+        "agent_busy": crate::agent_activity::is_agent_busy(),
         "version": crate::version::VERSION,
     })
     .to_string()

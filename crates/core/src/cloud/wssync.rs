@@ -25,7 +25,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -572,8 +572,27 @@ pub fn manifest_fingerprint(entries: &[FileEntry]) -> String {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct SyncBase {
+    /// v1: whole-workspace fingerprint. Still written so an older engine
+    /// reading this file keeps its guard instead of seeing "never synced".
     #[serde(skip_serializing_if = "Option::is_none")]
     base: Option<String>,
+    /// v2: the per-file views each end held at the last successful sync. Two
+    /// manifests, not one, because identical work can hash differently per end
+    /// when the client's and runner's strip rules disagree — each side is
+    /// judged against its OWN recorded view so that skew never reads as drift.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    local: Option<Vec<FileEntry>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    remote: Option<Vec<FileEntry>>,
+}
+
+fn write_base(root: &Path, b: &SyncBase) -> Result<(), String> {
+    let path = root.join(SYNC_BASE_REL);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
+    }
+    let body = serde_json::to_vec(b).map_err(|e| format!("encode base: {}", e))?;
+    std::fs::write(&path, body).map_err(|e| format!("write base: {}", e))
 }
 
 /// The content fingerprint recorded at the last successful sync (the agreed
@@ -586,17 +605,109 @@ pub fn read_sync_base(root: &Path) -> Option<String> {
 }
 
 /// Record the agreed-state fingerprint after a successful sync. Excluded from
-/// the payload, so it stays local to this end.
+/// the payload, so it stays local to this end. Drops any per-file base: the
+/// callers that reach for this have no cloud-side view to record, so a stale
+/// one would misattribute the next change.
 pub fn write_sync_base(root: &Path, fingerprint: &str) -> Result<(), String> {
-    let path = root.join(SYNC_BASE_REL);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {}", e))?;
+    write_base(
+        root,
+        &SyncBase {
+            base: Some(fingerprint.to_string()),
+            ..Default::default()
+        },
+    )
+}
+
+/// The per-file base views recorded at the last successful sync, `(local,
+/// remote)`. `None` when this folder has no v2 base — never synced, or last
+/// synced by an engine that only wrote the v1 fingerprint.
+pub fn read_sync_base_manifests(root: &Path) -> Option<(Vec<FileEntry>, Vec<FileEntry>)> {
+    let s: SyncBase = std::fs::read(root.join(SYNC_BASE_REL))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())?;
+    Some((s.local?, s.remote?))
+}
+
+/// Record both ends' per-file views after a successful sync, so the NEXT sync
+/// can tell WHICH end moved WHAT rather than only that something did.
+pub fn write_sync_base_manifests(
+    root: &Path,
+    local: &[FileEntry],
+    remote: &[FileEntry],
+) -> Result<(), String> {
+    write_base(
+        root,
+        &SyncBase {
+            base: Some(manifest_fingerprint(remote)),
+            local: Some(local.to_vec()),
+            remote: Some(remote.to_vec()),
+        },
+    )
+}
+
+/// Which end moved each path since the agreed base.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Reconcile {
+    /// Changed on this machine only — a push carries them, a pull loses them.
+    pub push: Vec<String>,
+    /// Changed on the cloud only — a pull carries them, a push loses them.
+    pub pull: Vec<String>,
+    /// Both ends moved to DIFFERENT content: no safe automatic answer.
+    pub conflicts: Vec<String>,
+}
+
+impl Reconcile {
+    /// Nothing either end would destroy — the sync is safe in both directions.
+    pub fn is_clean(&self) -> bool {
+        self.push.is_empty() && self.pull.is_empty() && self.conflicts.is_empty()
     }
-    let body = serde_json::to_vec(&SyncBase {
-        base: Some(fingerprint.to_string()),
-    })
-    .map_err(|e| format!("encode base: {}", e))?;
-    std::fs::write(&path, body).map_err(|e| format!("write base: {}", e))
+}
+
+/// Three-way compare of the two ends against the base recorded at their last
+/// successful sync. Paths where NEITHER end moved are left alone even if their
+/// content differs today: that difference predates the base, which is exactly
+/// the per-end strip-rule skew case. Clock-free — nothing here reads an mtime,
+/// so it holds across machines with unsynced clocks.
+pub fn reconcile(
+    base_local: &[FileEntry],
+    base_remote: &[FileEntry],
+    local: &[FileEntry],
+    remote: &[FileEntry],
+) -> Reconcile {
+    fn index(es: &[FileEntry]) -> BTreeMap<&str, &str> {
+        es.iter()
+            .filter(|e| !FINGERPRINT_SKIP.contains(&e.path.as_str()))
+            .map(|e| (e.path.as_str(), e.sha256.as_str()))
+            .collect()
+    }
+    let (bl, br, l, r) = (
+        index(base_local),
+        index(base_remote),
+        index(local),
+        index(remote),
+    );
+    let mut out = Reconcile::default();
+    let paths: BTreeSet<&str> = bl
+        .keys()
+        .chain(br.keys())
+        .chain(l.keys())
+        .chain(r.keys())
+        .copied()
+        .collect();
+    for p in paths {
+        let (lh, rh) = (l.get(p), r.get(p));
+        if lh == rh {
+            // Already agree — including both ends making the identical edit.
+            continue;
+        }
+        match (lh != bl.get(p), rh != br.get(p)) {
+            (true, true) => out.conflicts.push(p.to_string()),
+            (true, false) => out.push.push(p.to_string()),
+            (false, true) => out.pull.push(p.to_string()),
+            (false, false) => {}
+        }
+    }
+    out
 }
 
 /// Has `manifest` drifted from the recorded agreed state? `false` when there
@@ -898,6 +1009,109 @@ mod tests {
         );
         // The base file itself never travels.
         assert!(excluded(&root, Path::new(".thclaws/cloud-sync-base.json")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn ent(path: &str, sha: &str) -> FileEntry {
+        FileEntry {
+            path: path.to_string(),
+            size: sha.len() as u64,
+            sha256: sha.to_string(),
+        }
+    }
+
+    #[test]
+    fn reconcile_attributes_each_change_to_the_end_that_made_it() {
+        // Agreed base: both ends held the same four files.
+        let base: Vec<FileEntry> = vec![
+            ent("only_local.rs", "a"),
+            ent("only_cloud.rs", "b"),
+            ent("both.rs", "c"),
+            ent("untouched.rs", "d"),
+        ];
+        let local = vec![
+            ent("only_local.rs", "a2"),
+            ent("only_cloud.rs", "b"),
+            ent("both.rs", "c_local"),
+            ent("untouched.rs", "d"),
+            ent("new_local.rs", "n"),
+        ];
+        let remote = vec![
+            ent("only_local.rs", "a"),
+            ent("only_cloud.rs", "b2"),
+            ent("both.rs", "c_cloud"),
+            ent("untouched.rs", "d"),
+        ];
+        let r = reconcile(&base, &base, &local, &remote);
+        assert_eq!(r.push, vec!["new_local.rs", "only_local.rs"]);
+        assert_eq!(r.pull, vec!["only_cloud.rs"]);
+        assert_eq!(r.conflicts, vec!["both.rs"]);
+        assert!(!r.is_clean());
+    }
+
+    #[test]
+    fn reconcile_is_clean_when_nothing_moved_or_both_made_the_same_edit() {
+        let base = vec![ent("a.rs", "1"), ent("b.rs", "2")];
+        // Identical edit on both ends is already agreed — not a conflict.
+        let same = vec![ent("a.rs", "1"), ent("b.rs", "2_edited")];
+        assert!(reconcile(&base, &base, &same, &same).is_clean());
+        assert!(reconcile(&base, &base, &base, &base).is_clean());
+    }
+
+    #[test]
+    fn reconcile_ignores_per_end_strip_skew() {
+        // The regression 38d16bc4 chased: the client strips `build/` but the
+        // runner (older engine) still reports it, so the two ends disagree on a
+        // path NEITHER of them touched. Judging each end against its own
+        // recorded view must leave it alone — otherwise every sync demands
+        // --force forever.
+        let base_local = vec![ent("src/main.rs", "m")];
+        let base_remote = vec![ent("src/main.rs", "m"), ent("build/out.js", "stale")];
+        let local = base_local.clone();
+        let remote = base_remote.clone();
+        assert!(
+            reconcile(&base_local, &base_remote, &local, &remote).is_clean(),
+            "pre-existing per-end skew must not read as a change"
+        );
+        // A real edit on top of that skew is still attributed correctly.
+        let local2 = vec![ent("src/main.rs", "m2")];
+        let r = reconcile(&base_local, &base_remote, &local2, &remote);
+        assert_eq!(r.push, vec!["src/main.rs"]);
+        assert!(r.pull.is_empty() && r.conflicts.is_empty());
+    }
+
+    #[test]
+    fn reconcile_tracks_deletions_and_skips_plumbing() {
+        let base = vec![ent("gone.rs", "g"), ent(".thclaws/settings.json", "s")];
+        // Deleted locally, still on the cloud → a local-side change to push.
+        let local: Vec<FileEntry> = vec![ent(".thclaws/settings.json", "s_overlay")];
+        let remote = vec![ent("gone.rs", "g"), ent(".thclaws/settings.json", "s")];
+        let r = reconcile(&base, &base, &local, &remote);
+        assert_eq!(r.push, vec!["gone.rs"]);
+        assert!(
+            r.pull.is_empty() && r.conflicts.is_empty(),
+            "the per-end settings overlay must never count"
+        );
+    }
+
+    #[test]
+    fn per_file_base_round_trips_and_keeps_v1_compat() {
+        let root = tmp("base-v2");
+        write(&root, "src/main.rs", "fn main(){}");
+        let local = build_manifest(&root).unwrap();
+        let remote = vec![ent("src/main.rs", "different")];
+        // No v2 base yet.
+        assert!(read_sync_base_manifests(&root).is_none());
+        write_sync_base_manifests(&root, &local, &remote).unwrap();
+        let (bl, br) = read_sync_base_manifests(&root).unwrap();
+        assert_eq!(bl, local);
+        assert_eq!(br, remote);
+        // An older engine reading the same file still finds its v1 watermark,
+        // and it is the RUNNER's fingerprint (the pre-3-way contract).
+        assert_eq!(read_sync_base(&root), Some(manifest_fingerprint(&remote)));
+        // Writing a v1 base drops the stale per-file views.
+        write_sync_base(&root, &manifest_fingerprint(&local)).unwrap();
+        assert!(read_sync_base_manifests(&root).is_none());
         let _ = std::fs::remove_dir_all(&root);
     }
 

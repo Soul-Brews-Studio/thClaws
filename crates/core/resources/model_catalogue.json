@@ -1,7 +1,7 @@
 {
   "schema": 4,
   "source": "baseline 2026-06-10 — pricing synced from LiteLLM (github.com/BerriAI/litellm)",
-  "fetched_at": "2026-07-23T00:00:00Z",
+  "fetched_at": "2026-07-26T00:00:00Z",
   "providers": {
     "anthropic": {
       "list_url": "https://api.anthropic.com/v1/models",
@@ -110,6 +110,15 @@
           "context": 200000,
           "source": "https://api.anthropic.com/v1/models + litellm:claude-opus-4-8",
           "verified_at": "2026-06-10",
+          "input_per_mtok": 5.0,
+          "output_per_mtok": 25.0,
+          "cached_input_per_mtok": 0.5,
+          "cache_creation_per_mtok": 6.25
+        },
+        "claude-opus-5": {
+          "context": 1000000,
+          "source": "https://api.anthropic.com/v1/models + litellm:claude-opus-5",
+          "verified_at": "2026-07-26",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
           "cached_input_per_mtok": 0.5,
@@ -268,6 +277,15 @@
           "context": 200000,
           "source": "derived:claude-opus-4-8 + litellm:claude-opus-4-8",
           "verified_at": "2026-06-10",
+          "input_per_mtok": 5.0,
+          "output_per_mtok": 25.0,
+          "cached_input_per_mtok": 0.5,
+          "cache_creation_per_mtok": 6.25
+        },
+        "agent/claude-opus-5": {
+          "context": 200000,
+          "source": "derived:claude-opus-5 + litellm:claude-opus-5",
+          "verified_at": "2026-07-26",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
           "cached_input_per_mtok": 0.5,
@@ -1035,6 +1053,20 @@
           "input_per_mtok": 2.0,
           "output_per_mtok": 6.0
         },
+        "dashscope/qwen3.7-flash": {
+          "context": 131072,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:qwen3.7-flash",
+          "verified_at": "2026-07-26",
+          "input_per_mtok": 0.2,
+          "output_per_mtok": 0.8
+        },
+        "dashscope/qwen3.7-flash-2026-07-15": {
+          "context": 131072,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:qwen3.7-flash-2026-07-15",
+          "verified_at": "2026-07-26",
+          "input_per_mtok": 0.2,
+          "output_per_mtok": 0.8
+        },
         "dashscope/qwen3.7-max": {
           "context": 131072,
           "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:qwen3.7-max",
@@ -1657,11 +1689,6 @@
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
         },
-        "nvidia/mistralai/mistral-large-3-675b-instruct-2512": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
         "nvidia/mistralai/mistral-medium-3.5-128b": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
@@ -1721,6 +1748,11 @@
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
+        },
+        "nvidia/nvidia/ising-calibration-1.5-31b": {
+          "context": 131072,
+          "source": "https://integrate.api.nvidia.com/v1/models",
+          "verified_at": "2026-07-26"
         },
         "nvidia/nvidia/llama-3.1-nemoguard-8b-content-safety": {
           "context": 131072,
@@ -6653,6 +6685,16 @@
           "input_per_mtok": 2.0,
           "output_per_mtok": 6.0
         },
+        "qc/qwen3.7-flash": {
+          "context": 32768,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "verified_at": "2026-07-26"
+        },
+        "qc/qwen3.7-flash-2026-07-15": {
+          "context": 32768,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "verified_at": "2026-07-26"
+        },
         "qc/qwen3.7-max": {
           "context": 32768,
           "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
@@ -7009,6 +7051,16 @@
           "source": "https://api.tokenrouter.com/v1/models",
           "verified_at": "2026-06-14"
         },
+        "tokenrouter/anthropic/claude-opus-5": {
+          "context": 128000,
+          "source": "https://api.tokenrouter.com/v1/models",
+          "verified_at": "2026-07-26"
+        },
+        "tokenrouter/anthropic/claude-opus-5-fast": {
+          "context": 128000,
+          "source": "https://api.tokenrouter.com/v1/models",
+          "verified_at": "2026-07-26"
+        },
         "tokenrouter/anthropic/claude-sonnet-4": {
           "context": 128000,
           "source": "https://api.tokenrouter.com/v1/models",
@@ -7050,6 +7102,11 @@
           "verified_at": "2026-06-14",
           "input_per_mtok": 1.0,
           "output_per_mtok": 5.0
+        },
+        "tokenrouter/claude-opus-4-8-m-aws": {
+          "context": 128000,
+          "source": "https://api.tokenrouter.com/v1/models",
+          "verified_at": "2026-07-26"
         },
         "tokenrouter/deepseek/deepseek-v3.2": {
           "context": 163840,
@@ -7481,11 +7538,6 @@
           "context": 128000,
           "source": "https://api.tokenrouter.com/v1/models",
           "verified_at": "2026-06-17"
-        },
-        "tokenrouter/z-ai/glm-5.2-free": {
-          "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
-          "verified_at": "2026-07-17"
         }
       }
     },

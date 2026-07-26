@@ -156,7 +156,11 @@ pub struct Plugin {
     /// a local path or added manually.
     #[serde(default)]
     pub source: String,
-    /// Absolute path to the installed plugin directory.
+    /// Installed plugin directory. Absolute in memory; persisted
+    /// relative to the registry file's own directory (so, normally just
+    /// `plugins/<name>`), which is what lets the registry survive the
+    /// workspace being synced to a hosted runner or moved on disk. See
+    /// [`PluginRegistry::relative_to_anchor`].
     pub path: PathBuf,
     #[serde(default)]
     pub version: String,
@@ -197,16 +201,71 @@ impl PluginRegistry {
         if contents.trim().is_empty() {
             return Ok(Self::default());
         }
-        serde_json::from_str(&contents)
-            .map_err(|e| Error::Config(format!("parse {}: {e}", path.display())))
+        let mut registry: Self = serde_json::from_str(&contents)
+            .map_err(|e| Error::Config(format!("parse {}: {e}", path.display())))?;
+        // Stored form is relative to the registry's own directory (see
+        // `save`); make it absolute for everything downstream, which
+        // joins skill / command / agent subdirs onto it.
+        if let Some(anchor) = path.parent() {
+            for p in &mut registry.plugins {
+                if p.path.is_relative() {
+                    p.path = anchor.join(&p.path);
+                }
+            }
+        }
+        if let Ok(dir) = plugins_dir(user) {
+            registry.rebase_to(&dir);
+        }
+        Ok(registry)
+    }
+
+    /// Last-resort repair for a LEGACY registry that still records an
+    /// absolute path: re-point each entry at `<dir>/<name>` when a real
+    /// plugin sits there.
+    ///
+    /// Registries written since the relative-path switch don't need this
+    /// — but one written by an older build carries a path like
+    /// `/Users/x/ws/old/.thclaws/plugins/p`, which resolves nowhere after
+    /// a `/cloud push` to a Linux runner or a plain folder move. Every
+    /// contribution is built by joining onto that path, so the plugin's
+    /// skills silently vanish and `prune_orphaned` then deletes the entry
+    /// outright.
+    fn rebase_to(&mut self, dir: &Path) {
+        for p in &mut self.plugins {
+            let derived = dir.join(&p.name);
+            if derived != p.path && read_manifest(&derived).is_ok() {
+                p.path = derived;
+            }
+        }
+    }
+
+    /// Copy with every contained path rewritten relative to `anchor` —
+    /// the directory holding the registry file — so the file describes
+    /// itself instead of pinning the workspace to one machine's layout.
+    /// Both scopes keep their plugins at `<anchor>/plugins/<name>`, so a
+    /// stored path is just `plugins/<name>` either way.
+    ///
+    /// A path outside the anchor — a developer pointing at a checkout
+    /// elsewhere — is left absolute, since there's nothing sensible to
+    /// make it relative to.
+    fn relative_to_anchor(&self, anchor: &Path) -> Self {
+        let mut out = self.clone();
+        for p in &mut out.plugins {
+            if let Ok(rel) = p.path.strip_prefix(anchor) {
+                p.path = rel.to_path_buf();
+            }
+        }
+        out
     }
 
     pub fn save(&self, user: bool) -> Result<PathBuf> {
         let path = registry_path(user)?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let pretty = serde_json::to_string_pretty(self)
+        let anchor = path
+            .parent()
+            .ok_or_else(|| Error::Config(format!("registry has no parent: {}", path.display())))?
+            .to_path_buf();
+        std::fs::create_dir_all(&anchor)?;
+        let pretty = serde_json::to_string_pretty(&self.relative_to_anchor(&anchor))
             .map_err(|e| Error::Config(format!("serialize registry: {e}")))?;
         // M6.16 BUG M2: atomic write via tmp + rename. A crash mid-
         // `std::fs::write` would corrupt plugins.json — next launch
@@ -938,6 +997,152 @@ mod tests {
         let m = read_manifest(dir.path()).unwrap();
         assert_eq!(m.name, "from-thclaws");
         assert_eq!(m.skills, vec!["skills".to_string()]);
+    }
+
+    /// The full disk round-trip: what `save` writes, and what `load`
+    /// hands back after the registry has been picked up and moved —
+    /// which is exactly what `/cloud push` does to it. Pinned to the
+    /// user scope (HOME-based) to avoid CWD races with parallel tests.
+    #[test]
+    fn save_writes_relative_and_load_reanchors_it() {
+        let guard = scoped_user_home();
+        let home = std::path::PathBuf::from(std::env::var("HOME").unwrap());
+        let installed = home.join(".config/thclaws/plugins/travelling");
+        std::fs::create_dir_all(&installed).unwrap();
+        write_manifest(&installed, r#"{"name": "travelling"}"#);
+
+        let mut reg = PluginRegistry::default();
+        reg.upsert(Plugin {
+            name: "travelling".into(),
+            source: String::new(),
+            path: installed.clone(),
+            version: "1.0.0".into(),
+            enabled: true,
+        });
+        let saved = reg.save(true).expect("save");
+
+        // On disk: no absolute path, so nothing pins this file to one
+        // machine's layout.
+        let body = std::fs::read_to_string(&saved).unwrap();
+        assert!(
+            body.contains(r#""path": "plugins/travelling""#),
+            "expected a registry-relative path, got: {body}"
+        );
+        assert!(
+            !body.contains(home.to_str().unwrap()),
+            "absolute path leaked into the registry: {body}"
+        );
+
+        // Back in memory: absolute again, so skill / command / agent
+        // dirs resolve.
+        let loaded = PluginRegistry::load(true).expect("load");
+        assert_eq!(loaded.plugins[0].path, installed);
+        drop(guard);
+    }
+
+    #[test]
+    fn paths_persist_relative_to_the_registry_directory() {
+        // The registry file's own directory is the anchor, which is the
+        // same rule in both scopes: `<ws>/.thclaws` for a project,
+        // `~/.config/thclaws` for the user, plugins under `plugins/`
+        // either way.
+        let ws = tempdir().unwrap();
+        let anchor = ws.path().join(".thclaws");
+        let installed = anchor.join("plugins/thai-book-production");
+        std::fs::create_dir_all(&installed).unwrap();
+
+        let reg = PluginRegistry {
+            plugins: vec![
+                Plugin {
+                    name: "thai-book-production".into(),
+                    source: String::new(),
+                    path: installed.clone(),
+                    version: "1.9.9".into(),
+                    enabled: true,
+                },
+                // A checkout outside the workspace — nothing sensible to
+                // make it relative to, so it stays absolute and keeps
+                // working for plugin development in place.
+                Plugin {
+                    name: "dev-checkout".into(),
+                    source: String::new(),
+                    path: PathBuf::from("/opt/src/dev-checkout"),
+                    version: String::new(),
+                    enabled: true,
+                },
+            ],
+        };
+
+        let stored = reg.relative_to_anchor(&anchor);
+        assert_eq!(
+            stored.plugins[0].path,
+            PathBuf::from("plugins/thai-book-production")
+        );
+        assert_eq!(
+            stored.plugins[1].path,
+            PathBuf::from("/opt/src/dev-checkout")
+        );
+
+        // What `load` does with the stored form: relative entries are
+        // re-anchored wherever the registry now sits — a Linux runner
+        // after `/cloud push`, or a moved folder.
+        let moved = tempdir().unwrap().path().join("runner/.thclaws");
+        let rehydrated: Vec<PathBuf> = stored
+            .plugins
+            .iter()
+            .map(|p| {
+                if p.path.is_relative() {
+                    moved.join(&p.path)
+                } else {
+                    p.path.clone()
+                }
+            })
+            .collect();
+        assert_eq!(rehydrated[0], moved.join("plugins/thai-book-production"));
+        assert_eq!(rehydrated[1], PathBuf::from("/opt/src/dev-checkout"));
+    }
+
+    #[test]
+    fn rebase_repoints_a_registry_that_travelled_between_machines() {
+        // What `/cloud push` produces: the files ride along under
+        // `.thclaws/plugins/<name>`, but plugins.json still records the
+        // absolute path from the machine that installed it.
+        let dir = tempdir().unwrap();
+        let installed = dir.path().join("thai-book-production");
+        std::fs::create_dir_all(&installed).unwrap();
+        write_manifest(&installed, r#"{"name": "thai-book-production"}"#);
+
+        let mut reg = PluginRegistry {
+            plugins: vec![Plugin {
+                name: "thai-book-production".into(),
+                source: String::new(),
+                path: PathBuf::from(
+                    "/Users/someone/ws/other/.thclaws/plugins/thai-book-production",
+                ),
+                version: "1.9.9".into(),
+                enabled: true,
+            }],
+        };
+        reg.rebase_to(dir.path());
+        assert_eq!(reg.plugins[0].path, installed);
+
+        // A name with no plugin dir beside it keeps whatever was
+        // recorded, so `prune_orphaned` can still report it as missing
+        // instead of this silently inventing a path.
+        let mut orphan = PluginRegistry {
+            plugins: vec![Plugin {
+                name: "gone".into(),
+                source: String::new(),
+                path: PathBuf::from("/Users/someone/ws/other/.thclaws/plugins/gone"),
+                version: String::new(),
+                enabled: true,
+            }],
+        };
+        orphan.rebase_to(dir.path());
+        assert_eq!(
+            orphan.plugins[0].path,
+            PathBuf::from("/Users/someone/ws/other/.thclaws/plugins/gone")
+        );
     }
 
     #[test]

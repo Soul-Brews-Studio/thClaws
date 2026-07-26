@@ -804,6 +804,16 @@ export function ChatView({ active, modalOpen }: Props) {
             waitingTimerRef.current = null;
           }
           break;
+        case "initial_state":
+          // (Re)connect handshake. If the worker has a turn in flight —
+          // e.g. this browser detached during a long TextToSpeech/render
+          // and is reconnecting mid-run — restore the "working" indicator
+          // so the still-running turn doesn't look stopped. The live event
+          // stream we re-subscribed to on connect delivers the eventual
+          // chat_done, which clears it. Never force it false here: a
+          // handshake mustn't cancel the visual state of a turn we started.
+          if (msg.agent_busy === true) setStreaming(true);
+          break;
         case "ask_user_question": {
           const id = typeof msg.id === "number" ? msg.id : null;
           const question = typeof msg.question === "string" ? msg.question : "";
