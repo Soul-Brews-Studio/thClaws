@@ -383,8 +383,11 @@ impl SearchIndex {
             base_query
         };
 
+        // tantivy 0.26 split the ordering out of `TopDocs`: `with_limit`
+        // alone is a builder, not a `Collector`. `order_by_score` yields
+        // the same `Vec<(Score, DocAddress)>` the loop below already reads.
         let top_docs = searcher
-            .search(&*final_query, &TopDocs::with_limit(limit))
+            .search(&*final_query, &TopDocs::with_limit(limit).order_by_score())
             .map_err(|e| IndexError::Tantivy(format!("search: {e}")))?;
 
         let mut hits = Vec::with_capacity(top_docs.len());
@@ -679,6 +682,53 @@ mod tests {
     /// Uses `get_or_open` (the production path) — tests that bypass
     /// it via `SearchIndex::open_or_create` directly would collide
     /// with the registry's cached writer.
+    #[test]
+    /// `search()` had no coverage, so the tantivy 0.26 collector change
+    /// (`TopDocs::with_limit` is a builder now; ordering comes from
+    /// `order_by_score`) would only have been caught by the compiler —
+    /// which says nothing about whether results still come back ranked.
+    #[test]
+    fn search_returns_hits_ranked_by_relevance() {
+        let tmp = tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("pages")).unwrap();
+        let idx = get_or_open(tmp.path()).unwrap();
+        idx.upsert_page(
+            "strong",
+            &fm_with(&[("title", "Rust ownership"), ("topic", "rust")]),
+            "ownership ownership ownership borrow checker",
+        )
+        .unwrap();
+        idx.upsert_page(
+            "weak",
+            &fm_with(&[("title", "Misc notes"), ("topic", "misc")]),
+            "a single mention of ownership among other words",
+        )
+        .unwrap();
+        idx.upsert_page(
+            "unrelated",
+            &fm_with(&[("title", "Cooking"), ("topic", "food")]),
+            "pasta and tomatoes",
+        )
+        .unwrap();
+
+        let hits = idx.search("ownership", &[], None, 10).unwrap();
+        assert_eq!(hits.len(), 2, "only the two ownership pages match");
+        assert_eq!(hits[0].page, "strong", "denser match must rank first");
+        assert!(
+            hits[0].score >= hits[1].score,
+            "scores must come back in descending order: {:?}",
+            hits.iter().map(|h| (&h.page, h.score)).collect::<Vec<_>>()
+        );
+
+        // limit is honoured, and the truncation keeps the top hit.
+        let capped = idx.search("ownership", &[], None, 1).unwrap();
+        assert_eq!(capped.len(), 1);
+        assert_eq!(capped[0].page, "strong");
+
+        assert!(idx.search("zzzznomatch", &[], None, 10).unwrap().is_empty());
+        drop_cached(tmp.path());
+    }
+
     #[test]
     fn upsert_then_num_docs_returns_one() {
         let tmp = tempdir().unwrap();

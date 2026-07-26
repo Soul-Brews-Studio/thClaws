@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.105.0] — 2026-07-26
+
+Dependency security pass — vulnerable crates out of the shipped binary and the frontend toolchain.
+
+### Security
+- **KMS search index: tantivy 0.22 → 0.26.** tantivy pinned `lru` below 0.16.3, whose `IterMut` violates Stacked Borrows, and `kms_search_index` is compiled into every published binary — so the crate shipped in the artifacts rather than staying a build-time concern.
+- **Frontend: 11 of 12 dependency advisories cleared.** js-yaml, postcss, `@babel/core` and brace-expansion move to patched releases inside their existing majors, and the unused `tiptap-markdown` is dropped — it was the only path pulling linkify-it and markdown-it. The remaining advisory reaches brace-expansion through eslint's `minimatch@3`, which has no patched 1.x release; it is dev-only and never reaches the shipped bundle.
+
 ## [0.104.0] — 2026-07-26
 
 Plugins survive a workspace move, per-file cloud-sync divergence, and a catalogue refresh.
