@@ -95,6 +95,12 @@ fn norm(rel: &Path) -> String {
 /// Always-stripped tool dirs — unambiguously regenerable caches.
 pub const SYNC_STRIP_DIRS: &[&str] = &["node_modules", ".venv", "__pycache__", ".next"];
 
+/// Rendered `.pptx` previews. Unlike the rest of `.thclaws/state/` this
+/// is derived output, not work: several MB per deck (a 23-slide deck
+/// lands at ~7.5 MB of PDF + PNGs), and the far end re-renders on
+/// demand. Carrying it would inflate every push for nothing.
+const PPTX_CACHE_PREFIX: &str = crate::tools::slide_render::PPTX_CACHE_REL;
+
 /// Conditionally-stripped names: real toolchain OUTPUT only when the
 /// marker file that generates them sits beside them. `build/` in a JS
 /// project (sibling `package.json`) is regenerable; `build/` in a
@@ -137,6 +143,8 @@ fn excluded(root: &Path, rel: &Path) -> bool {
     s == SYNC_BASE_REL
         || s == TRASH_PREFIX
         || s.starts_with(&format!("{TRASH_PREFIX}/"))
+        || s == PPTX_CACHE_PREFIX
+        || s.starts_with(&format!("{PPTX_CACHE_PREFIX}/"))
         || in_stripped_dir(root, rel)
 }
 

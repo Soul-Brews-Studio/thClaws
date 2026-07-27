@@ -1223,6 +1223,22 @@ pub struct McpTool {
 /// (OpenAI, Anthropic) require `^[a-zA-Z0-9_-]+$`, which excludes dots.
 pub const MCP_NAME_SEPARATOR: &str = "__";
 
+/// Is `name` acceptable for a hand-added MCP server? Stricter than what
+/// the mcp.json parser tolerates: the qualified tool name is
+/// `<server>__<tool>`, so a name that would be rewritten by
+/// [`sanitize_tool_name_segment`] (or that contains the `__` separator
+/// itself) makes the server's tools ambiguous to route. Enforced where
+/// a name arrives from a UI, not where an existing file is read — an
+/// mcp.json written by hand keeps working.
+pub fn is_valid_server_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && !name.contains(MCP_NAME_SEPARATOR)
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 /// Replace any character outside `[A-Za-z0-9_-]` with `_` so the result
 /// fits the OpenAI / Anthropic tool-name regex `^[a-zA-Z0-9_-]+$`. Applied
 /// independently to each segment of the qualified name; the bare tool
@@ -2468,6 +2484,21 @@ mod tests {
             extract_ui_resource_uri(Some(&json!({"ui": {"resourceUri": 42}}))),
             None,
         );
+    }
+
+    #[test]
+    fn valid_server_name_rejects_what_would_break_tool_routing() {
+        assert!(is_valid_server_name("notion"));
+        assert!(is_valid_server_name("my-server_2"));
+        assert!(!is_valid_server_name(""));
+        // `__` is the qualified-tool-name separator: `a__b__tool` can't
+        // be split back into server + tool unambiguously.
+        assert!(!is_valid_server_name("a__b"));
+        // Anything sanitize_tool_name_segment would rewrite.
+        assert!(!is_valid_server_name("my.server"));
+        assert!(!is_valid_server_name("has space"));
+        assert!(!is_valid_server_name("../etc"));
+        assert!(!is_valid_server_name(&"x".repeat(65)));
     }
 
     #[test]

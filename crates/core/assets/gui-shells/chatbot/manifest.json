@@ -1,10 +1,33 @@
 {
   "id": "chatbot",
   "name": "Chat",
-  "version": "0.2.0",
-  "description": "White-label conversational shell — a branded ChatGPT-style chat surface over the agent loop. Branding (product name, logo, accent, greeting, quick actions) is read from a workspace-level brand.json at runtime, so one shell white-labels per tenant. Model picker + client-side conversation history included.",
+  "version": "0.3.0",
+  "description": "White-label conversational shell — a branded chat surface over the agent loop. Streaming replies with tool-activity and inline tool approvals, stop/regenerate, code-block copy, inline images the agent produced, slash commands, Markdown export, and a settings drawer over the engine's own subsystems (skills, knowledge, memory, schedule, research). Branding comes from a workspace-level brand.json at runtime, so one shell white-labels per tenant. Shows the signed-in member's name on cloud; desktop has no login and shows none.",
   "entry": "index.html",
   "icon": "icon.svg",
   "minBridgeVersion": "1",
-  "permissions": ["agent.run", "model.read", "model.write", "session.read", "session.list", "session.write", "memory.read", "memory.write", "schedule.read", "schedule.write", "skills.read", "skills.write", "kms.read", "kms.write", "mode.write", "profile.read"]
+  "permissions": [
+    "agent.run",
+    "model.read",
+    "model.write",
+    "session.read",
+    "session.list",
+    "session.write",
+    "memory.read",
+    "memory.write",
+    "schedule.read",
+    "schedule.write",
+    "skills.read",
+    "skills.write",
+    "research.read",
+    "kms.read",
+    "kms.write",
+    "mode.write",
+    "profile.read",
+    "keys.write",
+    "connectors.read",
+    "connectors.write",
+    "plugins.read",
+    "plugins.write"
+  ]
 }

@@ -1868,6 +1868,13 @@ pub fn remove_mcp_server(name: &str, user: bool) -> Result<(bool, PathBuf, Optio
     Ok((removed, path, removed_url))
 }
 
+/// Public, non-failing view of [`mcp_config_path`] — callers that only
+/// want to read one scope's file (e.g. "which scope is this server in?")
+/// shouldn't have to handle a `Result` they'd only map to `None`.
+pub fn mcp_config_path_for(user: bool) -> Option<PathBuf> {
+    mcp_config_path(user).ok()
+}
+
 fn mcp_config_path(user: bool) -> Result<PathBuf> {
     if user {
         let home = crate::util::home_dir()

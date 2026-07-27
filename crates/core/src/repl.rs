@@ -4182,11 +4182,32 @@ pub fn build_provider(config: &AppConfig) -> Result<Arc<dyn Provider>> {
             // `mcp__thclaws__Bash`, … instead of Claude Code's
             // Write/Bash/etc. Solves the long-standing UX gap
             // where KMS / Memory tools were unreachable on agent/*.
-            let tools = crate::providers::agent_sdk::AgentSdkProvider::with_default_thclaws_tools();
+            let mut bridge =
+                crate::providers::agent_sdk::AgentSdkProvider::default_bridge_registry();
+            // The bridge is a second, independent registry — the
+            // operator's --allowed-tools / --disallowed-tools were
+            // applied to the agent's registry only, so under agent/* a
+            // run restricted to `Read` still advertised Bash, Write and
+            // Edit over the bridge and the model could call them. Apply
+            // the same lists here.
+            for name in bridge
+                .names()
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+            {
+                if !tool_passes_filters(
+                    &name,
+                    config.allowed_tools.as_deref(),
+                    config.disallowed_tools.as_deref(),
+                ) {
+                    bridge.remove(&name);
+                }
+            }
             return Ok(Arc::new(
                 crate::providers::agent_sdk::AgentSdkProvider::new()
                     .with_bin(bin)
-                    .with_tools(tools),
+                    .with_tools(Arc::new(bridge)),
             ));
         }
         ProviderKind::Ollama => {
@@ -12290,6 +12311,35 @@ mod tests {
     /// empty string), which must mean "nothing survives" — the case
     /// `scripts/changelog-stub.sh` relies on to get a tool-free
     /// one-shot generation.
+    #[test]
+    /// The agent/* SDK bridge is a SECOND registry, built fresh in
+    /// `build_provider`. The operator's lists were only ever applied to
+    /// the agent's own registry, so a run restricted to `Read` still
+    /// advertised `mcp__thclaws__Bash` / `Write` / `Edit` to the model.
+    /// Same predicate now gates both.
+    #[test]
+    fn bridge_registry_honours_the_operator_lists() {
+        let full = crate::providers::agent_sdk::AgentSdkProvider::default_bridge_registry();
+        let names: Vec<String> = full.names().iter().map(|s| s.to_string()).collect();
+        assert!(names.iter().any(|n| n == "Bash"), "baseline has Bash");
+        assert!(names.iter().any(|n| n == "Read"), "baseline has Read");
+
+        let allow_read = vec!["Read".to_string()];
+        let kept: Vec<&String> = names
+            .iter()
+            .filter(|n| tool_passes_filters(n, Some(&allow_read), None))
+            .collect();
+        assert_eq!(kept, vec!["Read"], "allow-list keeps only what it names");
+
+        let deny = vec!["Bash".to_string(), "Write".to_string()];
+        let kept: Vec<&String> = names
+            .iter()
+            .filter(|n| tool_passes_filters(n, None, Some(&deny)))
+            .collect();
+        assert!(!kept.iter().any(|n| *n == "Bash" || *n == "Write"));
+        assert!(kept.iter().any(|n| *n == "Read"), "unrelated tools survive");
+    }
+
     #[test]
     fn tool_filters_govern_task_and_workflow_run() {
         let empty_allow = vec![String::new()];

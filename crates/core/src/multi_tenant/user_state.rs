@@ -141,6 +141,15 @@ pub struct SessionRoots {
     /// the worker so every turn runs under a member scope and outbound
     /// gateway calls carry `X-Thclaws-Member` for billing attribution.
     pub member_id: Option<String>,
+    /// dev-plan/33: the member's HUMAN-READABLE name, from the cloud
+    /// routing layer's `X-Thclaws-User-Name`. `member_id` is an opaque
+    /// id — fine for billing attribution, useless as a greeting. A
+    /// chat shell shows this when present and shows no name at all on
+    /// desktop, where there is no login and no name to show.
+    ///
+    /// Advisory, like the member header: the id is what's signed, this
+    /// only rides along for display.
+    pub member_name: Option<String>,
 }
 
 impl SessionRoots {
@@ -156,6 +165,7 @@ impl SessionRoots {
             usage_dir: paths.usage_dir(),
             workspace_root: None,
             member_id: None,
+            member_name: None,
         }
     }
 

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.107.0] — 2026-07-27
+
+The chatbot gets its biggest settings upgrade yet — Plugins and Connectors panels, My Models with bring-your-own-key, and a raft of chat refinements from pinned conversations to slash commands.
+
+### Added
+- **Settings: new Connectors and Plugins panels.** Connectors manages MCP servers — add an HTTP one, see live status and tool counts, remove — and includes the ones installed plugins contribute. Plugins lists installed bundles with what each contributes, and installs from a git or `.zip` URL; skills install from a URL too. The Telegram and Browser-extension placeholders are retired.
+- **My Models is now a real provider/model picker with bring-your-own-key** and a sticky search bar.
+- **Chat history: pin conversations, bulk-delete, rename, and search.**
+- **Chat turns: edit and resend messages, copy code blocks, paste inline images, slash commands, and read-aloud (TTS).**
+- **Turn toolbar: an approvals panel, tool-activity feed, stop button, the signed-in account name, per-model usage stats, and voice settings.**
+- **`.pptx` files now render as slides** in the file viewer instead of dumping extracted text.
+
+### Fixed
+- **Agent SDK `--allowed-tools` / `--disallowed-tools` now gate the MCP bridge,** which was registered after the tool filter ran — same class of bug as the `Task`/`WorkflowRun` fix in v0.106.0.
+- **Agent SDK CLI: the bridge-request prompt is answered during init,** cutting ~65 seconds off the first user turn that references an MCP tool.
+- **GUI Shell: `fileUrl` resolves relative paths** on desktop instead of returning broken links.
+- **Settings panels no longer use body-level dialogs** that the shell sandbox blocks — modals and name-entry fields are now scoped inside each panel.
+- **Settings nav icons have a fixed-width column,** so labels don't jump when switching between sections.
+
 ## [0.106.0] — 2026-07-27
 
 Images get where they're going — through Telegram, and through the agent SDK.

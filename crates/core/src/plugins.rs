@@ -681,6 +681,72 @@ pub fn plugin_agent_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// What a plugin actually contributes, counted on disk. The manifest
+/// lists *directories*, not items, so "3 skills" needs a walk — a
+/// management surface that showed `skills: ["skills"]` would be showing
+/// the user our config shape instead of their plugin.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Contributions {
+    pub skills: usize,
+    pub commands: usize,
+    pub agents: usize,
+    /// MCP server names, not a count — the connectors surface pairs
+    /// them up with live status by name.
+    pub mcp_servers: Vec<String>,
+}
+
+pub fn contributions(plugin: &Plugin) -> Contributions {
+    let Ok(manifest) = plugin.manifest() else {
+        return Contributions::default();
+    };
+    // A skill is a directory holding a SKILL.md; commands and agents are
+    // plain `.md` files. Anything else in those dirs isn't a contribution.
+    let count = |rels: &[String], want_dir: bool| -> usize {
+        let mut n = 0;
+        for rel in rels {
+            let Ok(entries) = std::fs::read_dir(plugin.path.join(rel)) else {
+                continue;
+            };
+            for e in entries.flatten() {
+                let path = e.path();
+                if want_dir {
+                    if path.is_dir() && path.join("SKILL.md").is_file() {
+                        n += 1;
+                    }
+                } else if path.extension().and_then(|x| x.to_str()) == Some("md") {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    let mut mcp_servers: Vec<String> = manifest.mcp_servers.keys().cloned().collect();
+    mcp_servers.sort();
+    Contributions {
+        skills: count(&manifest.skills, true),
+        commands: count(&manifest.commands, false),
+        agents: count(&manifest.agents, false),
+        mcp_servers,
+    }
+}
+
+/// `(server_name, plugin_name)` for every MCP server an enabled plugin
+/// contributes. A surface that lists connectors has to be able to say
+/// which plugin owns one — a plugin's server isn't in any mcp.json, so
+/// "remove it" means uninstalling the plugin, not editing config.
+pub fn plugin_mcp_server_owners() -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for plugin in installed_plugins_all_scopes() {
+        let Ok(manifest) = plugin.manifest() else {
+            continue;
+        };
+        for name in manifest.mcp_servers.keys() {
+            out.push((name.clone(), plugin.name.clone()));
+        }
+    }
+    out
+}
+
 /// Build a list of MCP server configs contributed by enabled plugins.
 /// Later plugins don't clobber existing entries — callers merge these
 /// into the app config with project-level servers winning on name clash.

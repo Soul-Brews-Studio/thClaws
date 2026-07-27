@@ -130,6 +130,23 @@ pub enum ShellInput {
     /// etc.). Surface as a `ViewEvent::ErrorText` so the user sees
     /// *why* a configured MCP server never came online.
     McpFailed { server_name: String, error: String },
+    /// Connect ONE newly-configured MCP server into the running
+    /// session — the Connectors surface writes `mcp.json` and sends
+    /// this, so a connector added mid-conversation is usable on the
+    /// very next turn instead of after a restart. Same spawn →
+    /// `McpReady` fan-out the startup and `ChangeCwd` paths use.
+    McpConnect(Box<crate::mcp::McpServerConfig>),
+    /// Re-discover skills and rebuild around them. Sent after a skill
+    /// is installed from a surface that isn't the slash command (the
+    /// GUI-Shell skills panel), so the new skill is listed in
+    /// `# Available skills` for the very next turn instead of after a
+    /// restart.
+    SkillsRefresh,
+    /// Detach a server that was just removed from `mcp.json`: drop its
+    /// tools from the live registry and its client, then rebuild. The
+    /// config write alone would leave the tools advertised to the model
+    /// (and callable) for the rest of the session.
+    McpDisconnect { server_name: String },
     /// Reload `AppConfig` from disk and rebuild the agent's provider in
     /// place. Sent by the GUI after `api_key_set` / `api_key_clear` so
     /// the running session picks up the new key (and any auto-fallback
@@ -2365,13 +2382,114 @@ async fn run_worker(
                 // (No `cfg(feature = "gui")` — the whole module is already
                 // gated at file scope; the inner cfg block was redundant.)
                 crate::gui::update_mcp_tool_count(&server_name, tool_count);
+                crate::gui::clear_mcp_failure(&server_name);
                 let payload = crate::gui::build_mcp_update_payload();
                 let _ = events_tx.send(ViewEvent::McpUpdate(payload.to_string()));
             }
             ShellInput::McpFailed { server_name, error } => {
+                crate::gui::record_mcp_failure(&server_name, &error);
                 let _ = events_tx.send(ViewEvent::ErrorText(format!(
                     "[mcp] '{server_name}' failed to start: {error}"
                 )));
+                let payload = crate::gui::build_mcp_update_payload();
+                let _ = events_tx.send(ViewEvent::McpUpdate(payload.to_string()));
+            }
+            ShellInput::McpConnect(server_cfg) => {
+                let approver_for_spawn = state.approver.clone();
+                let input_tx_for_spawn = input_tx_self.clone();
+                let server_cfg = *server_cfg;
+                crate::gui::clear_mcp_failure(&server_cfg.name);
+                tokio::spawn(async move {
+                    let server_name = server_cfg.name.clone();
+                    match crate::mcp::McpClient::spawn_with_approver(
+                        server_cfg,
+                        Some(approver_for_spawn),
+                    )
+                    .await
+                    {
+                        Ok(client) => match client.list_tools().await {
+                            Ok(tools) => {
+                                let _ = input_tx_for_spawn.send(ShellInput::McpReady {
+                                    server_name,
+                                    client,
+                                    tools,
+                                });
+                            }
+                            Err(e) => {
+                                let _ = input_tx_for_spawn.send(ShellInput::McpFailed {
+                                    server_name,
+                                    error: format!("list_tools failed: {e}"),
+                                });
+                            }
+                        },
+                        Err(e) => {
+                            let _ = input_tx_for_spawn.send(ShellInput::McpFailed {
+                                server_name,
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                });
+            }
+            ShellInput::SkillsRefresh => {
+                // Same live-refresh the `/skill install` slash arm does:
+                // swap the SkillTool's store contents, then recompute
+                // the system prompt so the new skill is advertised.
+                let refreshed = crate::skills::SkillStore::discover();
+                let count = refreshed.skills.len();
+                if let Ok(mut store) = state.skill_store.lock() {
+                    *store = refreshed;
+                }
+                state.rebuild_system_prompt();
+                if let Err(e) = state.rebuild_agent(true) {
+                    let _ = events_tx.send(ViewEvent::ErrorText(format!(
+                        "[skills] refresh failed: {e}"
+                    )));
+                } else {
+                    let _ = events_tx.send(ViewEvent::SlashOutput(format!(
+                        "[skills] reloaded ({count} available)"
+                    )));
+                }
+            }
+            ShellInput::McpDisconnect { server_name } => {
+                // Tool names are `<sanitized-server>__<tool>`, so the
+                // prefix is what identifies this server's tools —
+                // sanitize the same way the registration did or a
+                // server named `my.server` never matches.
+                let prefix = format!(
+                    "{}{}",
+                    crate::mcp::sanitize_tool_name_segment(&server_name),
+                    crate::mcp::MCP_NAME_SEPARATOR
+                );
+                let doomed: Vec<String> = state
+                    .tool_registry
+                    .names()
+                    .iter()
+                    .filter(|n| n.starts_with(&prefix))
+                    .map(|n| n.to_string())
+                    .collect();
+                for name in &doomed {
+                    state.tool_registry.remove(name);
+                }
+                state.mcp_clients.retain(|c| c.name() != server_name);
+                crate::gui::clear_mcp_failure(&server_name);
+                crate::gui::update_mcp_tool_count(&server_name, 0);
+                state.sync_factory_snapshot();
+                // Drop the server's `# MCP server instructions` section
+                // before the agent is rebuilt around the trimmed registry.
+                state.rebuild_system_prompt();
+                if let Err(e) = state.rebuild_agent(true) {
+                    let _ = events_tx.send(ViewEvent::ErrorText(format!(
+                        "[mcp] '{server_name}' detached but rebuild failed: {e}"
+                    )));
+                } else {
+                    let _ = events_tx.send(ViewEvent::SlashOutput(format!(
+                        "[mcp] '{server_name}' disconnected ({} tool(s) removed)",
+                        doomed.len()
+                    )));
+                }
+                let payload = crate::gui::build_mcp_update_payload();
+                let _ = events_tx.send(ViewEvent::McpUpdate(payload.to_string()));
             }
             ShellInput::LineConnect(line_cfg) => {
                 // If a session is already running, cancel it

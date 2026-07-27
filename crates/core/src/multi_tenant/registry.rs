@@ -131,7 +131,7 @@ impl UserSessionRegistry {
     /// Fetch the existing session for this user, or spawn a fresh
     /// one. Bumps last_activity unconditionally so the LRU evictor
     /// keeps active users alive.
-    pub fn get_or_spawn(&self, user_id: &UserId) -> Arc<UserSession> {
+    pub fn get_or_spawn(&self, user_id: &UserId, display_name: Option<&str>) -> Arc<UserSession> {
         // Fast path: read lock, hit.
         if let Ok(guard) = self.inner.read() {
             if let Some(session) = guard.sessions.get(user_id) {
@@ -201,6 +201,10 @@ impl UserSessionRegistry {
         // dev-plan/45 A2: outbound gateway calls in this member's turns
         // carry their id for billing attribution + per-member caps.
         roots.member_id = Some(user_id.as_str().to_string());
+        roots.member_name = display_name
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(str::to_string);
         let handle = Arc::new(spawn_with_roots(self.config.approver.clone(), Some(roots)));
         let session = Arc::new(UserSession {
             user_id: user_id.clone(),
@@ -388,6 +392,39 @@ fn seed_def_into(src: &std::path::Path, dst: &std::path::Path, read_only: bool) 
 
 #[cfg(test)]
 mod tests {
+    /// The display name is advisory and lives only on the session's
+    /// roots — it must never affect which user id a session belongs to,
+    /// and an absent/blank one must leave no name at all (desktop and
+    /// pre-header cloud builds both hit that path).
+    #[test]
+    fn display_name_rides_along_without_touching_identity() {
+        let reg = UserSessionRegistry::new(config(8, Duration::from_secs(60)));
+        let roots = |s: &Arc<UserSession>| s.handle.session_roots.clone().expect("roots");
+
+        let alice = UserId::new_for_test("alice");
+        let s1 = reg.get_or_spawn(&alice, Some("จิมมี่ Panutat"));
+        assert_eq!(roots(&s1).member_id.as_deref(), Some("alice"));
+        assert_eq!(
+            roots(&s1).member_name.as_deref(),
+            Some("จิมมี่ Panutat"),
+            "a Thai name must survive intact"
+        );
+
+        // Blank / whitespace is the same as absent — a chat surface
+        // should show no name, not an empty one.
+        let bob = UserId::new_for_test("bob");
+        assert_eq!(
+            roots(&reg.get_or_spawn(&bob, Some("   "))).member_name,
+            None
+        );
+
+        // Desktop / pre-header cloud: no name at all.
+        let carol = UserId::new_for_test("carol");
+        let s3 = reg.get_or_spawn(&carol, None);
+        assert_eq!(roots(&s3).member_name, None);
+        assert_eq!(roots(&s3).member_id.as_deref(), Some("carol"));
+    }
+
     use super::*;
     use crate::permissions::AutoApprover;
 
@@ -496,8 +533,8 @@ mod tests {
 
         let alice = UserId::new_for_test("alice");
         let bob = UserId::new_for_test("bob");
-        let _ = reg.get_or_spawn(&alice);
-        let _ = reg.get_or_spawn(&bob);
+        let _ = reg.get_or_spawn(&alice, None);
+        let _ = reg.get_or_spawn(&bob, None);
 
         // dev-plan/42: first connect provisions <base>/workspace-<id>/,
         // one per user, and they are distinct directories.
@@ -512,8 +549,8 @@ mod tests {
     fn get_or_spawn_returns_same_handle_per_user() {
         let reg = UserSessionRegistry::new(config(10, Duration::from_secs(60)));
         let alice = UserId::new_for_test("alice");
-        let a = reg.get_or_spawn(&alice);
-        let b = reg.get_or_spawn(&alice);
+        let a = reg.get_or_spawn(&alice, None);
+        let b = reg.get_or_spawn(&alice, None);
         assert!(Arc::ptr_eq(&a, &b), "same user → same session arc");
         assert_eq!(reg.active_user_count(), 1);
     }
@@ -521,8 +558,8 @@ mod tests {
     #[test]
     fn different_users_get_different_handles() {
         let reg = UserSessionRegistry::new(config(10, Duration::from_secs(60)));
-        let a = reg.get_or_spawn(&UserId::new_for_test("alice"));
-        let b = reg.get_or_spawn(&UserId::new_for_test("bob"));
+        let a = reg.get_or_spawn(&UserId::new_for_test("alice"), None);
+        let b = reg.get_or_spawn(&UserId::new_for_test("bob"), None);
         assert!(!Arc::ptr_eq(&a, &b));
         assert!(!Arc::ptr_eq(&a.handle, &b.handle));
         assert_eq!(reg.active_user_count(), 2);
@@ -532,7 +569,7 @@ mod tests {
     fn evict_removes_user() {
         let reg = UserSessionRegistry::new(config(10, Duration::from_secs(60)));
         let alice = UserId::new_for_test("alice");
-        reg.get_or_spawn(&alice);
+        reg.get_or_spawn(&alice, None);
         assert_eq!(reg.active_user_count(), 1);
         assert!(reg.evict(&alice));
         assert_eq!(reg.active_user_count(), 0);
@@ -546,12 +583,12 @@ mod tests {
         let a = UserId::new_for_test("a");
         let b = UserId::new_for_test("b");
         let c = UserId::new_for_test("c");
-        reg.get_or_spawn(&a);
+        reg.get_or_spawn(&a, None);
         std::thread::sleep(Duration::from_millis(10));
-        reg.get_or_spawn(&b);
+        reg.get_or_spawn(&b, None);
         std::thread::sleep(Duration::from_millis(10));
         // c arrives → at cap (2) → a should be evicted (oldest).
-        reg.get_or_spawn(&c);
+        reg.get_or_spawn(&c, None);
         let active: Vec<_> = reg.active_user_ids().into_iter().collect();
         assert_eq!(active.len(), 2);
         assert!(active.contains(&b));
@@ -565,14 +602,14 @@ mod tests {
         let a = UserId::new_for_test("a");
         let b = UserId::new_for_test("b");
         let c = UserId::new_for_test("c");
-        reg.get_or_spawn(&a);
+        reg.get_or_spawn(&a, None);
         std::thread::sleep(Duration::from_millis(10));
-        reg.get_or_spawn(&b);
+        reg.get_or_spawn(&b, None);
         std::thread::sleep(Duration::from_millis(10));
         // Re-touching a refreshes its activity — now b is oldest.
-        reg.get_or_spawn(&a);
+        reg.get_or_spawn(&a, None);
         std::thread::sleep(Duration::from_millis(10));
-        reg.get_or_spawn(&c);
+        reg.get_or_spawn(&c, None);
         let active = reg.active_user_ids();
         assert!(active.contains(&a), "a should survive — recently touched");
         assert!(active.contains(&c));
@@ -596,8 +633,8 @@ mod tests {
         ));
         let alice = UserId::new_for_test("alice");
         let bob = UserId::new_for_test("bob");
-        let a = reg.get_or_spawn(&alice);
-        let b = reg.get_or_spawn(&bob);
+        let a = reg.get_or_spawn(&alice, None);
+        let b = reg.get_or_spawn(&bob, None);
 
         let a_roots = a.handle.session_roots.as_ref().expect("alice roots set");
         let b_roots = b.handle.session_roots.as_ref().expect("bob roots set");
@@ -649,7 +686,7 @@ mod tests {
                 Duration::from_secs(60),
                 project_root.clone(),
             ));
-            let a = reg.get_or_spawn(&alice);
+            let a = reg.get_or_spawn(&alice, None);
             let roots = a.handle.session_roots.as_ref().unwrap().clone();
 
             // Write a session JSONL via the per-user SessionStore at
@@ -684,7 +721,7 @@ mod tests {
             Duration::from_secs(60),
             project_root.clone(),
         ));
-        let a2 = reg2.get_or_spawn(&alice);
+        let a2 = reg2.get_or_spawn(&alice, None);
         let post_roots = a2.handle.session_roots.as_ref().unwrap();
 
         // The recovered roots are byte-identical — the new worker
@@ -735,7 +772,7 @@ mod tests {
             for _t in 0..4 {
                 let reg = reg.clone();
                 let user_id = UserId::new_for_test(&format!("u{u:02}"));
-                handles.push(std::thread::spawn(move || reg.get_or_spawn(&user_id)));
+                handles.push(std::thread::spawn(move || reg.get_or_spawn(&user_id, None)));
             }
         }
         let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
@@ -761,7 +798,7 @@ mod tests {
         let mut session_dirs: Vec<PathBuf> = Vec::new();
         for u in 0..50 {
             let id = UserId::new_for_test(&format!("u{u:02}"));
-            let s = reg.get_or_spawn(&id);
+            let s = reg.get_or_spawn(&id, None);
             let r = s.handle.session_roots.as_ref().unwrap();
             session_dirs.push(r.sessions_dir.clone());
         }
@@ -778,7 +815,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn evictor_sweeps_idle_sessions() {
         let reg = UserSessionRegistry::new(config(10, Duration::from_millis(50)));
-        reg.get_or_spawn(&UserId::new_for_test("idle"));
+        reg.get_or_spawn(&UserId::new_for_test("idle"), None);
         assert_eq!(reg.active_user_count(), 1);
         let evictor = reg.spawn_evictor(Duration::from_millis(20));
         // Wait long enough for idle to exceed 50ms + a sweep cycle.

@@ -14,8 +14,10 @@
 //!      it before anything else — otherwise the CLI ignores user input.
 //!   3. We write a user message envelope on stdin:
 //!        `{"type":"user","session_id":"","message":{"role":"user","content":"..."},"parent_tool_use_id":null}`
-//!   4. We close stdin (no bidirectional hooks / SDK MCP servers, so we
-//!      don't need it open past the first message).
+//!   4. We keep stdin open when the SDK MCP bridge is wired, because the
+//!      CLI drives that bridge over it — including DURING step 2, before
+//!      our own ack arrives. Only a bridge-less provider drops stdin
+//!      here (that path relies on EOF to commit the session file).
 //!   5. We stream stdout lines and parse events. Terminal event is
 //!      `{"type":"result",...}` — emit MessageStop with usage.
 //!
@@ -79,7 +81,12 @@ impl AgentSdkProvider {
     /// plan-mode tools) are filtered at `sdk_mcp::handle_mcp_message`
     /// time. Used by `build_provider` so the bridge stands up
     /// without the caller threading their own registry.
-    pub fn with_default_thclaws_tools() -> Arc<ToolRegistry> {
+    ///
+    /// Returns it unwrapped so the caller can still apply the operator's
+    /// `--allowed-tools` / `--disallowed-tools` before handing it over —
+    /// the bridge is a separate registry from the agent's, and skipping
+    /// that step let a restricted run reach unrestricted tools.
+    pub fn default_bridge_registry() -> ToolRegistry {
         let mut r = ToolRegistry::with_builtins();
         r.register(Arc::new(crate::tools::KmsReadTool));
         r.register(Arc::new(crate::tools::KmsSearchTool));
@@ -88,7 +95,7 @@ impl AgentSdkProvider {
         r.register(Arc::new(crate::tools::KmsAppendTool));
         r.register(Arc::new(crate::tools::KmsDeleteTool));
         r.register(Arc::new(crate::tools::KmsCreateTool));
-        Arc::new(r)
+        r
     }
 
     fn next_request_id(&self) -> String {
@@ -165,6 +172,60 @@ fn find_on_path(name: &str) -> Option<std::path::PathBuf> {
         let p = dir.join(name);
         p.is_file().then_some(p)
     })
+}
+
+/// Answer one `control_request` from the CLI on the SDK MCP bridge.
+///
+/// Shared by the initialize-ack wait and the main stream loop: the CLI
+/// can drive the bridge from the moment it has read `initialize`, so
+/// both windows have to be able to reply. Anything that isn't an
+/// `mcp_message` for our server is left alone — the CLI treats an
+/// unanswered request as a timeout, but answering one we don't
+/// understand would be worse.
+async fn answer_bridge_request(
+    v: &Value,
+    stdin: &mut tokio::process::ChildStdin,
+    tools: Option<&Arc<ToolRegistry>>,
+) {
+    if v.pointer("/request/subtype").and_then(Value::as_str) != Some("mcp_message") {
+        return;
+    }
+    if v.pointer("/request/server_name").and_then(Value::as_str)
+        != Some(crate::sdk_mcp::SERVER_NAME)
+    {
+        return;
+    }
+    let req_id = v
+        .get("request_id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let mcp_msg = v
+        .pointer("/request/message")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let mcp_resp = match tools {
+        Some(reg) => crate::sdk_mcp::handle_mcp_message(reg.clone(), &mcp_msg).await,
+        None => json!({
+            "jsonrpc": "2.0",
+            "id": mcp_msg.get("id").cloned().unwrap_or(Value::Null),
+            "error": { "code": -32601, "message": "no tools registry attached" },
+        }),
+    };
+    let envelope = json!({
+        "type": "control_response",
+        "response": {
+            "subtype": "success",
+            "request_id": req_id,
+            "response": { "mcp_response": mcp_resp },
+        },
+    });
+    if let Err(e) = stdin.write_all(envelope.to_string().as_bytes()).await {
+        eprintln!("[agent-sdk] mcp bridge (init window): stdin write failed: {e}");
+        return;
+    }
+    let _ = stdin.write_all(b"\n").await;
+    let _ = stdin.flush().await;
 }
 
 /// The `message.content` we hand the CLI for this turn.
@@ -404,6 +465,19 @@ impl Provider for AgentSdkProvider {
             let Ok(v) = serde_json::from_str::<Value>(trimmed) else {
                 continue;
             };
+            // Claude Code opens its side of the SDK MCP bridge as soon as
+            // it has processed `initialize` — so its own `control_request`
+            // lands in this window, BEFORE our ack arrives. Skipping it
+            // (which this loop used to do) left the CLI waiting on a reply
+            // that never came: it burned its full 60s control timeout,
+            // then re-drove the bridge and answered normally. That is the
+            // whole of public issue #188 — a flat ~60s on every single
+            // agent/* turn, independent of prompt size, tool count and
+            // model, which is why it reproduced under Ollama too.
+            if v.get("type").and_then(Value::as_str) == Some("control_request") {
+                answer_bridge_request(&v, &mut stdin, self.tools.as_ref()).await;
+                continue;
+            }
             if v.get("type").and_then(Value::as_str) != Some("control_response") {
                 continue;
             }

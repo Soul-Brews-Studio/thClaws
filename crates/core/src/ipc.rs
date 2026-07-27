@@ -202,6 +202,171 @@ fn serialize_shell_history(messages: &[crate::types::Message]) -> Vec<serde_json
         .collect()
 }
 
+/// Connect or detach every MCP server a plugin contributes, so
+/// enabling / disabling / removing one takes effect in the running
+/// session instead of at the next restart. Skills, commands and agents
+/// are read when the session builds its registry and are NOT covered —
+/// callers should say so.
+fn apply_plugin_mcp_state(plugin: &crate::plugins::Plugin, enabled: bool, ctx: &IpcContext) {
+    let Ok(manifest) = plugin.manifest() else {
+        return;
+    };
+    for (name, entry) in &manifest.mcp_servers {
+        let input = if enabled {
+            crate::shared_session::ShellInput::McpConnect(Box::new(entry.to_config(name)))
+        } else {
+            crate::shared_session::ShellInput::McpDisconnect {
+                server_name: name.clone(),
+            }
+        };
+        let _ = ctx.shared.input_tx.send(input);
+    }
+}
+
+/// Names of the MCP servers configured in one scope's `mcp.json`
+/// (`~/.config/thclaws/mcp.json` for user, `.thclaws/mcp.json` for
+/// project). `AppConfig` merges both and forgets which file each came
+/// from, but a Connectors surface has to show it — a user-scope
+/// connector is shared by every project on the machine.
+fn mcp_server_names_in_scope(user: bool) -> std::collections::HashSet<String> {
+    let Some(path) = crate::config::mcp_config_path_for(user) else {
+        return Default::default();
+    };
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("mcpServers").and_then(|m| m.as_object()).cloned())
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// Write `key` for `provider` into whichever secret backend the user
+/// chose. Returns `(ok, error, storage)` — the same triple the
+/// `api_key_set` reply carries. Split out so the GUI-Shell BYOK path
+/// (`gui_shell_key_set`) stores keys through the exact same rules
+/// instead of a parallel implementation that could drift.
+fn store_provider_key(provider: &str, key: &str) -> (bool, String, &'static str) {
+    if provider.is_empty() || key.is_empty() {
+        (false, "provider and key are required".to_string(), "")
+    } else {
+        let env_var = crate::providers::ProviderKind::from_name(provider)
+            .and_then(|k| k.api_key_env())
+            .or_else(|| crate::secrets::service_env_var(provider));
+        let backend = crate::secrets::get_backend().unwrap_or(crate::secrets::Backend::Keychain);
+        match backend {
+            crate::secrets::Backend::Keychain => match crate::secrets::set(provider, key) {
+                Ok(()) => {
+                    if let Some(var) = env_var {
+                        std::env::set_var(var, key);
+                    }
+                    (true, String::new(), "keychain")
+                }
+                Err(e) => (false, format!("keychain failed: {e}"), ""),
+            },
+            crate::secrets::Backend::Dotenv => match env_var {
+                Some(var) => match crate::dotenv::upsert_user_env(var, key) {
+                    Ok(_) => {
+                        std::env::set_var(var, key);
+                        (true, String::new(), "dotenv")
+                    }
+                    Err(e) => (false, format!(".env write failed: {e}"), ""),
+                },
+                None => (false, format!("provider '{provider}' has no env var"), ""),
+            },
+        }
+    }
+}
+
+/// Everything that must happen once a key write has been attempted:
+/// tell the app, and on success auto-select a model for the newly
+/// usable provider, broadcast the provider change, offer the model
+/// picker, and reload the running session's config. Shared by
+/// `api_key_set` and the GUI-Shell BYOK path so a key added from a
+/// shell leaves the app in the same state as one added from Settings.
+fn announce_key_stored(provider: &str, ok: bool, error: &str, storage: &str, ctx: &IpcContext) {
+    let error = error.to_string();
+    let payload = serde_json::json!({
+        "type": "api_key_result",
+        "action": "set",
+        "provider": provider,
+        "ok": ok,
+        "error": error,
+        "storage": storage,
+    });
+    (ctx.dispatch)(payload.to_string());
+    // Auto-switch + post-key model picker, mirroring gui.rs.
+    if ok {
+        let cfg = crate::config::AppConfig::load().unwrap_or_default();
+        if let Some(new_model) = crate::providers::auto_fallback_model(&cfg) {
+            let mut project = crate::config::ProjectConfig::load().unwrap_or_default();
+            project.set_model(&new_model);
+            let _ = project.save();
+            let new_cfg = crate::config::AppConfig::load().unwrap_or_default();
+            let provider_name = new_cfg.detect_provider().unwrap_or("unknown");
+            let ready = crate::providers::provider_has_credentials(&new_cfg);
+            let broadcast = serde_json::json!({
+                "type": "provider_update",
+                "provider": provider_name,
+                "model": new_cfg.model,
+                "provider_ready": ready,
+            });
+            (ctx.dispatch)(broadcast.to_string());
+            let cat = crate::model_catalogue::EffectiveCatalogue::load();
+            let mut models = cat.list_models_for_provider(provider);
+            models.retain(|(_, e)| e.chat != Some(false));
+            if provider == "openrouter" && new_cfg.openrouter_free_only {
+                models.retain(|(_, e)| e.free == Some(true));
+            }
+            // Gateway routing is strictly metered: unpriced
+            // models 400 upstream, so don't offer them.
+            if crate::providers::thclaws_gateway::hides_unpriced_models(&new_cfg, provider) {
+                models.retain(|(_, e)| e.input_per_mtok.is_some() && e.output_per_mtok.is_some());
+            }
+            let runtime_loaded = matches!(provider, "ollama" | "ollama-anthropic" | "lmstudio");
+            if models.len() >= 3 && !runtime_loaded {
+                let _ = crate::providers::ProviderKind::detect(&new_cfg.model);
+                let model_rows: Vec<serde_json::Value> = models
+                    .iter()
+                    .map(|(id, e)| {
+                        let canonical = crate::model_catalogue::canonical_model_id(provider, id);
+                        serde_json::json!({
+                            "id": canonical,
+                            "context": e.context,
+                            "max_output": e.max_output,
+                            // Plan-10: surfaced for the
+                            // OpenRouter "Free only" toggle
+                            // in the Settings modal. Other
+                            // providers leave this None.
+                            "free": e.free,
+                        })
+                    })
+                    .collect();
+                let picker = serde_json::json!({
+                    "type": "model_picker_open",
+                    "provider": provider,
+                    "current": new_cfg.model,
+                    "models": model_rows,
+                });
+                (ctx.dispatch)(picker.to_string());
+            }
+        } else {
+            let provider_name = cfg.detect_provider().unwrap_or("unknown");
+            let ready = crate::providers::provider_has_credentials(&cfg);
+            let broadcast = serde_json::json!({
+                "type": "provider_update",
+                "provider": provider_name,
+                "model": cfg.model,
+                "provider_ready": ready,
+            });
+            (ctx.dispatch)(broadcast.to_string());
+        }
+        let _ = ctx
+            .shared
+            .input_tx
+            .send(crate::shared_session::ShellInput::ReloadConfig);
+    }
+}
+
 /// Build the correlated `gui_shell_event` reply envelope for a sessions
 /// bridge call (either `result` or `error`).
 fn shell_reply(request_id: u64, body: serde_json::Value) -> String {
@@ -865,6 +1030,69 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
             (ctx.dispatch)(shell_reply(request_id, body));
         }
 
+        // Install a skill from a git or zip URL — the same
+        // `skills::install_from_url` the `/skill install` slash command
+        // uses, so scope rules, the org-policy gate and the
+        // executable-scripts policy all apply unchanged.
+        "gui_shell_skill_install" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            if !shell_has_permission(shell_id, "skills.write") {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "permission 'skills.write' not declared" }),
+                ));
+                return true;
+            }
+            let url = msg
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            // Optional: a repo whose name can't be derived from the URL
+            // needs one, and `install_from_url` says so in its error.
+            let name = msg
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(str::to_string);
+            // Project scope by default — a skill installed from this
+            // workspace's chat belongs to this workspace.
+            let project = !msg.get("user").and_then(|v| v.as_bool()).unwrap_or(false);
+            if !(url.starts_with("https://") || url.starts_with("http://")) {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({
+                        "error": "url must be an https:// git repo or .zip (SSH remotes and local paths install from the desktop)",
+                    }),
+                ));
+                return true;
+            }
+            let dispatch = ctx.dispatch.clone();
+            let shared = ctx.shared.clone();
+            tokio::spawn(async move {
+                let reply =
+                    match crate::skills::install_from_url(&url, name.as_deref(), project).await {
+                        Ok(report) => {
+                            // Rebuild around the new skill so it's
+                            // usable in this session, not the next one.
+                            let _ = shared
+                                .input_tx
+                                .send(crate::shared_session::ShellInput::SkillsRefresh);
+                            serde_json::json!({ "result": {
+                                "ok": true,
+                                "report": report,
+                                "scope": if project { "project" } else { "user" },
+                            }})
+                        }
+                        Err(e) => serde_json::json!({ "error": e.to_string() }),
+                    };
+                dispatch(shell_reply(request_id, reply));
+            });
+        }
+
         "gui_shell_skills_save" => {
             let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
             let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
@@ -1035,6 +1263,544 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
 
         // Profile panel: engine-side identity facts. Password/email live in
         // the cloud control plane — the shell shows those as cloud-managed.
+        // GUI Shell: store a provider API key (BYOK) from a shell's
+        // settings surface. Reuses the SAME normalise + backend routing
+        // as the main app's `api_key_set` by delegating to it, so a key
+        // added from a shell lands wherever the user's chosen backend
+        // says (keychain or .env) and never diverges from the app path.
+        //
+        // Gated on `keys.write`, which no shell has by default — a chat
+        // shell asking for it is asking to hold provider credentials,
+        // and that should be visible in its manifest.
+        "gui_shell_key_set" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            if !shell_has_permission(shell_id, "keys.write") {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "permission 'keys.write' not declared" }),
+                ));
+                return true;
+            }
+            let provider = msg.get("provider").and_then(|v| v.as_str()).unwrap_or("");
+            let key = msg.get("key").and_then(|v| v.as_str()).unwrap_or("");
+            if provider.is_empty() || key.trim().is_empty() {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "provider and key are required" }),
+                ));
+                return true;
+            }
+            // Same store + same follow-up as the Settings path — a key
+            // added from a shell must not diverge from one added from
+            // the app. Report the REAL outcome: a keychain denial has to
+            // reach the shell as an error, not a green tick.
+            let (ok, error, storage) =
+                store_provider_key(provider, strip_wrapping_quotes(key.trim()));
+            if ok {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "result": { "ok": true, "provider": provider, "storage": storage } }),
+                ));
+            } else {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": error }),
+                ));
+            }
+            announce_key_stored(provider, ok, &error, storage, ctx);
+        }
+
+        // ── Connectors (MCP servers) ─────────────────────────────────
+        // A "connector" IS an MCP server — same mcp.json, same merge of
+        // user (`~/.config/thclaws/mcp.json`) and project scope, same
+        // servers the sidebar lists. This surface just makes them
+        // manageable from a chat shell.
+        "gui_shell_connectors_list" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            if !shell_has_permission(shell_id, "connectors.read") {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "permission 'connectors.read' not declared" }),
+                ));
+                return true;
+            }
+            let cfg = crate::config::AppConfig::load().unwrap_or_default();
+            let counts = crate::gui::mcp_tool_count_snapshot();
+            let failures = crate::gui::mcp_failure_snapshot();
+            // Which file a server came from decides whether this surface
+            // may remove it — and a user-scope server is shared by every
+            // project, which the UI has to be able to say out loud.
+            let user_names = mcp_server_names_in_scope(true);
+            // Plugins contribute MCP servers too, and the worker spawns
+            // them alongside the mcp.json ones — so their tools are live
+            // in the chat. Listing only `cfg.mcp_servers` showed a
+            // connector-less workspace that nonetheless had connector
+            // tools. Config wins on a name clash, matching the merge the
+            // worker itself does.
+            let owners: std::collections::HashMap<String, String> =
+                crate::plugins::plugin_mcp_server_owners()
+                    .into_iter()
+                    .collect();
+            let mut merged = cfg.mcp_servers.clone();
+            for p_mcp in crate::plugins::plugin_mcp_servers() {
+                if !merged.iter().any(|s| s.name == p_mcp.name) {
+                    merged.push(p_mcp);
+                }
+            }
+            let connectors: Vec<serde_json::Value> = merged
+                .iter()
+                .map(|s| {
+                    let error = failures.get(&s.name);
+                    let tools = counts.get(&s.name).copied().unwrap_or(0);
+                    let status = if error.is_some() {
+                        "failed"
+                    } else if tools > 0 {
+                        "connected"
+                    } else {
+                        "connecting"
+                    };
+                    serde_json::json!({
+                        "name": s.name,
+                        "transport": s.transport,
+                        "url": s.url,
+                        "command": s.command,
+                        "args": s.args,
+                        "headerNames": s.headers.keys().collect::<Vec<_>>(),
+                        "scope": if owners.contains_key(&s.name) {
+                            "plugin"
+                        } else if user_names.contains(&s.name) {
+                            "user"
+                        } else {
+                            "project"
+                        },
+                        // Set only for a plugin-owned server: it lives in
+                        // the plugin's manifest, so it can't be removed
+                        // by editing mcp.json.
+                        "plugin": owners.get(&s.name),
+                        "tools": tools,
+                        "status": status,
+                        "error": error,
+                        "engineManaged": s.engine_managed,
+                    })
+                })
+                .collect();
+            (ctx.dispatch)(shell_reply(
+                request_id,
+                serde_json::json!({ "result": { "connectors": connectors } }),
+            ));
+        }
+
+        "gui_shell_connector_add" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            if !shell_has_permission(shell_id, "connectors.write") {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "permission 'connectors.write' not declared" }),
+                ));
+                return true;
+            }
+            let name = msg
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let url = msg
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            // HTTP transport ONLY, deliberately. A stdio entry names a
+            // command the engine spawns on the next connect — letting a
+            // shell write one is arbitrary local code execution, and the
+            // first-spawn allowlist prompt can't be relied on to stop it
+            // (hosted/multiuser forces auto-approve). stdio connectors
+            // stay a desktop `/mcp add` decision.
+            let err = if name.is_empty() || url.is_empty() {
+                Some("name and url are required".to_string())
+            } else if !crate::mcp::is_valid_server_name(&name) {
+                Some("name may only contain letters, digits, '-' and '_'".to_string())
+            } else if !(url.starts_with("https://") || url.starts_with("http://")) {
+                Some("url must start with https:// (or http:// for localhost)".to_string())
+            } else {
+                None
+            };
+            if let Some(e) = err {
+                (ctx.dispatch)(shell_reply(request_id, serde_json::json!({ "error": e })));
+                return true;
+            }
+            let mut headers = std::collections::HashMap::new();
+            if let Some(obj) = msg.get("headers").and_then(|v| v.as_object()) {
+                for (k, v) in obj {
+                    if let Some(val) = v.as_str() {
+                        if !k.trim().is_empty() && !val.trim().is_empty() {
+                            headers.insert(k.trim().to_string(), val.trim().to_string());
+                        }
+                    }
+                }
+            }
+            let server = crate::mcp::McpServerConfig {
+                name: name.clone(),
+                transport: "http".into(),
+                command: String::new(),
+                args: Vec::new(),
+                env: Default::default(),
+                url,
+                headers,
+                // Hand-added, exactly like `/mcp add`: untrusted, so no
+                // inline widget rendering. Only the marketplace install
+                // flow grants trust.
+                trusted: false,
+                engine_managed: false,
+            };
+            match crate::config::save_mcp_server(&server, false) {
+                Ok(path) => {
+                    // Connect it now — a connector you have to restart to
+                    // use isn't connected, it's configured.
+                    let _ =
+                        ctx.shared
+                            .input_tx
+                            .send(crate::shared_session::ShellInput::McpConnect(Box::new(
+                                server,
+                            )));
+                    (ctx.dispatch)(shell_reply(
+                        request_id,
+                        serde_json::json!({ "result": {
+                            "ok": true,
+                            "name": name,
+                            "path": path.to_string_lossy(),
+                        }}),
+                    ));
+                }
+                Err(e) => (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": e.to_string() }),
+                )),
+            }
+        }
+
+        "gui_shell_connector_remove" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            if !shell_has_permission(shell_id, "connectors.write") {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "permission 'connectors.write' not declared" }),
+                ));
+                return true;
+            }
+            let name = msg
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "name is required" }),
+                ));
+                return true;
+            }
+            // Try project first, then user — the same order the config
+            // merge resolves, so removing by name from a shell drops
+            // whichever entry was actually in effect.
+            let mut removed_from: Option<String> = None;
+            let mut removed_url: Option<String> = None;
+            let mut last_err: Option<String> = None;
+            for (user, label) in [(false, "project"), (true, "user")] {
+                match crate::config::remove_mcp_server(&name, user) {
+                    Ok((true, _, url)) => {
+                        removed_from = Some(label.to_string());
+                        removed_url = url;
+                        break;
+                    }
+                    Ok((false, _, _)) => {}
+                    Err(e) => last_err = Some(e.to_string()),
+                }
+            }
+            match removed_from {
+                Some(scope) => {
+                    // Cached OAuth tokens are keyed by URL; leaving one
+                    // behind would silently re-authorise a server the
+                    // user just removed if they add the same URL later.
+                    if let Some(url) = removed_url {
+                        let mut store = crate::oauth::TokenStore::load();
+                        store.remove(&url);
+                        store.save();
+                    }
+                    let _ = ctx.shared.input_tx.send(
+                        crate::shared_session::ShellInput::McpDisconnect {
+                            server_name: name.clone(),
+                        },
+                    );
+                    (ctx.dispatch)(shell_reply(
+                        request_id,
+                        serde_json::json!({ "result": { "ok": true, "name": name, "scope": scope } }),
+                    ));
+                }
+                None => {
+                    // A plugin's server isn't in any mcp.json, so the
+                    // removal genuinely can't happen here — say which
+                    // plugin owns it rather than "no such connector".
+                    let owner = crate::plugins::plugin_mcp_server_owners()
+                        .into_iter()
+                        .find(|(server, _)| server == &name)
+                        .map(|(_, plugin)| plugin);
+                    let err = match (owner, last_err) {
+                        (Some(plugin), _) => format!(
+                            "'{name}' is provided by the plugin '{plugin}' — uninstall the plugin to remove it"
+                        ),
+                        (None, Some(e)) => e,
+                        (None, None) => format!("no connector named '{name}'"),
+                    };
+                    (ctx.dispatch)(shell_reply(request_id, serde_json::json!({ "error": err })));
+                }
+            }
+        }
+
+        // ── Plugins ──────────────────────────────────────────────────
+        // A plugin is a bundle: skills + commands + agents + MCP
+        // servers, installed as one unit. This surface manages the ones
+        // already installed. Installing is NOT here — it runs a git
+        // clone or a zip extract, which is code arriving on the machine,
+        // and that stays a desktop `/plugin install` decision (same line
+        // the connectors surface draws at stdio).
+        "gui_shell_plugins_list" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            if !shell_has_permission(shell_id, "plugins.read") {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "permission 'plugins.read' not declared" }),
+                ));
+                return true;
+            }
+            let counts = crate::gui::mcp_tool_count_snapshot();
+            let failures = crate::gui::mcp_failure_snapshot();
+            let user_scope: std::collections::HashSet<String> =
+                crate::plugins::PluginRegistry::load(true)
+                    .map(|r| r.plugins.into_iter().map(|p| p.name).collect())
+                    .unwrap_or_default();
+            // Disabled ones too: a disabled plugin is exactly what the
+            // user came here to turn back on, and `/plugins` lists it.
+            let plugins: Vec<serde_json::Value> = crate::plugins::all_plugins_all_scopes()
+                .iter()
+                .map(|p| {
+                    let manifest = p.manifest().ok();
+                    let c = crate::plugins::contributions(p);
+                    let servers: Vec<serde_json::Value> = c
+                        .mcp_servers
+                        .iter()
+                        .map(|name| {
+                            serde_json::json!({
+                                "name": name,
+                                "tools": counts.get(name).copied().unwrap_or(0),
+                                "error": failures.get(name),
+                            })
+                        })
+                        .collect();
+                    serde_json::json!({
+                        "name": p.name,
+                        "version": if p.version.is_empty() {
+                            manifest.as_ref().map(|m| m.version.clone()).unwrap_or_default()
+                        } else {
+                            p.version.clone()
+                        },
+                        "description": manifest.as_ref().map(|m| m.description.clone()).unwrap_or_default(),
+                        "author": manifest.as_ref().map(|m| m.author.clone()).unwrap_or_default(),
+                        "source": p.source,
+                        "path": p.path.to_string_lossy(),
+                        "scope": if user_scope.contains(&p.name) { "user" } else { "project" },
+                        "enabled": p.enabled,
+                        "skills": c.skills,
+                        "commands": c.commands,
+                        "agents": c.agents,
+                        "mcpServers": servers,
+                        // A broken manifest is why a plugin contributes
+                        // nothing; without this the panel would just show
+                        // zeros and look like the plugin was empty.
+                        "manifestError": p.manifest().err().map(|e| e.to_string()),
+                    })
+                })
+                .collect();
+            (ctx.dispatch)(shell_reply(
+                request_id,
+                serde_json::json!({ "result": { "plugins": plugins } }),
+            ));
+        }
+
+        // Install a plugin from a git or zip URL. The fetch itself only
+        // downloads and unpacks — nothing from the archive runs at
+        // install time. What the plugin CONTRIBUTES runs later, and each
+        // route keeps its own gate: an stdio MCP server still goes
+        // through the spawn allowlist, skills still need the model to
+        // choose them. So this is the user's call, made explicit in the
+        // panel, not a line the shell surface has to refuse.
+        "gui_shell_plugin_install" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            if !shell_has_permission(shell_id, "plugins.write") {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "permission 'plugins.write' not declared" }),
+                ));
+                return true;
+            }
+            let url = msg
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            // Project scope by default — a plugin installed from this
+            // workspace's chat belongs to this workspace.
+            let user = msg.get("user").and_then(|v| v.as_bool()).unwrap_or(false);
+            if !(url.starts_with("https://") || url.starts_with("http://")) {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({
+                        "error": "url must be an https:// git repo or .zip (SSH remotes and local paths install from the desktop)",
+                    }),
+                ));
+                return true;
+            }
+            let dispatch = ctx.dispatch.clone();
+            let shared = ctx.shared.clone();
+            tokio::spawn(async move {
+                // A clone can take a while; the panel shows "Installing…"
+                // until this lands.
+                let reply = match crate::plugins::install(&url, user, false).await {
+                    Ok(plugin) => {
+                        let c = crate::plugins::contributions(&plugin);
+                        // Bring its connectors up now, the same as
+                        // enabling one — install already implies "I want
+                        // this active".
+                        if let Ok(manifest) = plugin.manifest() {
+                            for (name, entry) in &manifest.mcp_servers {
+                                let _ = shared.input_tx.send(
+                                    crate::shared_session::ShellInput::McpConnect(Box::new(
+                                        entry.to_config(name),
+                                    )),
+                                );
+                            }
+                        }
+                        serde_json::json!({ "result": {
+                            "ok": true,
+                            "name": plugin.name,
+                            "version": plugin.version,
+                            "scope": if user { "user" } else { "project" },
+                            "skills": c.skills,
+                            "commands": c.commands,
+                            "agents": c.agents,
+                            "mcpServers": c.mcp_servers,
+                        }})
+                    }
+                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                };
+                dispatch(shell_reply(request_id, reply));
+            });
+        }
+
+        "gui_shell_plugin_set_enabled" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            if !shell_has_permission(shell_id, "plugins.write") {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "permission 'plugins.write' not declared" }),
+                ));
+                return true;
+            }
+            let name = msg
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let enabled = msg.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+            let Some((plugin, user)) = crate::plugins::find_installed_with_scope(&name) else {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": format!("no plugin named '{name}'") }),
+                ));
+                return true;
+            };
+            match crate::plugins::set_enabled(&name, user, enabled) {
+                Ok(true) => {
+                    // Its MCP servers can follow immediately; skills,
+                    // commands and agents are read when the session
+                    // builds its registry, so those wait. Say which is
+                    // which rather than implying a full live swap.
+                    apply_plugin_mcp_state(&plugin, enabled, ctx);
+                    (ctx.dispatch)(shell_reply(
+                        request_id,
+                        serde_json::json!({ "result": {
+                            "ok": true,
+                            "name": name,
+                            "enabled": enabled,
+                            "scope": if user { "user" } else { "project" },
+                        }}),
+                    ));
+                }
+                Ok(false) => (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": format!("no plugin named '{name}'") }),
+                )),
+                Err(e) => (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": e.to_string() }),
+                )),
+            }
+        }
+
+        "gui_shell_plugin_remove" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            if !shell_has_permission(shell_id, "plugins.write") {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "permission 'plugins.write' not declared" }),
+                ));
+                return true;
+            }
+            let name = msg
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let Some((plugin, user)) = crate::plugins::find_installed_with_scope(&name) else {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": format!("no plugin named '{name}'") }),
+                ));
+                return true;
+            };
+            // Detach its servers BEFORE the files go: the tools stay in
+            // the live registry otherwise and the model can call into a
+            // server whose plugin no longer exists.
+            apply_plugin_mcp_state(&plugin, false, ctx);
+            match crate::plugins::remove(&name, user) {
+                Ok(true) => (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "result": { "ok": true, "name": name } }),
+                )),
+                Ok(false) => (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": format!("no plugin named '{name}'") }),
+                )),
+                Err(e) => (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": e.to_string() }),
+                )),
+            }
+        }
+
         "gui_shell_profile_get" => {
             let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
             let member = ctx
@@ -1042,6 +1808,14 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
                 .session_roots
                 .as_ref()
                 .and_then(|r| r.member_id.clone());
+            // Only multiuser has a logged-in identity to show. Desktop
+            // has no login, so a shell gets no name and should render
+            // no name — not a placeholder.
+            let display_name = ctx
+                .shared
+                .session_roots
+                .as_ref()
+                .and_then(|r| r.member_name.clone());
             let workspace = crate::workdir::current_workdir()
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
@@ -1050,6 +1824,7 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
                 request_id,
                 serde_json::json!({ "result": {
                     "memberId": member,
+                    "displayName": display_name,
                     "workspace": workspace,
                     "multiuser": ctx.shared.session_roots.is_some(),
                 }}),
@@ -4711,124 +5486,8 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
             // value is always the bare key.
             let raw = msg.get("key").and_then(|v| v.as_str()).unwrap_or("").trim();
             let key = strip_wrapping_quotes(raw);
-            // Route strictly by the user's stored backend choice.
-            // Keychain is tried only when the user opted into it; dotenv
-            // users never trigger an OS keychain prompt.
-            let (ok, error, storage) = if provider.is_empty() || key.is_empty() {
-                (false, "provider and key are required".to_string(), "")
-            } else {
-                let env_var = crate::providers::ProviderKind::from_name(provider)
-                    .and_then(|k| k.api_key_env())
-                    .or_else(|| crate::secrets::service_env_var(provider));
-                let backend =
-                    crate::secrets::get_backend().unwrap_or(crate::secrets::Backend::Keychain);
-                match backend {
-                    crate::secrets::Backend::Keychain => match crate::secrets::set(provider, key) {
-                        Ok(()) => {
-                            if let Some(var) = env_var {
-                                std::env::set_var(var, key);
-                            }
-                            (true, String::new(), "keychain")
-                        }
-                        Err(e) => (false, format!("keychain failed: {e}"), ""),
-                    },
-                    crate::secrets::Backend::Dotenv => match env_var {
-                        Some(var) => match crate::dotenv::upsert_user_env(var, key) {
-                            Ok(_) => {
-                                std::env::set_var(var, key);
-                                (true, String::new(), "dotenv")
-                            }
-                            Err(e) => (false, format!(".env write failed: {e}"), ""),
-                        },
-                        None => (false, format!("provider '{provider}' has no env var"), ""),
-                    },
-                }
-            };
-            let payload = serde_json::json!({
-                "type": "api_key_result",
-                "action": "set",
-                "provider": provider,
-                "ok": ok,
-                "error": error,
-                "storage": storage,
-            });
-            (ctx.dispatch)(payload.to_string());
-            // Auto-switch + post-key model picker, mirroring gui.rs.
-            if ok {
-                let cfg = crate::config::AppConfig::load().unwrap_or_default();
-                if let Some(new_model) = crate::providers::auto_fallback_model(&cfg) {
-                    let mut project = crate::config::ProjectConfig::load().unwrap_or_default();
-                    project.set_model(&new_model);
-                    let _ = project.save();
-                    let new_cfg = crate::config::AppConfig::load().unwrap_or_default();
-                    let provider_name = new_cfg.detect_provider().unwrap_or("unknown");
-                    let ready = crate::providers::provider_has_credentials(&new_cfg);
-                    let broadcast = serde_json::json!({
-                        "type": "provider_update",
-                        "provider": provider_name,
-                        "model": new_cfg.model,
-                        "provider_ready": ready,
-                    });
-                    (ctx.dispatch)(broadcast.to_string());
-                    let cat = crate::model_catalogue::EffectiveCatalogue::load();
-                    let mut models = cat.list_models_for_provider(provider);
-                    models.retain(|(_, e)| e.chat != Some(false));
-                    if provider == "openrouter" && new_cfg.openrouter_free_only {
-                        models.retain(|(_, e)| e.free == Some(true));
-                    }
-                    // Gateway routing is strictly metered: unpriced
-                    // models 400 upstream, so don't offer them.
-                    if crate::providers::thclaws_gateway::hides_unpriced_models(&new_cfg, provider)
-                    {
-                        models.retain(|(_, e)| {
-                            e.input_per_mtok.is_some() && e.output_per_mtok.is_some()
-                        });
-                    }
-                    let runtime_loaded =
-                        matches!(provider, "ollama" | "ollama-anthropic" | "lmstudio");
-                    if models.len() >= 3 && !runtime_loaded {
-                        let _ = crate::providers::ProviderKind::detect(&new_cfg.model);
-                        let model_rows: Vec<serde_json::Value> = models
-                            .iter()
-                            .map(|(id, e)| {
-                                let canonical =
-                                    crate::model_catalogue::canonical_model_id(provider, id);
-                                serde_json::json!({
-                                    "id": canonical,
-                                    "context": e.context,
-                                    "max_output": e.max_output,
-                                    // Plan-10: surfaced for the
-                                    // OpenRouter "Free only" toggle
-                                    // in the Settings modal. Other
-                                    // providers leave this None.
-                                    "free": e.free,
-                                })
-                            })
-                            .collect();
-                        let picker = serde_json::json!({
-                            "type": "model_picker_open",
-                            "provider": provider,
-                            "current": new_cfg.model,
-                            "models": model_rows,
-                        });
-                        (ctx.dispatch)(picker.to_string());
-                    }
-                } else {
-                    let provider_name = cfg.detect_provider().unwrap_or("unknown");
-                    let ready = crate::providers::provider_has_credentials(&cfg);
-                    let broadcast = serde_json::json!({
-                        "type": "provider_update",
-                        "provider": provider_name,
-                        "model": cfg.model,
-                        "provider_ready": ready,
-                    });
-                    (ctx.dispatch)(broadcast.to_string());
-                }
-                let _ = ctx
-                    .shared
-                    .input_tx
-                    .send(crate::shared_session::ShellInput::ReloadConfig);
-            }
+            let (ok, error, storage) = store_provider_key(provider, key);
+            announce_key_stored(provider, ok, &error, storage, ctx);
         }
 
         // ── Team tab data (M6.36 SERVE9g) ──────────────────────────
@@ -5280,6 +5939,148 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
                             "mode": mode,
                         });
                         (ctx.dispatch)(payload.to_string());
+                    } else if is_pptx && crate::tools::slide_render::pptx_preview_available() {
+                        // Render the real slides instead of dumping the
+                        // text we can scrape out of the XML. Needs the
+                        // slide-render service (self-hosted URL or a
+                        // gateway key) — without one we fall through to
+                        // the extraction below, which is all a
+                        // signed-out desktop can do: converting locally
+                        // would mean LibreOffice on every user's
+                        // machine, which is not a realistic ask on
+                        // Windows.
+                        //
+                        // Cached per file-content hash, so re-opening a
+                        // deck costs nothing.
+                        // Rendering is a network round-trip (~13s for a
+                        // 23-slide deck, uncached) — off the IPC thread
+                        // so the Files tab stays responsive. The
+                        // frontend shows a pending state until one of
+                        // the two payloads below lands.
+                        let workspace = std::env::current_dir().unwrap_or_default();
+                        let deck = path.clone();
+                        let raw = raw_path.to_string();
+                        let mode_s = mode.to_string();
+                        let theme_s = theme.to_string();
+
+                        // Decide synchronously. The Files tab re-reads the
+                        // open file on a timer, so a deck that can't be
+                        // rendered must take the SAME branch every tick —
+                        // otherwise the pane flips between "Rendering…"
+                        // and the text fallback for as long as it's open.
+                        match crate::tools::slide_render::pptx_preview_state(&workspace, &deck) {
+                            crate::tools::slide_render::PptxPreview::Ready(pdf) => {
+                                let rel = pdf
+                                    .strip_prefix(&workspace)
+                                    .unwrap_or(pdf.as_path())
+                                    .to_string_lossy()
+                                    .replace('\\', "/");
+                                (ctx.dispatch)(
+                                    serde_json::json!({
+                                        "type": "file_content",
+                                        "path": raw,
+                                        "render_path": rel,
+                                        "content": "",
+                                        "mime": "application/pdf",
+                                        "mode": mode_s,
+                                    })
+                                    .to_string(),
+                                );
+                                return true;
+                            }
+                            crate::tools::slide_render::PptxPreview::Skip(reason) => {
+                                let md = match crate::tools::pptx_read::extract_pptx(&deck) {
+                                    Ok(text) => format!(
+                                        "_Extracted preview · PPTX_\n\n\
+                                         > Slides not rendered: {reason}\n\n{text}"
+                                    ),
+                                    Err(inner) => {
+                                        format!("**Can't render or extract:** {reason}\n\n{inner}")
+                                    }
+                                };
+                                let html =
+                                    crate::file_preview::render_markdown_to_html(&md, &theme_s);
+                                (ctx.dispatch)(
+                                    serde_json::json!({
+                                        "type": "file_content",
+                                        "path": raw,
+                                        "content": html,
+                                        "mime": "text/html",
+                                        "mode": mode_s,
+                                    })
+                                    .to_string(),
+                                );
+                                return true;
+                            }
+                            crate::tools::slide_render::PptxPreview::Renderable => {}
+                        }
+
+                        let dispatch = ctx.dispatch.clone();
+                        (dispatch)(
+                            serde_json::json!({
+                                "type": "file_render_pending",
+                                "path": raw,
+                            })
+                            .to_string(),
+                        );
+                        let dispatch2 = ctx.dispatch.clone();
+                        let raw2 = raw_path.to_string();
+                        tokio::spawn(async move {
+                            match crate::tools::slide_render::render_pptx_preview(&workspace, &deck)
+                                .await
+                            {
+                                Ok(pdf) => {
+                                    let rel = pdf
+                                        .strip_prefix(&workspace)
+                                        .unwrap_or(pdf.as_path())
+                                        .to_string_lossy()
+                                        .replace('\\', "/");
+                                    (dispatch2)(
+                                        serde_json::json!({
+                                            "type": "file_content",
+                                            "path": raw2,
+                                            // Mounted through /file-asset
+                                            // like any other PDF — the
+                                            // viewer is already there.
+                                            "render_path": rel,
+                                            "content": "",
+                                            "mime": "application/pdf",
+                                            "mode": mode_s,
+                                        })
+                                        .to_string(),
+                                    );
+                                }
+                                Err(e) => {
+                                    // Never strand the user on an error
+                                    // screen when a usable text preview
+                                    // is one call away.
+                                    eprintln!("[pptx] render failed, using extracted text: {e}");
+                                    let md = match crate::tools::pptx_read::extract_pptx(&deck) {
+                                        Ok(text) => format!(
+                                            "_Extracted preview · PPTX_\n\n\
+                                             > Slide rendering unavailable: {e}\n\n{text}"
+                                        ),
+                                        Err(inner) => {
+                                            format!(
+                                                "**Failed to render or extract:** {e}\n\n{inner}"
+                                            )
+                                        }
+                                    };
+                                    let html =
+                                        crate::file_preview::render_markdown_to_html(&md, &theme_s);
+                                    (dispatch2)(
+                                        serde_json::json!({
+                                            "type": "file_content",
+                                            "path": raw2,
+                                            "content": html,
+                                            "mime": "text/html",
+                                            "mode": mode_s,
+                                        })
+                                        .to_string(),
+                                    );
+                                }
+                            }
+                        });
                     } else if is_office {
                         let extracted = if is_docx {
                             crate::tools::docx_read::extract_docx(&path)
@@ -5958,6 +6759,163 @@ mod tests {
     /// the test can't pollute the real ~/.config/thclaws). Captures
     /// dispatched payloads via a Mutex<Vec<String>> and asserts the
     /// `ok: false` envelope shape.
+    /// Plugin management is permission-gated, and a denial must not
+    /// touch the registry or the files on disk.
+    #[test]
+    fn gui_shell_plugin_calls_require_permission() {
+        for ty in [
+            "gui_shell_plugins_list",
+            "gui_shell_plugin_install",
+            "gui_shell_plugin_set_enabled",
+            "gui_shell_plugin_remove",
+        ] {
+            let shared = Arc::new(crate::shared_session::spawn());
+            let (approver, _rx) = crate::permissions::GuiApprover::new();
+            let pending_asks: PendingAsks = Arc::new(Mutex::new(HashMap::new()));
+            let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+            let captured_clone = captured.clone();
+            let ctx = IpcContext {
+                is_serve_mode: false,
+                shared,
+                approver,
+                pending_asks,
+                dispatch: Arc::new(move |payload| {
+                    captured_clone.lock().unwrap().push(payload);
+                }),
+                on_quit: Arc::new(|| {}),
+                on_send_initial_state: Arc::new(|| {}),
+                on_zoom: Arc::new(|_| {}),
+                workflow_approver: crate::workflow::WorkflowApprover::new(),
+            };
+            let handled = handle_ipc(
+                serde_json::json!({
+                    "type": ty,
+                    "id": 11,
+                    "shellId": "no-such-shell",
+                    "name": "ops-pack",
+                    "url": "https://github.com/x/ops-pack",
+                    "enabled": false,
+                }),
+                &ctx,
+            );
+            assert!(handled, "{ty} should be a migrated arm");
+            let payloads = captured.lock().unwrap();
+            assert_eq!(payloads.len(), 1, "{ty} denial should reply once");
+            let parsed: serde_json::Value = serde_json::from_str(&payloads[0]).unwrap();
+            assert!(
+                parsed["error"].as_str().unwrap().contains("plugins."),
+                "{ty} should name the missing permission: {parsed}"
+            );
+        }
+    }
+
+    /// Connector add/remove are permission-gated the same way BYOK is,
+    /// and a denial must not touch mcp.json.
+    #[test]
+    fn gui_shell_connector_calls_require_permission() {
+        for ty in [
+            "gui_shell_connectors_list",
+            "gui_shell_connector_add",
+            "gui_shell_connector_remove",
+        ] {
+            let shared = Arc::new(crate::shared_session::spawn());
+            let (approver, _rx) = crate::permissions::GuiApprover::new();
+            let pending_asks: PendingAsks = Arc::new(Mutex::new(HashMap::new()));
+            let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+            let captured_clone = captured.clone();
+            let ctx = IpcContext {
+                is_serve_mode: false,
+                shared,
+                approver,
+                pending_asks,
+                dispatch: Arc::new(move |payload| {
+                    captured_clone.lock().unwrap().push(payload);
+                }),
+                on_quit: Arc::new(|| {}),
+                on_send_initial_state: Arc::new(|| {}),
+                on_zoom: Arc::new(|_| {}),
+                workflow_approver: crate::workflow::WorkflowApprover::new(),
+            };
+            let handled = handle_ipc(
+                serde_json::json!({
+                    "type": ty,
+                    "id": 3,
+                    "shellId": "no-such-shell",
+                    "name": "evil",
+                    "url": "https://example.com/mcp",
+                }),
+                &ctx,
+            );
+            assert!(handled, "{ty} should be a migrated arm");
+            let payloads = captured.lock().unwrap();
+            assert_eq!(payloads.len(), 1, "{ty} denial should reply once");
+            let parsed: serde_json::Value = serde_json::from_str(&payloads[0]).unwrap();
+            assert!(
+                parsed["error"].as_str().unwrap().contains("connectors."),
+                "{ty} should name the missing permission: {parsed}"
+            );
+        }
+    }
+
+    /// The BYOK bridge is permission-gated: a shell whose manifest
+    /// doesn't declare `keys.write` gets an error and NOTHING is
+    /// stored — no `api_key_result` is even emitted, so the app can't
+    /// mistake the attempt for a successful write.
+    #[test]
+    fn gui_shell_key_set_requires_permission() {
+        let shared = Arc::new(crate::shared_session::spawn());
+        let (approver, _rx) = crate::permissions::GuiApprover::new();
+        let pending_asks: PendingAsks = Arc::new(Mutex::new(HashMap::new()));
+        let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured_clone = captured.clone();
+        let ctx = IpcContext {
+            is_serve_mode: false,
+            shared,
+            approver,
+            pending_asks,
+            dispatch: Arc::new(move |payload| {
+                captured_clone.lock().unwrap().push(payload);
+            }),
+            on_quit: Arc::new(|| {}),
+            on_send_initial_state: Arc::new(|| {}),
+            on_zoom: Arc::new(|_| {}),
+            workflow_approver: crate::workflow::WorkflowApprover::new(),
+        };
+        let handled = handle_ipc(
+            serde_json::json!({
+                "type": "gui_shell_key_set",
+                "id": 7,
+                "shellId": "no-such-shell",
+                "provider": "openai",
+                "key": "sk-should-never-be-stored",
+            }),
+            &ctx,
+        );
+        assert!(handled);
+        let payloads = captured.lock().unwrap();
+        assert_eq!(payloads.len(), 1, "denial must not also announce a write");
+        let parsed: serde_json::Value = serde_json::from_str(&payloads[0]).unwrap();
+        assert_eq!(parsed["replyTo"], 7);
+        assert!(
+            parsed["error"].as_str().unwrap().contains("keys.write"),
+            "error should name the missing permission: {parsed}"
+        );
+        assert!(parsed.get("result").is_none());
+    }
+
+    /// store_provider_key is the single write path shared by the
+    /// Settings modal and the shell BYOK form; empty input must fail
+    /// there rather than in each caller.
+    #[test]
+    fn store_provider_key_rejects_empty_input() {
+        let (ok, err, storage) = store_provider_key("", "sk-x");
+        assert!(!ok);
+        assert_eq!(storage, "");
+        assert!(err.contains("required"), "{err}");
+        let (ok, _, _) = store_provider_key("openai", "");
+        assert!(!ok);
+    }
+
     /// schedule_cron_preview validates a cron expression and returns
     /// the next 3 fires when valid, or an inline error when not.
     /// Used by the schedule-add modal's live preview.

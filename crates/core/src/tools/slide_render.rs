@@ -46,6 +46,14 @@ struct SlideEndpoint {
 /// local render service is used without touching cloud credits; the
 /// gateway is the zero-config fallback for cloud-logged-in users.
 fn resolve_slide_endpoint() -> Result<SlideEndpoint> {
+    resolve_slide_endpoint_for("slides")
+}
+
+/// Same resolution, for a named endpoint on the service (`slides`,
+/// `pptx`). Split out when `/pptx` landed — the two share every rule
+/// (native URL wins over gateway, gateway is the zero-config fallback)
+/// and only differ in the path.
+fn resolve_slide_endpoint_for(endpoint: &str) -> Result<SlideEndpoint> {
     if let Ok(base) = std::env::var("SLIDE_RENDER_API") {
         let base = base.trim();
         if !base.is_empty() {
@@ -54,7 +62,7 @@ fn resolve_slide_endpoint() -> Result<SlideEndpoint> {
                 .map(|t| t.trim().to_string())
                 .filter(|t| !t.is_empty());
             return Ok(SlideEndpoint {
-                url: format!("{}/slides", base.trim_end_matches('/')),
+                url: format!("{}/{endpoint}", base.trim_end_matches('/')),
                 bearer: token,
                 via_gateway: false,
             });
@@ -63,7 +71,7 @@ fn resolve_slide_endpoint() -> Result<SlideEndpoint> {
     if let Some(key) = crate::providers::thclaws_gateway::resolve_access_key() {
         let base = crate::providers::thclaws_gateway::resolve_base_url();
         return Ok(SlideEndpoint {
-            url: format!("{}/slide-render/slides", base.trim_end_matches('/')),
+            url: format!("{}/slide-render/{endpoint}", base.trim_end_matches('/')),
             bearer: Some(key),
             via_gateway: true,
         });
@@ -363,9 +371,265 @@ impl Tool for RenderSlidesTool {
     }
 }
 
+// ─── .pptx preview (Files tab) ───────────────────────────────────────
+
+/// Where a rendered deck is cached, relative to the workspace root.
+///
+/// Project-level, not `~/.config`: two projects routinely hold a
+/// `slides.pptx` apiece, and a user-level cache keyed on filename would
+/// serve one project's deck to the other. Excluded from `/cloud push`
+/// (see `cloud::wssync`) — it's derived bytes, several MB per deck, and
+/// the far end can re-render on demand.
+pub const PPTX_CACHE_REL: &str = ".thclaws/state/pptx-preview";
+
+/// True when a deck can be rendered right now — i.e. a slide-render
+/// endpoint resolves (self-hosted URL, or a valid gateway key). The
+/// Files tab calls this before auto-rendering so a signed-out user
+/// falls back to the text extraction instead of failing.
+pub fn pptx_preview_available() -> bool {
+    resolve_slide_endpoint_for("pptx").is_ok()
+}
+
+/// What a caller should do with a `.pptx` right now, decided WITHOUT
+/// touching the network.
+///
+/// The Files tab re-reads the open file on a timer, so "just try to
+/// render and see" isn't viable: a deck that can't be rendered would
+/// retry on every tick, and the pane flipped between "Rendering…" and
+/// the text fallback for as long as it stayed open. Deciding up front
+/// makes each read deterministic — and a cache hit skips the spawn
+/// entirely instead of flashing a spinner at an already-rendered deck.
+pub enum PptxPreview {
+    /// Rendered earlier; this is the PDF.
+    Ready(std::path::PathBuf),
+    /// Won't be attempted — oversized, or a previous attempt failed.
+    /// Carries the reason so the caller can show it with the text.
+    Skip(String),
+    /// Not cached, worth rendering.
+    Renderable,
+}
+
+/// Marker written into the cache dir when a render fails, so the next
+/// read doesn't repeat a call we already know ends badly. Removing the
+/// cache dir (or editing the deck, which moves the hash) retries.
+const RENDER_FAILED_MARKER: &str = "render-failed.txt";
+
+pub fn pptx_preview_state(workspace: &Path, deck: &Path) -> PptxPreview {
+    let Ok(meta) = std::fs::metadata(deck) else {
+        return PptxPreview::Skip("file is unreadable".into());
+    };
+    if meta.len() > MAX_PPTX_BYTES {
+        return PptxPreview::Skip(format!(
+            "deck is {:.1} MB, over the {:.0} MB render limit",
+            meta.len() as f64 / 1_048_576.0,
+            MAX_PPTX_BYTES as f64 / 1_048_576.0,
+        ));
+    }
+    let Ok(dir) = pptx_cache_dir(workspace, deck) else {
+        return PptxPreview::Renderable;
+    };
+    let pdf = dir.join("deck.pdf");
+    if pdf.is_file() {
+        return PptxPreview::Ready(pdf);
+    }
+    if let Ok(reason) = std::fs::read_to_string(dir.join(RENDER_FAILED_MARKER)) {
+        return PptxPreview::Skip(reason.trim().to_string());
+    }
+    PptxPreview::Renderable
+}
+
+/// Record a failure so `pptx_preview_state` can skip the retry.
+fn mark_render_failed(workspace: &Path, deck: &Path, reason: &str) {
+    let Ok(dir) = pptx_cache_dir(workspace, deck) else {
+        return;
+    };
+    if std::fs::create_dir_all(&dir).is_ok() {
+        let _ = std::fs::write(dir.join(RENDER_FAILED_MARKER), reason);
+    }
+}
+
+/// Cache directory for `deck`, keyed on its CONTENT — edit the file and
+/// the hash moves, so a stale render can't be served, and reverting an
+/// edit reuses the earlier one.
+fn pptx_cache_dir(workspace: &Path, deck: &Path) -> Result<std::path::PathBuf> {
+    use sha2::{Digest, Sha256};
+    let bytes =
+        std::fs::read(deck).map_err(|e| Error::Tool(format!("read {}: {e}", deck.display())))?;
+    let digest = Sha256::digest(&bytes);
+    let short: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
+    Ok(workspace.join(PPTX_CACHE_REL).join(short))
+}
+
+/// Render `deck` to a PDF + per-slide PNGs, returning the PDF path.
+///
+/// Cached: a second open of an unchanged deck costs nothing (no upload,
+/// no credits). Renders through the same service `RenderSlides` uses —
+/// the Files tab previously showed only extracted text for a .pptx, and
+/// requiring LibreOffice on every user's machine isn't realistic
+/// (Windows especially), so the conversion happens server-side.
+pub async fn render_pptx_preview(workspace: &Path, deck: &Path) -> Result<std::path::PathBuf> {
+    let dir = pptx_cache_dir(workspace, deck)?;
+    let pdf = dir.join("deck.pdf");
+    if pdf.is_file() {
+        return Ok(pdf);
+    }
+
+    let bytes =
+        std::fs::read(deck).map_err(|e| Error::Tool(format!("read {}: {e}", deck.display())))?;
+    if bytes.len() as u64 > MAX_PPTX_BYTES {
+        return Err(Error::Tool(format!(
+            "deck is {:.1} MB — over the {:.0} MB render limit",
+            bytes.len() as f64 / 1_048_576.0,
+            MAX_PPTX_BYTES as f64 / 1_048_576.0,
+        )));
+    }
+    let name = deck
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("deck.pptx")
+        .to_string();
+
+    let ep = resolve_slide_endpoint_for("pptx")?;
+    let part = Part::bytes(bytes)
+        .file_name(name)
+        .mime_str("application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        .map_err(|e| Error::Tool(format!("multipart: {e}")))?;
+    let form = Form::new().part("file", part);
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .build()
+        .map_err(|e| Error::Tool(format!("http client: {e}")))?;
+    let mut rb = crate::multi_tenant::attach_member(client.post(&ep.url));
+    if let Some(ref token) = ep.bearer {
+        rb = rb.bearer_auth(token);
+    }
+    let resp = rb
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| Error::Tool(format!("slide-render request: {e}")))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        let reason = format!(
+            "slide-render http {status}: {}",
+            &body[..body.len().min(400)]
+        );
+        // A 4xx is about THIS deck (unsupported, corrupt, too large for
+        // the service) and will fail identically next time — remember
+        // it. A 5xx or a transport error might not, so those stay
+        // retryable.
+        if status.is_client_error() {
+            mark_render_failed(workspace, deck, &reason);
+        }
+        return Err(Error::Tool(reason));
+    }
+    let zip_bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| Error::Tool(format!("read render response: {e}")))?;
+
+    std::fs::create_dir_all(&dir).map_err(|e| Error::Tool(format!("mkdir cache: {e}")))?;
+    let (has_pdf, pngs) = extract_deck(&zip_bytes, &dir)?;
+    if !has_pdf {
+        // Leave nothing half-written behind, or the `pdf.is_file()`
+        // check above would serve a broken cache entry forever.
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(Error::Tool(format!(
+            "slide-render returned {pngs} png(s) but no pdf"
+        )));
+    }
+    Ok(pdf)
+}
+
+/// Ceiling on a deck we'll upload. Rejecting here gives the user a
+/// reason ("deck is 240 MB, over the 200 MB render limit") instead of a
+/// bare 413 from the gateway. Kept just under the two caps behind it —
+/// the gateway buffers at 220 MB, the service's multipart at 200 MB —
+/// so this is the limit that actually speaks.
+const MAX_PPTX_BYTES: u64 = 200 * 1024 * 1024;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Files tab re-reads an open file on a timer, so this decision
+    /// has to be STABLE: an unrenderable deck that answered
+    /// "Renderable" on one tick and "Skip" on the next made the pane
+    /// flip between the spinner and the text fallback forever.
+    #[test]
+    fn preview_state_is_stable_across_repeated_reads() {
+        let ws = tempfile::tempdir().unwrap();
+        let deck = ws.path().join("talk.pptx");
+        std::fs::write(&deck, b"PK\x03\x04 not really a deck").unwrap();
+
+        // Nothing cached yet → worth a try, and asking twice doesn't
+        // change the answer.
+        for _ in 0..3 {
+            assert!(matches!(
+                pptx_preview_state(ws.path(), &deck),
+                PptxPreview::Renderable
+            ));
+        }
+
+        // After a failure is recorded, every later read skips — same
+        // branch each time, which is what stops the flip-flop.
+        mark_render_failed(ws.path(), &deck, "slide-render http 422: unsupported");
+        for _ in 0..3 {
+            match pptx_preview_state(ws.path(), &deck) {
+                PptxPreview::Skip(reason) => assert!(reason.contains("422"), "{reason}"),
+                other => panic!("expected Skip, got {}", state_name(&other)),
+            }
+        }
+
+        // Editing the deck moves the content hash, so the failure no
+        // longer applies and it becomes retryable.
+        std::fs::write(&deck, b"PK\x03\x04 different bytes entirely").unwrap();
+        assert!(matches!(
+            pptx_preview_state(ws.path(), &deck),
+            PptxPreview::Renderable
+        ));
+    }
+
+    #[test]
+    fn oversized_deck_skips_without_touching_the_cache() {
+        let ws = tempfile::tempdir().unwrap();
+        let deck = ws.path().join("huge.pptx");
+        std::fs::write(&deck, vec![0u8; (MAX_PPTX_BYTES + 1) as usize]).unwrap();
+        match pptx_preview_state(ws.path(), &deck) {
+            PptxPreview::Skip(reason) => {
+                assert!(reason.contains("over the"), "{reason}");
+                assert!(reason.contains("MB"), "{reason}");
+            }
+            other => panic!("expected Skip, got {}", state_name(&other)),
+        }
+        // No render was attempted, so nothing should have been written.
+        assert!(!ws.path().join(PPTX_CACHE_REL).exists());
+    }
+
+    #[test]
+    fn cached_render_is_served_without_a_spawn() {
+        let ws = tempfile::tempdir().unwrap();
+        let deck = ws.path().join("talk.pptx");
+        std::fs::write(&deck, b"deck bytes").unwrap();
+        let dir = pptx_cache_dir(ws.path(), &deck).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("deck.pdf"), b"%PDF-1.7").unwrap();
+
+        match pptx_preview_state(ws.path(), &deck) {
+            PptxPreview::Ready(pdf) => assert!(pdf.ends_with("deck.pdf")),
+            other => panic!("expected Ready, got {}", state_name(&other)),
+        }
+    }
+
+    fn state_name(s: &PptxPreview) -> &'static str {
+        match s {
+            PptxPreview::Ready(_) => "Ready",
+            PptxPreview::Skip(_) => "Skip",
+            PptxPreview::Renderable => "Renderable",
+        }
+    }
 
     #[test]
     fn mime_by_ext() {

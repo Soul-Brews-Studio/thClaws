@@ -298,6 +298,11 @@ export function FilesView({ active }: Props) {
     content: string;
     mime: string;
     readMode: ReadMode;
+    /// Set when the backend rendered the file into something the
+    /// browser can show — a `.pptx` converted to PDF by the
+    /// slide-render service. The viewer mounts THIS path; `path`
+    /// stays the file the user actually opened.
+    renderPath?: string;
   } | null>(null);
 
   // Bumped on every Refresh click; used as part of iframe `key` props so
@@ -306,6 +311,10 @@ export function FilesView({ active }: Props) {
   // most visible with the productivity plugin's dashboard.html, which
   // an agent regenerates after every TASKS.md mutation).
   const [previewVersion, setPreviewVersion] = useState(0);
+  // Path currently being rendered backend-side (a .pptx going through
+  // the slide-render service). Cleared when its file_content lands.
+  // Without this the tab looks frozen for the ~13s a cold render takes.
+  const [renderPending, setRenderPending] = useState<string | null>(null);
 
   const [mode, setMode] = useState<ViewMode>("preview");
   // Source-text kept separate from preview.content because the preview
@@ -363,11 +372,15 @@ export function FilesView({ active }: Props) {
           content: incomingContent,
           mime: msg.mime as string,
           readMode: incomingReadMode,
+          renderPath: (msg.render_path as string) || undefined,
         });
+        setRenderPending(null);
         if (incomingReadMode === "source") {
           setEditorSource(incomingContent);
           setEditorDirty(false);
         }
+      } else if (msg.type === "file_render_pending") {
+        setRenderPending(msg.path as string);
       } else if (msg.type === "file_written") {
         const ok = msg.ok as boolean;
         const err = msg.error as string | null | undefined;
@@ -397,16 +410,18 @@ export function FilesView({ active }: Props) {
   // preview with the fresh palette baked into its iframe HTML.
   useEffect(() => {
     if (!active) return;
-    send({ type: "file_list", path: currentPath, show_hidden: showHidden });
-    if (preview && mode === "preview") {
-      send({ type: "file_read", path: preview.path, mode: "preview", theme: themeMode });
-    }
-    const interval = setInterval(() => {
+    // Don't re-read while a backend render is in flight. The tick is 2s
+    // and a cold .pptx render takes ~13s, so without this each open
+    // fires six more renders of the same deck — each one a fresh upload
+    // and a fresh charge — before the first one answers.
+    const refresh = () => {
       send({ type: "file_list", path: currentPath, show_hidden: showHidden });
-      if (preview && mode === "preview") {
+      if (preview && mode === "preview" && !renderPending) {
         send({ type: "file_read", path: preview.path, mode: "preview", theme: themeMode });
       }
-    }, 2000);
+    };
+    refresh();
+    const interval = setInterval(refresh, 2000);
     return () => clearInterval(interval);
   // `preview?.path` is intentional — using the full `preview` object
   // would re-run on every polling cycle (setPreview creates a new
@@ -414,7 +429,7 @@ export function FilesView({ active }: Props) {
   // `showHidden` triggers an immediate refresh when toggled so the
   // listing flips without waiting for the next 2s tick.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, currentPath, preview?.path, mode, themeMode, showHidden]);
+  }, [active, currentPath, preview?.path, mode, themeMode, showHidden, renderPending]);
 
   // Drag-and-drop upload into the directory currently shown in the tree.
   // Each dropped file is base64-encoded and written via `file_upload`
@@ -801,6 +816,7 @@ export function FilesView({ active }: Props) {
   };
 
   const closePreview = async () => {
+    setRenderPending(null);
     if (mode === "edit" && editorDirty) {
       const ok = await platformConfirm({
         title: "Discard unsaved changes",
@@ -1164,7 +1180,30 @@ export function FilesView({ active }: Props) {
 
       {/* Preview / editor panel */}
       <div className="flex-1 min-w-0 min-h-0 flex flex-col p-4">
-        {preview ? (
+        {renderPending ? (
+          // A .pptx is being converted by the slide-render service. This
+          // sits ABOVE the `preview` check on purpose: on a first open
+          // there is no preview for this file yet, so a placeholder
+          // gated on `preview.path` would never appear and the pane
+          // would just sit there for ~13s looking hung.
+          <div className="flex flex-col flex-1 min-w-0 min-h-0">
+            <div
+              className="text-xs font-mono truncate mb-3 shrink-0"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              {renderPending}
+            </div>
+            <div
+              className="flex-1 min-h-0 flex flex-col items-center justify-center gap-2 text-xs"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <div className="animate-pulse">Rendering slides…</div>
+              <div className="opacity-70">
+                Converting this deck on thclaws.cloud · cached after the first time
+              </div>
+            </div>
+          </div>
+        ) : preview ? (
           <div className="flex flex-col flex-1 min-w-0 min-h-0">
             <div className="flex items-center justify-between mb-3 shrink-0 gap-2">
               <div
@@ -1300,8 +1339,8 @@ export function FilesView({ active }: Props) {
               // execution… 'allow-scripts'"), and a book PDF would
               // round-trip 5MB+ of base64 through the WS anyway.
               <iframe
-                key={`pdf-${preview.path}-${previewVersion}`}
-                src={assetUrl(preview.path)}
+                key={`pdf-${preview.renderPath ?? preview.path}-${previewVersion}`}
+                src={assetUrl(preview.renderPath ?? preview.path)}
                 className="w-full flex-1 min-h-0 rounded border"
                 style={{ borderColor: "var(--border)", background: "#fff" }}
                 title={preview.path}

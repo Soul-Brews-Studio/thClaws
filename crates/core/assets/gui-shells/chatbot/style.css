@@ -355,6 +355,19 @@ button { font: inherit; cursor: pointer; }
   border: 0; background: transparent; color: var(--text);
   padding: 9px 11px; border-radius: 9px; font-size: 13.5px;
 }
+/* Fixed-width glyph cell: the icons are ordinary characters with
+   different advance widths, so without this every label starts at a
+   different x and the list reads as ragged. */
+.settings-nav .nav-ic {
+  flex: 0 0 18px; width: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1; color: var(--text-dim);
+}
+.settings-nav .nav-item.active .nav-ic { color: var(--brand-accent); }
+.settings-nav .nav-label {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .settings-nav .nav-item:hover { background: var(--bg-hover); }
 .settings-nav .nav-item.active { background: var(--bg-active); font-weight: 550; }
 .settings-content { flex: 1; padding: 26px 30px; overflow-y: auto; }
@@ -437,3 +450,404 @@ button { font: inherit; cursor: pointer; }
   #app:not(.collapsed) .sidebar { box-shadow: 4px 0 20px rgba(0, 0, 0, .18); }
   .msg.user .content { max-width: 86%; }
 }
+
+
+/* ── Layer 1 additions ───────────────────────────────────────────── */
+
+/* In-DOM confirm (window.confirm is blocked in the shell sandbox). */
+.modal-back {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0, 0, 0, .38);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.modal {
+  width: min(380px, 100%); background: var(--bg-elev);
+  border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow-lg); padding: 18px 18px 14px;
+}
+.modal-msg { margin: 0 0 14px; font-size: 14px; line-height: 1.5; }
+.modal-row { display: flex; justify-content: flex-end; gap: 8px; }
+.modal .pinput { width: 100%; margin: 0 0 14px; }
+
+.btn {
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); border-radius: 9px;
+  padding: 7px 14px; font-size: 13px; font-weight: 500;
+}
+.btn:hover { background: var(--bg-hover); }
+.btn.primary {
+  background: var(--brand-accent); border-color: var(--brand-accent); color: #fff;
+}
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.danger { background: #d33; border-color: #d33; color: #fff; }
+.btn.danger:hover { filter: brightness(1.06); }
+.btn.ghost { background: transparent; }
+
+/* Tool activity — the agent is doing something; say what. */
+.msg.tool { justify-content: flex-start; }
+.tool-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1px solid var(--border); background: var(--bg-elev);
+  border-radius: 999px; padding: 5px 12px;
+  font-size: 12px; color: var(--text-dim);
+}
+.tool-spin {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--brand-accent);
+}
+.tool-chip.running .tool-spin { animation: tool-spin .8s linear infinite; }
+.tool-chip.ok .tool-spin {
+  border-color: var(--brand-accent); border-top-color: var(--brand-accent);
+  animation: none; opacity: .5;
+}
+@keyframes tool-spin { to { transform: rotate(360deg); } }
+.tool-more {
+  border: 0; background: transparent; color: var(--brand-accent);
+  font-size: 11px; padding: 0 2px; text-decoration: underline;
+}
+.tool-out {
+  margin: 6px 0 0; padding: 10px 12px; max-width: 100%;
+  background: var(--codeblock-bg); color: var(--codeblock-fg);
+  border-radius: 10px; font-size: 12px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 260px; overflow: auto;
+}
+
+/* Tool approval — Ask mode used to hang here with nothing on screen. */
+.msg.approval { justify-content: flex-start; }
+.approval-card {
+  width: min(560px, 100%);
+  border: 1px solid var(--brand-accent); border-radius: 14px;
+  background: var(--brand-accent-soft); padding: 14px 16px;
+}
+.approval-card.resolved { border-color: var(--border); background: var(--bg-elev); opacity: .75; }
+.approval-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.approval-ic { font-size: 14px; }
+.approval-title { font-size: 14px; font-weight: 600; }
+.approval-detail {
+  margin: 0 0 12px; padding: 10px 12px;
+  background: var(--codeblock-bg); color: var(--codeblock-fg);
+  border-radius: 10px; font-size: 12px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 200px; overflow: auto;
+}
+.approval-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.approval-done { font-size: 12px; color: var(--text-dim); }
+
+/* Message actions — appear on hover of a finished reply. */
+.msg { position: relative; }
+.msg-actions {
+  display: flex; gap: 4px; margin-top: 6px;
+  opacity: 0; transition: opacity .12s ease;
+}
+.msg:hover .msg-actions, .msg:focus-within .msg-actions { opacity: 1; }
+.msg-act {
+  border: 1px solid transparent; background: transparent;
+  color: var(--text-dim); font-size: 11px;
+  padding: 3px 8px; border-radius: 7px;
+}
+.msg-act:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border); }
+
+/* Send button doubles as stop while a turn runs. */
+.send.stopping { background: var(--text-dim); }
+.send.stopping:hover { filter: brightness(1.1); }
+
+/* Desktop has no login: the account row becomes a plain Settings entry. */
+.account.anon .chev { display: none; }
+/* index.html renders the glyph as text, so replace it rather than
+   layering a ::before on top of it. */
+.acct-row .ic-user {
+  flex: 0 0 18px; width: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.account.anon .ic-user { font-size: 0; }
+.account.anon .ic-user::after { content: "\2699"; font-size: 13px; }
+
+
+/* ── Layer 2 additions ───────────────────────────────────────────── */
+
+/* Code blocks: language tag + copy, revealed on hover of the block. */
+pre.code { position: relative; padding-top: 30px; }
+.code-bar {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 10px; font-size: 11px;
+  color: var(--text-dim);
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+}
+.code-lang { text-transform: uppercase; letter-spacing: .06em; }
+.code-copy {
+  border: 0; background: transparent; color: var(--text-dim);
+  font-size: 11px; padding: 2px 6px; border-radius: 6px;
+  opacity: 0; transition: opacity .12s ease;
+}
+pre.code:hover .code-copy, .code-copy:focus { opacity: 1; }
+.code-copy:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+
+/* Images the agent produced, rendered inline. */
+.md-img {
+  max-width: 100%; height: auto; border-radius: 10px;
+  border: 1px solid var(--border); margin: 8px 0; display: block;
+}
+
+/* Attachment thumbnails. */
+.attach-thumb {
+  width: 18px; height: 18px; border-radius: 4px;
+  object-fit: cover; margin-right: 2px; vertical-align: middle;
+}
+
+/* Slash-command palette. */
+.slash-menu {
+  margin-bottom: 8px; padding: 6px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: var(--shadow);
+  max-height: 260px; overflow: auto;
+}
+.slash-row {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 7px 10px; border: 0; background: transparent;
+  border-radius: 8px; text-align: left; color: var(--text);
+}
+.slash-row.active, .slash-row:hover { background: var(--bg-hover); }
+.slash-cmd {
+  font-size: 13px; font-weight: 600; color: var(--brand-accent);
+  /* Same reason as .nav-ic: without a fixed column the descriptions
+     step in and out with the length of each command. */
+  flex: 0 0 96px; width: 96px;
+}
+.slash-desc {
+  font-size: 12px; color: var(--text-dim);
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Knowledge-base + research rows in the settings drawer. */
+.kms-row, .res-row {
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.kms-row:last-child, .res-row:last-child { border-bottom: 0; }
+.kms-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.kms-page {
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); border-radius: 999px;
+  padding: 4px 10px; font-size: 12px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kms-page:hover { background: var(--bg-hover); border-color: var(--brand-accent); }
+.btn.small { padding: 4px 10px; font-size: 12px; margin-top: 8px; }
+.muted.err { color: #d33; }
+
+
+/* ── Layer 3 additions ───────────────────────────────────────────── */
+
+/* Per-turn cost + latency under the reply it belongs to. */
+.usage {
+  margin-top: 6px; font-size: 11px; color: var(--text-dim);
+  opacity: .75; font-variant-numeric: tabular-nums;
+}
+
+/* Edit on a user bubble. */
+.msg-edit {
+  border: 0; background: transparent; color: rgba(255, 255, 255, .75);
+  font-size: 11px; padding: 2px 6px; margin-left: 8px;
+  border-radius: 6px; opacity: 0; transition: opacity .12s ease;
+}
+.msg.user:hover .msg-edit { opacity: 1; }
+.msg-edit:hover { background: rgba(255, 255, 255, .18); color: #fff; }
+
+/* Sidebar rename. */
+.item-ren {
+  margin-left: auto; font-size: 11px; color: var(--text-dim);
+  opacity: 0; padding: 0 4px;
+}
+.item:hover .item-ren { opacity: 1; }
+.item-ren:hover { color: var(--text); }
+.item-rename {
+  flex: 1; min-width: 0; font: inherit; font-size: 13px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--brand-accent); border-radius: 6px;
+  padding: 2px 6px;
+}
+
+/* Drag-and-drop overlay. */
+#app.dropping::after {
+  content: "Drop files to attach";
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+  border: 2px dashed var(--brand-accent);
+  font-size: 15px; font-weight: 600; color: var(--text);
+  pointer-events: none;
+}
+
+/* Find in conversation. */
+.find-bar {
+  position: absolute; top: 12px; right: 16px; z-index: 30;
+  display: flex; align-items: center; gap: 4px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 10px; padding: 6px 8px; box-shadow: var(--shadow);
+}
+.find-bar input {
+  font: inherit; font-size: 13px; width: 200px;
+  background: transparent; border: 0; color: var(--text); outline: none;
+}
+.find-bar button {
+  border: 0; background: transparent; color: var(--text-dim);
+  font-size: 12px; padding: 2px 6px; border-radius: 6px;
+}
+.find-bar button:hover { background: var(--bg-hover); color: var(--text); }
+.find-count {
+  font-size: 11px; color: var(--text-dim);
+  min-width: 34px; text-align: right; font-variant-numeric: tabular-nums;
+}
+.msg.found .content {
+  outline: 2px solid color-mix(in srgb, var(--brand-accent) 45%, transparent);
+  outline-offset: 2px; border-radius: 10px;
+}
+.msg.found.current .content {
+  outline-color: var(--brand-accent);
+  background: var(--brand-accent-soft);
+}
+
+
+/* ── Layer 4 additions ───────────────────────────────────────────── */
+
+/* Pinned chats. */
+.item-pin {
+  font-size: 11px; color: var(--text-dim);
+  opacity: 0; padding: 0 2px;
+}
+.item:hover .item-pin, .item-pin.on { opacity: 1; }
+.item-pin.on { color: var(--brand-accent); }
+.item.pinned .item-title { font-weight: 600; }
+
+/* Multi-select. */
+.select-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; margin: 0 0 6px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.select-count {
+  flex: 1; font-size: 12px; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.item-check {
+  width: 15px; height: 15px; flex: 0 0 15px;
+  border: 1px solid var(--border); border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #fff; margin-right: 2px;
+}
+.item-check.on { background: var(--brand-accent); border-color: var(--brand-accent); }
+#app.selecting .item-del, #app.selecting .item-ren { display: none; }
+
+/* Text inputs inside settings panels. */
+.pinput {
+  width: 100%; font: inherit; font-size: 13px;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 10px; margin: 6px 0 4px;
+}
+.pinput:focus { outline: none; border-color: var(--brand-accent); }
+.pcard .btn.small { margin-right: 6px; }
+
+
+/* ── My Models panel ─────────────────────────────────────────────── */
+.model-search {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: center; gap: 10px;
+  /* Negative gutters so the bar's background covers the full scrollport
+     width — .settings-content has 30px side padding and sticky doesn't
+     inherit it. */
+  margin: 10px -30px 14px; padding: 10px 30px 12px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+}
+.model-search .pinput { flex: 1; }
+.model-hits { flex: 0 0 auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+.hide { display: none !important; }
+.models { display: flex; flex-direction: column; gap: 14px; }
+.models-divider {
+  margin-top: 6px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--text-dim);
+}
+.provider-card {
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 14px; background: var(--bg-elev);
+}
+.provider-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.provider-name { font-size: 14px; font-weight: 600; }
+.provider-key { margin-left: auto; margin-top: 0; }
+.badge.featured {
+  background: var(--brand-accent-soft); color: var(--brand-accent);
+  border: 1px solid var(--brand-accent);
+  border-radius: 999px; padding: 1px 8px; font-size: 10px;
+}
+.model-grid { display: flex; flex-direction: column; gap: 4px; }
+.model-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  font: inherit; cursor: pointer;
+  border: 1px solid transparent; background: transparent;
+  color: var(--text); text-align: left;
+  border-radius: 8px; padding: 6px 9px; font-size: 13px;
+}
+.model-row:hover { background: var(--bg-hover); border-color: var(--border); }
+.model-row.active {
+  background: var(--brand-accent-soft);
+  border-color: var(--brand-accent); font-weight: 600;
+}
+.model-row.active::after {
+  content: "active"; margin-left: auto;
+  font-size: 10px; color: var(--brand-accent);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.model-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-ctx {
+  margin-left: auto; font-size: 11px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.model-row.active .model-ctx { margin-left: 0; }
+.key-form {
+  margin-top: 10px; padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.key-form .pinput { width: 100%; }
+.key-form .muted { margin-top: 6px; font-size: 11px; line-height: 1.5; }
+
+
+/* ── Plugins panel ───────────────────────────────────────────────── */
+.plug-list { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+.plug-card { display: flex; flex-direction: column; gap: 5px; }
+/* A disabled plugin still has to be readable — it's the thing you came
+   to switch back on — so dim it, don't bury it. */
+.plug-card.off { opacity: .62; }
+.plug-card.off .pcard-title { text-decoration: line-through; }
+.skill-form, .plug-form { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.skill-form .pinput, .plug-form .pinput { width: 100%; }
+.skill-form .pbtn, .plug-form .pbtn { align-self: flex-start; }
+.plug-scope { display: flex; align-items: center; gap: 6px; }
+.plug-scope input { margin: 0; }
+
+/* ── Connectors panel ────────────────────────────────────────────── */
+.conn-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.conn-card { display: flex; flex-direction: column; gap: 6px; }
+.conn-dot {
+  flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-dim);
+}
+.conn-dot.connected { background: #2ea043; }
+.conn-dot.failed { background: #d33; }
+.conn-dot.connecting { background: #d29922; }
+.conn-target {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; word-break: break-all;
+}
+.kb-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.kb-form .pinput { width: 100%; }
+.kb-form .pbtn { align-self: flex-start; }
+.conn-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.conn-form .pinput { width: 100%; }
+.conn-form .pbtn { align-self: flex-start; }

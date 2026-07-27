@@ -1620,7 +1620,21 @@ fn resolve_session_handle(
         eprintln!("\x1b[33m[serve] HMAC rejected: {e}\x1b[0m");
         StatusCode::UNAUTHORIZED
     })?;
-    let session = mt.registry.get_or_spawn(&user_id);
+    // Display name is NOT part of the signed triple — it's advisory,
+    // for greeting the user. The id is what's authenticated.
+    // Percent-encoded UTF-8: HTTP header values are latin-1 and most of
+    // our users have Thai names, so the API encodes and we decode. A
+    // malformed value degrades to no name rather than failing the
+    // connection — it's a greeting, not an auth input.
+    let display_name = headers
+        .get("x-thclaws-user-name")
+        .and_then(|v| v.to_str().ok())
+        .map(|raw| {
+            urlencoding::decode(raw)
+                .map(|c| c.into_owned())
+                .unwrap_or_else(|_| raw.to_string())
+        });
+    let session = mt.registry.get_or_spawn(&user_id, display_name.as_deref());
     Ok(session.handle.clone())
 }
 

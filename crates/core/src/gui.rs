@@ -330,6 +330,50 @@ pub(crate) fn clear_mcp_tool_counts() {
     if let Ok(mut map) = mcp_tool_counts().lock() {
         map.clear();
     }
+    if let Ok(mut map) = mcp_failures().lock() {
+        map.clear();
+    }
+}
+
+/// Why a configured MCP server isn't online, keyed by server name.
+/// `McpFailed` used to only print an error line into the transcript,
+/// which scrolls away — a Connectors surface has to be able to answer
+/// "this one is configured but not working, and here's why" at any
+/// later moment.
+static MCP_FAILURES: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, String>>,
+> = std::sync::OnceLock::new();
+
+fn mcp_failures() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+    MCP_FAILURES.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Record why `server_name` failed to come online.
+pub(crate) fn record_mcp_failure(server_name: &str, error: &str) {
+    if let Ok(mut map) = mcp_failures().lock() {
+        map.insert(server_name.to_string(), error.to_string());
+    }
+}
+
+/// Forget a server's failure — it connected, or it was removed.
+pub(crate) fn clear_mcp_failure(server_name: &str) {
+    if let Ok(mut map) = mcp_failures().lock() {
+        map.remove(server_name);
+    }
+}
+
+/// Snapshot of `(name, error)` for every server currently in a failed
+/// state.
+pub(crate) fn mcp_failure_snapshot() -> std::collections::HashMap<String, String> {
+    mcp_failures().lock().map(|m| m.clone()).unwrap_or_default()
+}
+
+/// Snapshot of `(name, tool_count)` for every server that connected.
+pub(crate) fn mcp_tool_count_snapshot() -> std::collections::HashMap<String, usize> {
+    mcp_tool_counts()
+        .lock()
+        .map(|m| m.clone())
+        .unwrap_or_default()
 }
 
 /// Build the `[{name, tools}]` array that the sidebar consumes for
@@ -344,12 +388,22 @@ pub(crate) fn clear_mcp_tool_counts() {
 /// (`.thclaws/mcp.json` / `.mcp.json` / `.claude/mcp.json`) scopes
 /// per `AppConfig::load` — project overrides user by name. Both
 /// scopes flow through unchanged here.
+///
+/// Plugin-contributed servers are appended (config wins on a name
+/// clash), mirroring the merge the worker does before spawning. The
+/// worker has spawned them since the tool-parity fix, so omitting them
+/// here listed fewer servers than the session actually had running.
 pub(crate) fn build_mcp_servers_payload(
     config: &crate::config::AppConfig,
 ) -> Vec<serde_json::Value> {
     let counts = mcp_tool_counts().lock().unwrap_or_else(|e| e.into_inner());
-    config
-        .mcp_servers
+    let mut merged = config.mcp_servers.clone();
+    for p_mcp in crate::plugins::plugin_mcp_servers() {
+        if !merged.iter().any(|s| s.name == p_mcp.name) {
+            merged.push(p_mcp);
+        }
+    }
+    merged
         .iter()
         .map(|s| {
             let tool_count = counts.get(&s.name).copied().unwrap_or(0);

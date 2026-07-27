@@ -4455,17 +4455,6 @@
           "output_per_mtok": 0.6,
           "cached_input_per_mtok": 0.075
         },
-        "openai/gpt-4o-mini-search-preview": {
-          "context": 128000,
-          "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
-          "verified_at": "2026-06-10",
-          "free": false,
-          "chat": true,
-          "input_per_mtok": 0.15,
-          "output_per_mtok": 0.6,
-          "cached_input_per_mtok": 0.075
-        },
         "openai/gpt-4o-search-preview": {
           "context": 128000,
           "max_output": 16384,
