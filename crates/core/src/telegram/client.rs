@@ -18,8 +18,8 @@ use std::time::Duration;
 
 use super::config::redact_token;
 use super::protocol::{
-    AnswerCallbackQuery, ApiResponse, ChatMember, EditMessageText, Message, SendMessage, Update,
-    User,
+    AnswerCallbackQuery, ApiResponse, ChatMember, EditMessageText, File, Message, SendMessage,
+    Update, User,
 };
 
 /// Server-side long-poll hold. Telegram holds the `getUpdates`
@@ -116,6 +116,79 @@ impl TelegramClient {
             .await
             .map_err(|e| TelegramClientError::Http(e.to_string()))?;
         api_result(body)
+    }
+
+    /// File-download URL. Note the shape differs from an API method
+    /// call: `/file/bot<token>/<path>`, not `/bot<token>/<method>`.
+    pub fn file_url(&self, file_path: &str) -> String {
+        format!("{}/file/bot{}/{}", self.api_base, self.token, file_path)
+    }
+
+    /// `getFile` — resolves a `file_id` to the `file_path` its bytes
+    /// live at. Telegram expires these paths, so fetch and download in
+    /// the same turn rather than caching the result.
+    pub async fn get_file(&self, file_id: &str) -> Result<File, TelegramClientError> {
+        let url = self.method_url("getFile");
+        let resp = self
+            .http
+            .get(&url)
+            .query(&[("file_id", file_id)])
+            .send()
+            .await
+            .map_err(|e| TelegramClientError::Http(e.to_string()))?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(TelegramClientError::Unauthorized);
+        }
+        let body: ApiResponse<File> = resp
+            .json()
+            .await
+            .map_err(|e| TelegramClientError::Http(e.to_string()))?;
+        api_result(body)
+    }
+
+    /// Download a file's bytes. `max_bytes` caps what we're willing to
+    /// pull into memory — a photo becomes base64 in the prompt, so an
+    /// oversized one costs tokens and can blow the provider's request
+    /// limit long before it helps anyone.
+    pub async fn download_file(
+        &self,
+        file_path: &str,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, TelegramClientError> {
+        let url = self.file_url(file_path);
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| TelegramClientError::Http(e.to_string()))?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(TelegramClientError::Unauthorized);
+        }
+        if !resp.status().is_success() {
+            return Err(TelegramClientError::Http(format!(
+                "download {file_path}: HTTP {}",
+                resp.status()
+            )));
+        }
+        if let Some(len) = resp.content_length() {
+            if len as usize > max_bytes {
+                return Err(TelegramClientError::Http(format!(
+                    "file is {len} bytes, over the {max_bytes}-byte limit"
+                )));
+            }
+        }
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| TelegramClientError::Http(e.to_string()))?;
+        if bytes.len() > max_bytes {
+            return Err(TelegramClientError::Http(format!(
+                "file is {} bytes, over the {max_bytes}-byte limit",
+                bytes.len()
+            )));
+        }
+        Ok(bytes.to_vec())
     }
 
     pub async fn send_message(&self, msg: &SendMessage) -> Result<(), TelegramClientError> {

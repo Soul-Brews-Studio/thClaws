@@ -136,6 +136,53 @@ impl TelegramMessageHandler for HeadlessAgentHandler {
         }
         Some(buf)
     }
+
+    /// Photo turns (public issue #187). Same loop as `handle_message`,
+    /// but the turn starts from a mixed Text + Image content vec —
+    /// `run_turn_multipart`, exactly what the GUI paste path calls.
+    async fn handle_message_with_images(
+        &self,
+        text: String,
+        images: Vec<(String, String)>,
+        agent_id: Option<String>,
+        preview: Option<Arc<dyn super::stream::PreviewSink>>,
+    ) -> Option<String> {
+        use crate::types::{ContentBlock, ImageSource};
+
+        let agent = self.agent_for(agent_id).await;
+        let _turn = self.turn_lock.lock().await;
+
+        let mut content: Vec<ContentBlock> = Vec::new();
+        if !text.trim().is_empty() {
+            content.push(ContentBlock::text(text));
+        }
+        for (media_type, data) in images {
+            content.push(ContentBlock::Image {
+                source: ImageSource::Base64 { media_type, data },
+            });
+        }
+        if content.is_empty() {
+            return None;
+        }
+
+        let mut stream = Box::pin(agent.run_turn_multipart(content));
+        let mut buf = String::new();
+        while let Some(ev) = stream.next().await {
+            match ev {
+                Ok(AgentEvent::Text(s)) => {
+                    buf.push_str(&s);
+                    if let Some(p) = &preview {
+                        p.update(&buf).await;
+                    }
+                }
+                Ok(AgentEvent::ToolCallStart { .. }) => buf.clear(),
+                Ok(AgentEvent::Done { .. }) => break,
+                Err(e) => return Some(format!("⚠️ thClaws hit an error: {e}")),
+                _ => {}
+            }
+        }
+        Some(buf)
+    }
 }
 
 /// True when a Telegram message is a conversation-reset command

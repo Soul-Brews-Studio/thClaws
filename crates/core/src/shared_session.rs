@@ -231,6 +231,10 @@ pub enum ShellInput {
     /// then chunks + sends it back via `sendMessage`.
     TelegramMessage {
         text: String,
+        /// Attachments as `(media_type, base64)` — a Telegram photo
+        /// (public issue #187). Empty for a plain text message, which
+        /// keeps that path on `handle_line` exactly as before.
+        images: Vec<(String, String)>,
         respond: tokio::sync::oneshot::Sender<String>,
     },
     /// dev-plan/29: owner approved a pairing code in the GUI. Worker
@@ -2712,7 +2716,11 @@ async fn run_worker(
                     "[telegram] bridge disconnected".into(),
                 ));
             }
-            ShellInput::TelegramMessage { text, respond } => {
+            ShellInput::TelegramMessage {
+                text,
+                images,
+                respond,
+            } => {
                 // Drive the live agent for an inbound Telegram message.
                 // Subscribe before the turn, accumulate the FINAL
                 // assistant text (cleared on each ToolCallStart so only
@@ -2744,7 +2752,19 @@ async fn run_worker(
                 // "please ask in your reply" text instead of a GUI modal
                 // the Telegram user can't see (reuses the LINE flag).
                 crate::tools::ask::set_line_driven_turn(true);
-                handle_line(text, &mut state, &events_tx, &cancel, &input_tx_self).await;
+                if images.is_empty() {
+                    handle_line(text, &mut state, &events_tx, &cancel, &input_tx_self).await;
+                } else {
+                    handle_line_with_images(
+                        text,
+                        images,
+                        &mut state,
+                        &events_tx,
+                        &cancel,
+                        &input_tx_self,
+                    )
+                    .await;
+                }
                 crate::tools::ask::set_line_driven_turn(false);
                 let final_text = collector.await.unwrap_or_default();
                 let _ = respond.send(final_text);

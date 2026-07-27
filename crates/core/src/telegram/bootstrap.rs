@@ -32,20 +32,19 @@ struct WorkerForwardHandler {
     input_tx: mpsc::Sender<crate::shared_session::ShellInput>,
 }
 
-#[async_trait]
-impl TelegramMessageHandler for WorkerForwardHandler {
-    async fn handle_message(
+impl WorkerForwardHandler {
+    /// One inbound turn, with or without attachments. The worker drives
+    /// the real agent and answers on the oneshot.
+    async fn forward(
         &self,
         text: String,
+        images: Vec<(String, String)>,
         agent_id: Option<String>,
-        _preview: Option<Arc<dyn super::stream::PreviewSink>>,
     ) -> Option<String> {
         // Tier 2: the GUI worker runs a single shared session, so a
         // per-topic `agent_id` can't yet route to a different agent here
         // (that needs worker-side multi-agent spawning — a follow-up).
         // The headless path (`telegram::headless`) honours it fully.
-        // Tier 3.1: streaming preview is headless-only too; the GUI worker
-        // ignores `_preview` and the sink sends the final reply once.
         if let Some(a) = &agent_id {
             eprintln!(
                 "[telegram] topic routed to agent '{a}' (GUI worker runs the shared session)"
@@ -54,7 +53,11 @@ impl TelegramMessageHandler for WorkerForwardHandler {
         let (tx, rx) = oneshot::channel();
         if self
             .input_tx
-            .send(crate::shared_session::ShellInput::TelegramMessage { text, respond: tx })
+            .send(crate::shared_session::ShellInput::TelegramMessage {
+                text,
+                images,
+                respond: tx,
+            })
             .is_err()
         {
             return Some("⚠️ thClaws worker is unavailable; restart thClaws and try again.".into());
@@ -63,6 +66,33 @@ impl TelegramMessageHandler for WorkerForwardHandler {
             Ok(s) if !s.trim().is_empty() => Some(s),
             _ => Some("(thClaws agent finished the turn without a text reply.)".into()),
         }
+    }
+}
+
+#[async_trait]
+impl TelegramMessageHandler for WorkerForwardHandler {
+    /// Tier 3.1: streaming preview is headless-only; the GUI worker
+    /// ignores `_preview` and the sink sends the final reply once.
+    async fn handle_message(
+        &self,
+        text: String,
+        agent_id: Option<String>,
+        _preview: Option<Arc<dyn super::stream::PreviewSink>>,
+    ) -> Option<String> {
+        self.forward(text, Vec::new(), agent_id).await
+    }
+
+    /// Photos ride the same worker channel as text (public issue #187) —
+    /// the worker feeds them into `run_turn_multipart`, the same call the
+    /// GUI's paste path uses.
+    async fn handle_message_with_images(
+        &self,
+        text: String,
+        images: Vec<(String, String)>,
+        agent_id: Option<String>,
+        _preview: Option<Arc<dyn super::stream::PreviewSink>>,
+    ) -> Option<String> {
+        self.forward(text, images, agent_id).await
     }
 }
 

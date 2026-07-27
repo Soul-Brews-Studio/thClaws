@@ -39,6 +39,47 @@ use super::{channel, topic};
 /// Idle window after which a chat's registry entry is GC'd (decision #7).
 pub const IDLE_GC: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// Cap on a downloaded attachment. It becomes base64 inside the prompt,
+/// so an oversized photo costs tokens and can trip the provider's
+/// request limit long before it helps the user.
+pub const MAX_ATTACHMENT_BYTES: usize = 8 * 1024 * 1024;
+
+/// `file_id` → `(media_type, base64)`, ready for the multipart turn.
+async fn fetch_photo(
+    client: &TelegramClient,
+    file_id: &str,
+) -> Result<(String, String), TelegramClientError> {
+    let file = client.get_file(file_id).await?;
+    let path = file
+        .file_path
+        .ok_or_else(|| TelegramClientError::Http("getFile returned no file_path".to_string()))?;
+    let bytes = client.download_file(&path, MAX_ATTACHMENT_BYTES).await?;
+    let media_type = media_type_for(&path);
+    Ok((media_type, base64_encode(&bytes)))
+}
+
+/// Telegram serves photos as `.jpg` but re-encodes some uploads; go by
+/// the path it hands back rather than assuming.
+fn media_type_for(file_path: &str) -> String {
+    let ext = file_path
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "image/jpeg",
+    }
+    .to_string()
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
 /// What to do when an authorized Telegram user sends text. The worker
 /// provides the concrete impl (forwards into the shared session).
 #[async_trait]
@@ -57,6 +98,30 @@ pub trait TelegramMessageHandler: Send + Sync + 'static {
         agent_id: Option<String>,
         preview: Option<Arc<dyn PreviewSink>>,
     ) -> Option<String>;
+
+    /// Same, but the turn carries images (Tier 3 media — public issue
+    /// #187, reported by HelloMAF). Each attachment is
+    /// `(media_type, base64_data)`, matching `ShellInput::LineWithImages`.
+    ///
+    /// The default drops the attachments and runs the caption alone,
+    /// which is what an implementer without a multimodal path can
+    /// honestly do — but it says so in the reply rather than going
+    /// silent, because a photo vanishing with no feedback at all is the
+    /// bug being fixed.
+    async fn handle_message_with_images(
+        &self,
+        text: String,
+        images: Vec<(String, String)>,
+        agent_id: Option<String>,
+        preview: Option<Arc<dyn PreviewSink>>,
+    ) -> Option<String> {
+        let _ = &images;
+        let reply = self.handle_message(text, agent_id, preview).await;
+        Some(match reply {
+            Some(r) => format!("{r}\n\n_(the image didn't reach the model — this session can't take attachments yet)_"),
+            None => "I can't read images in this session yet — send the question as text.".to_string(),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -232,7 +297,14 @@ impl SessionSink {
     /// blocks on a turn. `agent_id` (Tier 2) routes the turn to a
     /// per-topic agent; when `stream_preview` is on (Tier 3.1) the reply
     /// is streamed as an in-place edit, otherwise sent once at the end.
-    fn spawn_turn(&self, chat_id: i64, topic: Option<i64>, agent_id: Option<String>, text: String) {
+    fn spawn_turn(
+        &self,
+        chat_id: i64,
+        topic: Option<i64>,
+        agent_id: Option<String>,
+        text: String,
+        photo_file_id: Option<String>,
+    ) {
         if let Some(approver) = &self.approver {
             approver.set_active_chat(chat_id);
         }
@@ -252,7 +324,32 @@ impl SessionSink {
             let preview_sink: Option<Arc<dyn PreviewSink>> =
                 preview.clone().map(|p| p as Arc<dyn PreviewSink>);
 
-            let Some(reply) = handler.handle_message(text, agent_id, preview_sink).await else {
+            // Fetch attachments before the turn starts. A failure here
+            // must not swallow the message the way the old early-return
+            // did — fall through to a text-only turn and say why.
+            let mut images: Vec<(String, String)> = Vec::new();
+            let mut fetch_note: Option<String> = None;
+            if let Some(file_id) = photo_file_id {
+                match fetch_photo(&client, &file_id).await {
+                    Ok(img) => images.push(img),
+                    Err(e) => {
+                        eprintln!("[telegram] photo {file_id} not fetched: {e}");
+                        fetch_note = Some(format!("(couldn't download the image: {e})"));
+                    }
+                }
+            }
+
+            let reply = if images.is_empty() {
+                handler.handle_message(text, agent_id, preview_sink).await
+            } else {
+                handler
+                    .handle_message_with_images(text, images, agent_id, preview_sink)
+                    .await
+            };
+            let Some(reply) = reply.map(|r| match &fetch_note {
+                Some(note) => format!("{r}\n\n{note}"),
+                None => r,
+            }) else {
                 return;
             };
 
@@ -342,8 +439,17 @@ impl SessionSink {
             return;
         }
 
-        let Some(text) = msg.text.clone() else {
-            // Text-only until Tier 3 media support (photos, voice, …).
+        // A photo arrives with its words in `caption`, not `text` — so
+        // this used to look like a textless message and get dropped
+        // without a reply or a log line (public issue #187). Voice,
+        // documents and video are still out of scope and still fall
+        // through the `else` below.
+        let photo_file_id = msg.largest_photo().map(|p| p.file_id.clone());
+        let Some(text) = msg.text_or_caption().map(str::to_string).or_else(|| {
+            photo_file_id
+                .as_ref()
+                .map(|_| "What is in this image?".to_string())
+        }) else {
             return;
         };
 
@@ -355,7 +461,7 @@ impl SessionSink {
             ChatKind::Private => {
                 let user_id = msg.from.as_ref().map(|u| u.id).unwrap_or(chat.id);
                 if self.dm_authorized(user_id) {
-                    self.route_authorized_text(chat.id, None, None, text);
+                    self.route_authorized_text(chat.id, None, None, text, photo_file_id);
                     return;
                 }
                 match self.dm_policy() {
@@ -386,7 +492,7 @@ impl SessionSink {
                     .unwrap_or(false);
                 if self.group_authorized(chat.id) || is_channel_surface {
                     let agent_id = self.route_for(chat.id, topic);
-                    self.route_authorized_text(chat.id, topic, agent_id, text);
+                    self.route_authorized_text(chat.id, topic, agent_id, text, photo_file_id);
                 } else {
                     eprintln!(
                         "[telegram] ignoring message from unallowlisted group {}",
@@ -412,6 +518,7 @@ impl SessionSink {
         topic: Option<i64>,
         agent_id: Option<String>,
         text: String,
+        photo_file_id: Option<String>,
     ) {
         if let Some(approver) = &self.approver {
             if approver.has_pending() {
@@ -435,7 +542,7 @@ impl SessionSink {
                 }
             }
         }
-        self.spawn_turn(chat_id, topic, agent_id, text);
+        self.spawn_turn(chat_id, topic, agent_id, text, photo_file_id);
     }
 }
 
@@ -463,6 +570,31 @@ impl TelegramUpdateSink for SessionSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Telegram hands back a path, not a content type — and it doesn't
+    /// always re-encode to JPEG. Guessing wrong means the provider gets
+    /// a media_type that doesn't match the bytes.
+    #[test]
+    fn media_type_follows_the_returned_path() {
+        assert_eq!(media_type_for("photos/file_7.jpg"), "image/jpeg");
+        assert_eq!(media_type_for("photos/file_7.JPG"), "image/jpeg");
+        assert_eq!(media_type_for("photos/file_7.png"), "image/png");
+        assert_eq!(media_type_for("photos/file_7.webp"), "image/webp");
+        assert_eq!(media_type_for("photos/file_7.gif"), "image/gif");
+        // No extension at all → the format Telegram serves by default.
+        assert_eq!(media_type_for("photos/file_7"), "image/jpeg");
+    }
+
+    #[test]
+    fn base64_round_trips() {
+        use base64::Engine as _;
+        let raw = b"\x89PNG\r\n\x1a\n";
+        let encoded = base64_encode(raw);
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .unwrap();
+        assert_eq!(decoded, raw);
+    }
 
     #[test]
     fn registry_counts_and_gcs() {

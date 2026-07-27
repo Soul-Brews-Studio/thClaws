@@ -1,7 +1,7 @@
 {
   "schema": 4,
   "source": "baseline 2026-06-10 — pricing synced from LiteLLM (github.com/BerriAI/litellm)",
-  "fetched_at": "2026-07-26T00:00:00Z",
+  "fetched_at": "2026-07-27T00:00:00Z",
   "providers": {
     "anthropic": {
       "list_url": "https://api.anthropic.com/v1/models",
@@ -1449,11 +1449,6 @@
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
         },
-        "nvidia/abacusai/dracarys-llama-3.1-70b-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
         "nvidia/adept/fuyu-8b": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
@@ -1475,11 +1470,6 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/bigcode/starcoder2-15b": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/bytedance/seed-oss-36b-instruct": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
@@ -1524,11 +1514,6 @@
           "source": "https://integrate.api.nvidia.com/v1/models",
           "verified_at": "2026-06-11"
         },
-        "nvidia/google/gemma-2-2b-it": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
         "nvidia/google/gemma-2b": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
@@ -1540,16 +1525,6 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/google/gemma-3-4b-it": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/google/gemma-3n-e2b-it": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/google/gemma-3n-e4b-it": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
@@ -1624,11 +1599,6 @@
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
         },
-        "nvidia/meta/llama-4-maverick-17b-128e-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
         "nvidia/meta/llama-guard-4-12b": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
@@ -1654,22 +1624,12 @@
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
         },
-        "nvidia/minimaxai/minimax-m2.7": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
         "nvidia/minimaxai/minimax-m3": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models",
           "verified_at": "2026-06-12"
         },
         "nvidia/mistralai/codestral-22b-instruct-v0.1": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/mistralai/ministral-14b-instruct-2512": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
@@ -1699,17 +1659,7 @@
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
         },
-        "nvidia/mistralai/mistral-small-4-119b-2603": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
         "nvidia/mistralai/mixtral-8x22b-v0.1": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/mistralai/mixtral-8x7b-instruct-v0.1": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
@@ -1735,11 +1685,6 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/embed-qa-4": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/nvidia/gliner-pii": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
@@ -1959,27 +1904,7 @@
           "source": "https://integrate.api.nvidia.com/v1/models",
           "verified_at": "2026-07-17"
         },
-        "nvidia/qwen/qwen3-next-80b-a3b-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/qwen/qwen3.5-397b-a17b": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/sarvamai/sarvam-m": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
         "nvidia/snowflake/arctic-embed-l": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/stepfun-ai/step-3.5-flash": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
@@ -1993,11 +1918,6 @@
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models",
           "verified_at": "2026-07-17"
-        },
-        "nvidia/upstage/solar-10.7b-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
         },
         "nvidia/writer/palmyra-creative-122b": {
           "context": 131072,
@@ -3795,26 +3715,6 @@
           "chat": true,
           "input_per_mtok": 0.075,
           "output_per_mtok": 0.625
-        },
-        "inflection/inflection-3-pi": {
-          "context": 8000,
-          "max_output": 1024,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
-          "verified_at": "2026-06-10",
-          "free": false,
-          "chat": true,
-          "input_per_mtok": 2.5,
-          "output_per_mtok": 10.0
-        },
-        "inflection/inflection-3-productivity": {
-          "context": 8000,
-          "max_output": 1024,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
-          "verified_at": "2026-06-10",
-          "free": false,
-          "chat": true,
-          "input_per_mtok": 2.5,
-          "output_per_mtok": 10.0
         },
         "kwaipilot/kat-coder-pro-v2": {
           "context": 256000,

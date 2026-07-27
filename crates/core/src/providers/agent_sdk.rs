@@ -167,21 +167,55 @@ fn find_on_path(name: &str) -> Option<std::path::PathBuf> {
     })
 }
 
+/// The `message.content` we hand the CLI for this turn.
+///
+/// Prior history lives server-side under `--session-id`, so only the new
+/// user message travels. It used to travel as the first text block and
+/// nothing else, which silently dropped a pasted or dragged image —
+/// under `agent/*` the model answered as if none had been attached
+/// (public issue #185, reported by HelloMAF).
+///
+/// A text-only turn still serializes as a bare string, which is what the
+/// CLI has always received; a turn carrying an image switches to the
+/// block array. `ContentBlock`'s serde tagging already emits the
+/// Anthropic wire shape the CLI accepts, so the blocks pass through
+/// as-is. Non-user-authored blocks (thinking, tool_use, tool_result) are
+/// history, not input, and stay out.
+fn user_turn_content(last: Option<&crate::types::Message>) -> Value {
+    use crate::types::ContentBlock;
+    let Some(msg) = last else {
+        return Value::String(String::new());
+    };
+    let carries_image = msg
+        .content
+        .iter()
+        .any(|b| matches!(b, ContentBlock::Image { .. }));
+    if !carries_image {
+        let text = msg
+            .content
+            .iter()
+            .find_map(|b| match b {
+                ContentBlock::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        return Value::String(text);
+    }
+    let blocks: Vec<Value> = msg
+        .content
+        .iter()
+        .filter(|b| matches!(b, ContentBlock::Text { .. } | ContentBlock::Image { .. }))
+        .filter_map(|b| serde_json::to_value(b).ok())
+        .collect();
+    Value::Array(blocks)
+}
+
 #[async_trait]
 impl Provider for AgentSdkProvider {
     async fn stream(&self, req: StreamRequest) -> Result<EventStream> {
         // Pull the user's latest turn. Prior history lives server-side under
         // --session-id, so we only send the new user message.
-        let user_text = req
-            .messages
-            .last()
-            .and_then(|m| {
-                m.content.iter().find_map(|b| match b {
-                    crate::types::ContentBlock::Text { text } => Some(text.clone()),
-                    _ => None,
-                })
-            })
-            .unwrap_or_default();
+        let user_content = user_turn_content(req.messages.last());
 
         // Build the CLI command. Resolve `claude` robustly: a GUI /
         // launchd-launched app inherits a minimal PATH (no ~/.local/bin,
@@ -189,6 +223,18 @@ impl Provider for AgentSdkProvider {
         // works from a terminal (public issues #174/#176).
         let bin = resolve_claude_bin(&self.claude_bin);
         let mut cmd = Command::new(&bin);
+
+        // Windows gives a console-subsystem child its own window, and this
+        // one is spawned per turn — so a normal back-and-forth flashes a
+        // black box that steals focus on every message (public issue #186,
+        // reported by HelloMAF). Same flag `context.rs` and `schedule.rs`
+        // already pass; this spawn was simply missed.
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+
         cmd.arg("--output-format")
             .arg("stream-json")
             .arg("--input-format")
@@ -370,7 +416,7 @@ impl Provider for AgentSdkProvider {
         let user_msg = json!({
             "type": "user",
             "session_id": "",
-            "message": { "role": "user", "content": user_text },
+            "message": { "role": "user", "content": user_content },
             "parent_tool_use_id": null,
         });
         stdin
@@ -643,6 +689,70 @@ impl Provider for AgentSdkProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_turn_carries_images_alongside_text() {
+        use crate::types::{ContentBlock, ImageSource, Message, Role};
+
+        let text_only = Message {
+            role: Role::User,
+            content: vec![ContentBlock::text("just words")],
+        };
+        assert_eq!(
+            user_turn_content(Some(&text_only)),
+            Value::String("just words".into()),
+            "a text-only turn keeps the bare-string shape the CLI always got"
+        );
+
+        let with_image = Message {
+            role: Role::User,
+            content: vec![
+                ContentBlock::text("what is in this image?"),
+                ContentBlock::Image {
+                    source: ImageSource::Base64 {
+                        media_type: "image/png".into(),
+                        data: "iVBORw0KGgo=".into(),
+                    },
+                },
+            ],
+        };
+        let v = user_turn_content(Some(&with_image));
+        let blocks = v
+            .as_array()
+            .expect("image turn serializes as a block array");
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], "text");
+        assert_eq!(blocks[0]["text"], "what is in this image?");
+        // The Anthropic wire shape the CLI accepts, straight off the
+        // ContentBlock derive.
+        assert_eq!(blocks[1]["type"], "image");
+        assert_eq!(blocks[1]["source"]["type"], "base64");
+        assert_eq!(blocks[1]["source"]["media_type"], "image/png");
+        assert_eq!(blocks[1]["source"]["data"], "iVBORw0KGgo=");
+
+        // History-only blocks are input to nothing — they must not ride along.
+        let noisy = Message {
+            role: Role::User,
+            content: vec![
+                ContentBlock::text("hi"),
+                ContentBlock::Thinking {
+                    content: "hmm".into(),
+                    signature: None,
+                },
+                ContentBlock::Image {
+                    source: ImageSource::Base64 {
+                        media_type: "image/jpeg".into(),
+                        data: "AA==".into(),
+                    },
+                },
+            ],
+        };
+        let blocks = user_turn_content(Some(&noisy));
+        let blocks = blocks.as_array().unwrap();
+        assert_eq!(blocks.len(), 2, "thinking block dropped: {blocks:?}");
+
+        assert_eq!(user_turn_content(None), Value::String(String::new()));
+    }
 
     #[test]
     fn explicit_override_is_respected_verbatim() {

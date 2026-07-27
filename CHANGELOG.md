@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.106.0] — 2026-07-27
+
+Images get where they're going — through Telegram, and through the agent SDK.
+
+### Added
+- **Telegram: a photo reaches the agent instead of vanishing.** Sending a photo used to do nothing at all — no reply, no log line — because Telegram puts a photo's words in `caption` rather than `text`, so even a captioned photo looked textless and was dropped. Photos now travel the same route the GUI's paste path uses, and an uncaptioned one gets a default prompt. Thanks to [@HelloMAF](https://github.com/HelloMAF) for the diagnosis ([#187](https://github.com/thClaws/thClaws/issues/187)).
+
+### Fixed
+- **`agent/*`: a pasted or dragged image reaches the model.** The user turn was serialized as text only, so the image was silently discarded and the model answered as though nothing had been attached ([#185](https://github.com/thClaws/thClaws/issues/185), reported by [@HelloMAF](https://github.com/HelloMAF)).
+- **Windows: no more console flash on every turn under `agent/*`.** The `claude` subprocess is spawned once per turn and was missing `CREATE_NO_WINDOW`, so each message popped a console window that stole focus ([#186](https://github.com/thClaws/thClaws/issues/186), reported by [@HelloMAF](https://github.com/HelloMAF)).
+- **`--allowed-tools` / `--disallowed-tools` now cover `Task` and `WorkflowRun`.** Both are registered after the filter runs — deliberately, so a spawned subagent inherits the already-filtered tool set — which left the two tools themselves exempt from the operator's own lists.
+
 ## [0.105.0] — 2026-07-26
 
 Dependency security pass — vulnerable crates out of the shipped binary and the frontend toolchain.

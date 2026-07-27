@@ -99,6 +99,40 @@ pub struct Message {
     pub forum_topic_closed: Option<ForumTopicClosed>,
     #[serde(default)]
     pub forum_topic_reopened: Option<ForumTopicReopened>,
+    // ── media (Tier 3) ──
+    /// Available sizes of a sent photo, smallest first. Telegram sends
+    /// the same image several times over; we want the last entry.
+    #[serde(default)]
+    pub photo: Vec<PhotoSize>,
+    /// A photo's accompanying text. Telegram puts it here, NOT in
+    /// `text` — which is why a captioned photo used to look textless.
+    #[serde(default)]
+    pub caption: Option<String>,
+}
+
+/// One rendition of a photo. `file_id` is what `getFile` takes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PhotoSize {
+    pub file_id: String,
+    #[serde(default)]
+    pub file_unique_id: String,
+    #[serde(default)]
+    pub width: u32,
+    #[serde(default)]
+    pub height: u32,
+    #[serde(default)]
+    pub file_size: Option<u64>,
+}
+
+/// `getFile` result — `file_path` is the suffix to fetch the bytes from
+/// (`<api_base>/file/bot<token>/<file_path>`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct File {
+    pub file_id: String,
+    #[serde(default)]
+    pub file_size: Option<u64>,
+    #[serde(default)]
+    pub file_path: Option<String>,
 }
 
 /// Which forum-topic lifecycle service message a [`Message`] carries, if
@@ -113,6 +147,22 @@ pub enum ForumTopicEvent {
 }
 
 impl Message {
+    /// The largest rendition Telegram offers, or `None` for a message
+    /// with no photo. Telegram documents the array as ascending, but we
+    /// pick by area rather than trusting position — a mis-ordered array
+    /// would otherwise hand the model a thumbnail.
+    pub fn largest_photo(&self) -> Option<&PhotoSize> {
+        self.photo
+            .iter()
+            .max_by_key(|p| (p.width as u64) * (p.height as u64))
+    }
+
+    /// What the user actually typed, wherever Telegram put it: `text`
+    /// for a plain message, `caption` for a photo.
+    pub fn text_or_caption(&self) -> Option<&str> {
+        self.text.as_deref().or(self.caption.as_deref())
+    }
+
     /// True for any non-text service message (forum-topic lifecycle,
     /// etc.) that Tier 2 should account for but never feed to the agent.
     pub fn forum_topic_event(&self) -> Option<ForumTopicEvent> {
@@ -388,6 +438,73 @@ impl InlineKeyboardButton {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A photo message carries no `text` at all — its words live in
+    /// `caption`. Reading only `text` is what made captioned photos look
+    /// like textless service messages and get dropped (issue #187).
+    #[test]
+    fn photo_message_decodes_with_caption_and_largest_size() {
+        let json = r#"{
+            "update_id": 9,
+            "message": {
+                "message_id": 12,
+                "from": {"id": 111, "is_bot": false, "first_name": "Jimmy"},
+                "chat": {"id": 111, "type": "private"},
+                "date": 1785000000,
+                "caption": "what is this?",
+                "photo": [
+                    {"file_id": "small", "file_unique_id": "a", "width": 90, "height": 60, "file_size": 1200},
+                    {"file_id": "big", "file_unique_id": "b", "width": 1280, "height": 853, "file_size": 180000},
+                    {"file_id": "mid", "file_unique_id": "c", "width": 320, "height": 213, "file_size": 9000}
+                ]
+            }
+        }"#;
+        let u: Update = serde_json::from_str(json).expect("decodes");
+        let m = u.incoming_message().expect("message present");
+        assert!(m.text.is_none(), "Telegram puts a photo's words in caption");
+        assert_eq!(m.text_or_caption(), Some("what is this?"));
+        // Chosen by area, not array position — a mis-ordered array must
+        // not hand the model a thumbnail.
+        assert_eq!(m.largest_photo().map(|p| p.file_id.as_str()), Some("big"));
+        assert!(m.forum_topic_event().is_none());
+    }
+
+    #[test]
+    fn photo_without_caption_and_plain_text_still_behave() {
+        let no_caption = r#"{
+            "update_id": 10,
+            "message": {
+                "message_id": 13,
+                "chat": {"id": 111, "type": "private"},
+                "photo": [{"file_id": "only", "file_unique_id": "a", "width": 10, "height": 10}]
+            }
+        }"#;
+        let u: Update = serde_json::from_str(no_caption).unwrap();
+        let m = u.incoming_message().unwrap();
+        assert_eq!(m.text_or_caption(), None);
+        assert_eq!(m.largest_photo().map(|p| p.file_id.as_str()), Some("only"));
+
+        let plain = r#"{
+            "update_id": 11,
+            "message": {
+                "message_id": 14,
+                "chat": {"id": 111, "type": "private"},
+                "text": "hello"
+            }
+        }"#;
+        let u: Update = serde_json::from_str(plain).unwrap();
+        let m = u.incoming_message().unwrap();
+        assert_eq!(m.text_or_caption(), Some("hello"));
+        assert!(m.largest_photo().is_none(), "no photo array → no photo");
+    }
+
+    #[test]
+    fn get_file_result_decodes() {
+        let json = r#"{"ok": true, "result": {"file_id": "big", "file_size": 180000, "file_path": "photos/file_7.jpg"}}"#;
+        let r: ApiResponse<File> = serde_json::from_str(json).unwrap();
+        let f = r.result.expect("result present");
+        assert_eq!(f.file_path.as_deref(), Some("photos/file_7.jpg"));
+    }
 
     #[test]
     fn update_with_text_message_decodes() {
