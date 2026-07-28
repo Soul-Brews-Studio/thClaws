@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.108.0] — 2026-07-28
+
+Media Studio gets its biggest update yet with speech mode, resumable renders, and a polished UI, plus chat history now preserves thinking and cost footers across every turn.
+
+### Added
+- **Media Studio: speech mode, renders that survive a reload, and a full UI pass.** Text → Speech is a first-class mode; a submitted video becomes a background job with live elapsed time that keeps being watched after the shell reloads, instead of blocking the panel; the gallery gained audio cards, type filters, search, and a theme that follows the app.
+- **Media Studio: "Enhance" rewrites a prompt on your active model** — translated and filled out for the image model, while text meant to appear *inside* the picture is preserved verbatim (and the rewrite is rejected if it isn't).
+- **Media Studio: the rewrite lands in its own box** — your prompt is never overwritten, and Generate uses the enhanced text only while it has any.
+- **Chat history: each turn now keeps its thinking block and cost footer** when you reopen a conversation.
+
+### Fixed
+- **Media Studio: the viewer's prompt no longer covers the video controls** — it sits below the media, hidden behind a "Show prompt" toggle.
+- **Session Explorer: sessions are listed from the store,** not from a prompt that could go stale or time out.
+- **Chat: the first turn's thinking block and `[tokens: …]` footer no longer disappear when the turn ends.** A redundant session reload was replaying stored history over the live view.
+
 ## [0.107.0] — 2026-07-27
 
 The chatbot gets its biggest settings upgrade yet — Plugins and Connectors panels, My Models with bring-your-own-key, and a raft of chat refinements from pinned conversations to slash commands.

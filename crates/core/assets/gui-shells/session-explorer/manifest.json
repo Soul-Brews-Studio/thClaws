@@ -1,10 +1,10 @@
 {
   "id": "session-explorer",
   "name": "Session Explorer",
-  "version": "0.1.0",
-  "description": "Tree-view past sessions, summarise tool calls on demand.",
+  "version": "0.2.0",
+  "description": "Browse past sessions and read their transcripts — user turns, tool calls and each turn's cost — straight from the session store. Ask the agent about any of them without leaving the pane.",
   "entry": "index.html",
   "icon": "icon.svg",
   "minBridgeVersion": "1",
-  "permissions": ["agent.run", "session.read"]
+  "permissions": ["agent.run", "session.list", "session.read"]
 }

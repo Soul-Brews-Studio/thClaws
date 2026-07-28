@@ -174,6 +174,32 @@ fn shell_has_permission(shell_id: &str, perm: &str) -> bool {
 /// chat-style GUI Shell renders (dev-plan/33 sessions bridge). User →
 /// "user", Assistant → "bot"; System and empty/tool-only turns are
 /// dropped (they don't render as chat bubbles).
+/// Shell-shaped history with each turn's stored usage footer dropped
+/// back in as a `usage` row. A shell shows those footers live, so a
+/// reopened chat that omits them is missing information the user had a
+/// moment ago.
+fn serialize_shell_history_with_usage(session: &crate::session::Session) -> Vec<serde_json::Value> {
+    if session.turn_usage.is_empty() {
+        return serialize_shell_history(&session.messages);
+    }
+    let mut out = Vec::new();
+    let mut next = 0usize;
+    for (i, _) in session.messages.iter().enumerate() {
+        out.extend(serialize_shell_history(&session.messages[i..=i]));
+        while next < session.turn_usage.len() && session.turn_usage[next].after == i + 1 {
+            out.push(serde_json::json!({
+                "role": "usage",
+                "text": session.turn_usage[next].text,
+            }));
+            next += 1;
+        }
+    }
+    for u in &session.turn_usage[next..] {
+        out.push(serde_json::json!({ "role": "usage", "text": u.text }));
+    }
+    out
+}
+
 fn serialize_shell_history(messages: &[crate::types::Message]) -> Vec<serde_json::Value> {
     use crate::types::Role;
     messages
@@ -1563,6 +1589,92 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
             }
         }
 
+        // One-shot completion on the session's ACTIVE model, no tools and
+        // no history. For shells that need a small language-model step in
+        // service of their own UI — rewriting a prompt, naming a thing —
+        // rather than a conversation. `agent.run` would put that in the
+        // user's chat, which is not where a UI helper belongs.
+        //
+        // Costs the user credits, so it's gated on its own permission and
+        // the output is capped.
+        "gui_shell_llm_complete" => {
+            let request_id = msg.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let shell_id = msg.get("shellId").and_then(|v| v.as_str()).unwrap_or("");
+            if !shell_has_permission(shell_id, "llm.complete") {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "permission 'llm.complete' not declared" }),
+                ));
+                return true;
+            }
+            let prompt = msg
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if prompt.is_empty() {
+                (ctx.dispatch)(shell_reply(
+                    request_id,
+                    serde_json::json!({ "error": "prompt is required" }),
+                ));
+                return true;
+            }
+            let system = msg
+                .get("system")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .filter(|s| !s.trim().is_empty());
+            let max_tokens = msg
+                .get("maxTokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(1024)
+                .clamp(16, 4096) as u32;
+
+            let dispatch = ctx.dispatch.clone();
+            tokio::spawn(async move {
+                let cfg = crate::config::AppConfig::load().unwrap_or_default();
+                let reply = match crate::repl::build_provider(&cfg) {
+                    Ok(provider) => {
+                        let req = crate::providers::StreamRequest {
+                            model: cfg.model.clone(),
+                            system,
+                            messages: vec![crate::types::Message::user(prompt)],
+                            tools: vec![],
+                            max_tokens,
+                            thinking_budget: None,
+                            stream_chunk_timeout_override: None,
+                        };
+                        match provider.stream(req).await {
+                            Ok(stream) => {
+                                match crate::providers::collect_turn(crate::providers::assemble(
+                                    stream,
+                                ))
+                                .await
+                                {
+                                    Ok(turn) if !turn.text.trim().is_empty() => {
+                                        serde_json::json!({ "result": {
+                                            "text": turn.text.trim(),
+                                            "model": cfg.model,
+                                        }})
+                                    }
+                                    Ok(_) => serde_json::json!({
+                                        "error": "the model returned nothing",
+                                    }),
+                                    Err(e) => serde_json::json!({ "error": e.to_string() }),
+                                }
+                            }
+                            Err(e) => serde_json::json!({ "error": e.to_string() }),
+                        }
+                    }
+                    Err(e) => serde_json::json!({
+                        "error": format!("no usable model right now: {e}"),
+                    }),
+                };
+                dispatch(shell_reply(request_id, reply));
+            });
+        }
+
         // ── Plugins ──────────────────────────────────────────────────
         // A plugin is a bundle: skills + commands + agents + MCP
         // servers, installed as one unit. This surface manages the ones
@@ -1889,7 +2001,7 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
                 let msgs = store
                     .as_ref()
                     .and_then(|s| s.load(&load_id).ok())
-                    .map(|sess| serialize_shell_history(&sess.messages))
+                    .map(|sess| serialize_shell_history_with_usage(&sess))
                     .unwrap_or_default();
                 // Prime the shared agent to continue this session so a
                 // subsequent gui_shell_run appends to it.
@@ -6759,6 +6871,47 @@ mod tests {
     /// the test can't pollute the real ~/.config/thclaws). Captures
     /// dispatched payloads via a Mutex<Vec<String>> and asserts the
     /// `ok: false` envelope shape.
+    /// The one-shot completion bridge spends the user's credits, so an
+    /// undeclared shell must not reach it.
+    #[test]
+    fn gui_shell_llm_complete_requires_permission() {
+        let shared = Arc::new(crate::shared_session::spawn());
+        let (approver, _rx) = crate::permissions::GuiApprover::new();
+        let pending_asks: PendingAsks = Arc::new(Mutex::new(HashMap::new()));
+        let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured_clone = captured.clone();
+        let ctx = IpcContext {
+            is_serve_mode: false,
+            shared,
+            approver,
+            pending_asks,
+            dispatch: Arc::new(move |payload| {
+                captured_clone.lock().unwrap().push(payload);
+            }),
+            on_quit: Arc::new(|| {}),
+            on_send_initial_state: Arc::new(|| {}),
+            on_zoom: Arc::new(|_| {}),
+            workflow_approver: crate::workflow::WorkflowApprover::new(),
+        };
+        let handled = handle_ipc(
+            serde_json::json!({
+                "type": "gui_shell_llm_complete",
+                "id": 5,
+                "shellId": "no-such-shell",
+                "prompt": "rewrite this",
+            }),
+            &ctx,
+        );
+        assert!(handled);
+        let payloads = captured.lock().unwrap();
+        assert_eq!(payloads.len(), 1);
+        let parsed: serde_json::Value = serde_json::from_str(&payloads[0]).unwrap();
+        assert!(
+            parsed["error"].as_str().unwrap().contains("llm.complete"),
+            "should name the missing permission: {parsed}"
+        );
+    }
+
     /// Plugin management is permission-gated, and a denial must not
     /// touch the registry or the files on disk.
     #[test]

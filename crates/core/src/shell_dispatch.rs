@@ -609,7 +609,7 @@ pub async fn dispatch(
                     Ok(loaded) => {
                         state.agent.set_history(loaded.messages.clone());
                         state.session = loaded;
-                        let display = DisplayMessage::from_messages(&state.session.messages);
+                        let display = DisplayMessage::from_session(&state.session);
                         let _ = events_tx.send(ViewEvent::HistoryReplaced(display));
                         emit(events_tx, format!("loaded session: {}", state.session.id));
                     }

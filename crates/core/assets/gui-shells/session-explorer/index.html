@@ -11,18 +11,21 @@
   <div id="app">
     <aside>
       <header>Sessions <span id="session-count"></span>
+        <button id="refresh" title="Reload the session list" style="margin-left:auto;font-size:11px;cursor:pointer;">↻</button>
         <!-- Full-screen escape hatch; see thclaws.ui in the bridge. -->
-        <button id="exit-fullscreen" title="Exit full screen (⌘⇧U)" hidden style="margin-left:auto;font-size:11px;cursor:pointer;">⤢ Exit</button>
+        <button id="exit-fullscreen" title="Exit full screen (⌘⇧U)" hidden style="font-size:11px;cursor:pointer;">⤢ Exit</button>
       </header>
+      <input id="filter" type="search" placeholder="Filter sessions…" autocomplete="off">
       <div id="session-list" class="empty">loading…</div>
     </aside>
     <main>
       <div id="welcome">
         <h1>Session Explorer</h1>
         <p class="session-meta">
-          Tier 1 demo — ask anything about your thClaws sessions. The shell
-          calls <code>thclaws.run()</code> for each query; replies stream in
-          via <code>thclaws.on("text")</code>.
+          Pick a session on the left to read it. The list and transcripts come
+          from the session store via <code>thclaws.sessions.*</code>; the box
+          below asks the agent, streaming back through
+          <code>thclaws.on("text")</code>.
         </p>
         <div style="margin: 16px 0;">
           <textarea id="ask-input" rows="2" placeholder="e.g. summarise today's sessions, or which session called bq_query?" style="width:100%;padding:8px;font:inherit;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:3px;"></textarea>

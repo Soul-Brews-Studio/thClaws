@@ -247,6 +247,25 @@ pub struct Session {
     /// `gui_shell_event` dispatches instead of `chat_*`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell: Option<ShellMeta>,
+    /// Per-turn cost/latency footers, in the order they were produced.
+    /// The chat surfaces render one under each completed turn; without
+    /// persisting them, reopening a session showed the conversation
+    /// with every "what did this cost" line stripped out. `after`
+    /// records how many messages existed when the turn ended, so the
+    /// footer can be dropped back into the right place on load.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub turn_usage: Vec<TurnUsage>,
+}
+
+/// One rendered per-turn usage footer plus where it belongs in the
+/// message list. Stored as the finished string rather than raw counts:
+/// it is display data, and re-deriving the same line later would mean
+/// re-implementing the formatter (and its cost accounting) at load.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TurnUsage {
+    /// `messages.len()` at the moment the turn completed.
+    pub after: usize,
+    pub text: String,
 }
 
 impl PartialEq for Session {
@@ -279,6 +298,7 @@ impl Session {
             model: model.into(),
             cwd: cwd.into(),
             messages: Vec::new(),
+            turn_usage: Vec::new(),
             title: None,
             last_saved_count: 0,
             plan: None,
@@ -481,6 +501,18 @@ impl Session {
         append_goal_snapshot(path, goal)?;
         self.goal = goal.cloned();
         self.updated_at = now_secs();
+        Ok(())
+    }
+
+    /// Append this turn's usage footer to the JSONL and remember it in
+    /// memory, so both a live reload and a fresh `/load` show it.
+    pub fn append_turn_usage_to(&mut self, path: &Path, text: &str) -> Result<()> {
+        let after = self.messages.len();
+        append_turn_usage(path, after, text)?;
+        self.turn_usage.push(TurnUsage {
+            after,
+            text: text.to_string(),
+        });
         Ok(())
     }
 
@@ -693,6 +725,7 @@ impl Session {
         let mut header: Option<SessionHeader> = None;
         let mut messages = Vec::new();
         let mut last_timestamp = 0u64;
+        let mut turn_usage: Vec<TurnUsage> = Vec::new();
         let mut title: Option<String> = None;
         let mut plan: Option<crate::tools::plan_state::Plan> = None;
         let mut goal: Option<crate::goal_state::GoalState> = None;
@@ -776,6 +809,16 @@ impl Session {
                 } else {
                     Some(trimmed.to_string())
                 };
+            } else if kind == "turn_usage" {
+                // Display-only, and a restore artifact never writes one,
+                // so it must not move `last_timestamp` (same reasoning as
+                // plan_snapshot below).
+                if let Ok(ev) = serde_json::from_value::<TurnUsageEvent>(val) {
+                    turn_usage.push(TurnUsage {
+                        after: ev.after,
+                        text: ev.text,
+                    });
+                }
             } else if kind == "plan_snapshot" {
                 // Latest snapshot wins. `null` plan means the active
                 // plan was cleared (M1+).
@@ -992,6 +1035,7 @@ impl Session {
             goal,
             provider_session_id,
             shell: h.shell,
+            turn_usage,
         })
     }
 
@@ -1111,6 +1155,32 @@ impl Session {
 /// the GUI's plan-state broadcaster, which fires from a closure that
 /// only has the JSONL path. Same wire format as the method; no
 /// in-memory state to update. M1+.
+/// JSONL record for one completed turn's usage footer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TurnUsageEvent {
+    #[serde(rename = "type")]
+    kind: String, // always "turn_usage"
+    after: usize,
+    text: String,
+    timestamp: u64,
+}
+
+/// Append a per-turn usage footer. Called once per completed turn, so a
+/// reloaded session shows the same cost/latency lines the live one did.
+pub fn append_turn_usage(path: &Path, after: usize, text: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let event = TurnUsageEvent {
+        kind: "turn_usage".into(),
+        after,
+        text: text.to_string(),
+        timestamp: now_secs(),
+    };
+    let line = serde_json::to_string(&event)?;
+    append_locked(path, |file| writeln!(file, "{}", line))
+}
+
 pub fn append_plan_snapshot(
     path: &Path,
     plan: Option<&crate::tools::plan_state::Plan>,

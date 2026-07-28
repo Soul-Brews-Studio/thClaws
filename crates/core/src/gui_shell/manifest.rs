@@ -84,6 +84,10 @@ const ALLOWED_PERMISSION_PREFIXES: &[&str] = &[
     // command the engine spawns) — desktop `/mcp add` only.
     "connectors.read",
     "connectors.write",
+    // One-shot completion on the active model (thclaws.llm.complete):
+    // a language-model step in service of the shell's own UI, not the
+    // user's conversation. Spends credits, hence its own permission.
+    "llm.complete",
     // Plugins (thclaws.plugins.*): read = list installed bundles with
     // what they contribute; write = enable/disable/uninstall. Installing
     // is deliberately absent — it fetches and unpacks code.
@@ -137,7 +141,8 @@ impl ShellManifest {
                     "unknown permission '{p}'. Allowed: agent.run, session.read, session.list, \
                      fs.shell-scoped, tools.invoke:<tool>, network.outbound:<host>, model.read, \
                      model.write, kms.read, research.read, keys.write, connectors.read, \
-                     connectors.write, plugins.read, plugins.write, approval.inline"
+                     connectors.write, plugins.read, plugins.write, llm.complete, \
+                     approval.inline"
                 ));
             }
         }

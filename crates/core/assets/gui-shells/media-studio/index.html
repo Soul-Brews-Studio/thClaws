@@ -11,35 +11,56 @@
   <div id="app">
     <header class="bar">
       <div class="title-row">
+        <span class="logo" aria-hidden="true">◈</span>
         <h1>Media Studio</h1>
+        <span class="spacer"></span>
+        <span class="jobs-pill" id="jobs-pill" hidden></span>
         <button id="exit-fullscreen" class="ghost-btn" title="Exit full screen (⌘⇧U)" hidden>⤢ Exit</button>
       </div>
-      <nav class="modes" id="modes">
-        <button class="mode-tab active" data-mode="text2image">Text → Image</button>
-        <button class="mode-tab" data-mode="image2image">Image Edit</button>
-        <button class="mode-tab" data-mode="text2video">Text → Video</button>
-        <button class="mode-tab" data-mode="image2video">Image → Video</button>
+      <nav class="modes" id="modes" role="tablist">
+        <button class="mode-tab active" data-mode="text2image" role="tab">Text → Image</button>
+        <button class="mode-tab" data-mode="image2image" role="tab">Image Edit</button>
+        <button class="mode-tab" data-mode="text2video" role="tab">Text → Video</button>
+        <button class="mode-tab" data-mode="image2video" role="tab">Image → Video</button>
+        <button class="mode-tab" data-mode="text2speech" role="tab">Text → Speech</button>
       </nav>
     </header>
 
     <main class="layout">
-      <section class="panel">
+      <section class="panel" id="panel">
         <label class="field">
           <span class="label">Model</span>
           <select id="model"></select>
         </label>
 
         <label class="field" id="input-path-field" hidden>
-          <span class="label">Source image (workspace path)</span>
-          <input id="input-path" type="text" placeholder="output/img-….png  — or click a gallery item" />
+          <span class="label">Source image</span>
+          <input id="input-path" type="text" autocomplete="off"
+                 placeholder="output/img-….png — or click an image below" />
+          <span class="sub">Click any image in the gallery to use it as the source.</span>
         </label>
 
-        <label class="field">
-          <span class="label">Prompt</span>
-          <textarea id="prompt" rows="5" placeholder="Describe what to generate…"></textarea>
-        </label>
+        <div class="field">
+          <div class="label-row">
+            <span class="label" id="prompt-label">Prompt</span>
+            <button id="enhance" class="link-btn" type="button"
+                    title="Write an enhanced version below (⌘⇧E)">✦ Enhance</button>
+          </div>
+          <textarea id="prompt" rows="6" spellcheck="false"
+                    placeholder="Describe what to generate…"></textarea>
+        </div>
 
-        <div class="row">
+        <div class="field" id="enhanced-field" hidden>
+          <div class="label-row">
+            <span class="label">Enhanced prompt</span>
+            <button id="clear-enhanced" class="link-btn" type="button"
+                    title="Discard this and generate from your own prompt">✕ Discard</button>
+          </div>
+          <textarea id="enhanced" rows="7" spellcheck="false"></textarea>
+          <span class="sub">Generate uses this while it has text — your prompt above is untouched.</span>
+        </div>
+
+        <div class="row" id="image-params">
           <label class="field">
             <span class="label">Aspect</span>
             <select id="aspect">
@@ -61,11 +82,11 @@
           </label>
 
           <label class="field" id="duration-field" hidden>
-            <span class="label">Duration (s)</span>
+            <span class="label">Duration</span>
             <select id="duration">
-              <option value="8">8</option>
-              <option value="6">6</option>
-              <option value="4">4</option>
+              <option value="8">8s</option>
+              <option value="6">6s</option>
+              <option value="4">4s</option>
             </select>
           </label>
 
@@ -78,28 +99,71 @@
           </label>
         </div>
 
+        <div class="row" id="speech-params" hidden>
+          <label class="field">
+            <span class="label">Voice</span>
+            <select id="voice">
+              <option value="Charon">Charon</option>
+              <option value="Kore">Kore</option>
+              <option value="Puck">Puck</option>
+              <option value="Aoede">Aoede</option>
+              <option value="Fenrir">Fenrir</option>
+              <option value="">Provider default</option>
+            </select>
+          </label>
+          <label class="field grow">
+            <span class="label">Delivery (optional)</span>
+            <input id="style" type="text" autocomplete="off"
+                   placeholder="e.g. Say warmly, like a friendly narrator" />
+          </label>
+        </div>
+
         <button id="generate" class="generate">Generate</button>
-        <p class="status" id="status"></p>
+        <p class="status" id="status" role="status"></p>
         <p class="hint" id="hint"></p>
       </section>
 
       <section class="gallery-wrap">
         <div class="gallery-head">
-          <h2>Gallery</h2>
-          <button id="clear-gallery" class="ghost-btn" title="Re-scan output/ for media">Refresh</button>
+          <div class="filters" id="filters" role="tablist">
+            <button class="chip active" data-filter="all">All</button>
+            <button class="chip" data-filter="image">Images</button>
+            <button class="chip" data-filter="video">Video</button>
+            <button class="chip" data-filter="audio">Audio</button>
+          </div>
+          <span class="spacer"></span>
+          <input id="search" class="search" type="search" autocomplete="off" placeholder="Filter by name or prompt…" />
+          <button id="refresh" class="ghost-btn" title="Re-scan output/">↻</button>
         </div>
-        <div class="gallery" id="gallery">
-          <div class="empty" id="gallery-empty">Nothing generated yet.</div>
+
+        <div class="jobs" id="jobs"></div>
+
+        <div class="gallery" id="gallery"></div>
+        <div class="empty" id="gallery-empty">
+          <p class="empty-title">Nothing here yet</p>
+          <p class="empty-sub">Generated media lands in <code>output/</code> and shows up here — including anything the agent made.</p>
         </div>
       </section>
     </main>
   </div>
 
-  <!-- Lightbox -->
   <div class="lightbox" id="lightbox" hidden>
+    <button class="lightbox-nav prev" id="lightbox-prev" title="Previous (←)">‹</button>
     <button class="lightbox-close" id="lightbox-close" title="Close (Esc)">✕</button>
-    <div class="lightbox-body" id="lightbox-body"></div>
-    <p class="lightbox-caption" id="lightbox-caption"></p>
+    <!-- Column stage: the media, then its own toolbar and prompt panel
+         BELOW it. Nothing overlays the media, so video controls stay
+         clickable, and the panel inherits the stage's width — which the
+         media sets. -->
+    <div class="lightbox-stage" id="lightbox-stage">
+      <div class="lightbox-body" id="lightbox-body"></div>
+      <div class="lightbox-bar">
+        <button class="ghost-btn" id="toggle-prompt" type="button">Show prompt</button>
+        <span class="lightbox-meta" id="lightbox-meta"></span>
+        <button class="ghost-btn" id="copy-path" title="Copy the workspace path">Copy path</button>
+      </div>
+      <div class="lightbox-caption" id="lightbox-caption" hidden></div>
+    </div>
+    <button class="lightbox-nav next" id="lightbox-next" title="Next (→)">›</button>
   </div>
 
   <div class="transport-badge" id="transport-badge"></div>

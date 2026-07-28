@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Terminal, MessageSquare, FolderTree, Users, FolderOpen, Folder, Settings, Sparkles, Layout, Maximize2, Globe, Menu } from "lucide-react";
+import {
+  Terminal,
+  MessageSquare,
+  FolderTree,
+  Users,
+  FolderOpen,
+  Folder,
+  Settings,
+  Sparkles,
+  Layout,
+  Maximize2,
+  Globe,
+  Menu,
+} from "lucide-react";
 import { TerminalView } from "./components/TerminalView";
 import { ChatView } from "./components/ChatView";
 import { FilesView } from "./components/FilesView";
@@ -34,7 +47,10 @@ import { ApprovalModal } from "./components/ApprovalModal";
 import { ScheduleAddModal } from "./components/ScheduleAddModal";
 import { AgentEditorModal } from "./components/AgentEditorModal";
 import { MarketplaceModal } from "./components/MarketplaceModal";
-import { ModelPickerModal, type PickerModel } from "./components/ModelPickerModal";
+import {
+  ModelPickerModal,
+  type PickerModel,
+} from "./components/ModelPickerModal";
 import { ContextWarningBanner } from "./components/ContextWarningBanner";
 import { useEditingShortcuts } from "./hooks/useEditingShortcuts";
 import { send, subscribe } from "./hooks/useIPC";
@@ -117,8 +133,7 @@ function FullscreenExitChrome({
   useEffect(() => {
     if (claimed) return; // shell owns the control — no hot-corner chip
     const onMove = (e: MouseEvent) => {
-      const inCorner =
-        e.clientX >= window.innerWidth - 120 && e.clientY <= 120;
+      const inCorner = e.clientX >= window.innerWidth - 120 && e.clientY <= 120;
       setNearCorner(inCorner);
     };
     window.addEventListener("mousemove", onMove);
@@ -162,7 +177,11 @@ function FullscreenExitChrome({
   );
 }
 
-function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) => void }) {
+function StartupModal({
+  onStart,
+}: {
+  onStart: (cwd: string, initialTab?: Tab) => void;
+}) {
   const [cwd, setCwd] = useState("");
   const [error, setError] = useState("");
   const [showModal, setShowModal] = useState<boolean | null>(null);
@@ -189,7 +208,9 @@ function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) =>
         // to Terminal. Pass through to onStart so App.tsx can seed
         // useState<Tab> before the main UI mounts.
         const initialTab =
-          typeof msg.initial_tab === "string" ? (msg.initial_tab as Tab) : undefined;
+          typeof msg.initial_tab === "string"
+            ? (msg.initial_tab as Tab)
+            : undefined;
         if (msg.needs_modal === false) {
           onStart(msg.path as string, initialTab);
         } else {
@@ -256,7 +277,10 @@ function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) =>
     return (
       <div
         className="fixed inset-0 flex items-center justify-center p-6"
-        style={{ background: "var(--bg-primary)", color: "var(--text-primary)" }}
+        style={{
+          background: "var(--bg-primary)",
+          color: "var(--text-primary)",
+        }}
       >
         <div
           className="rounded-lg shadow-2xl p-6 max-w-xl w-full"
@@ -268,11 +292,14 @@ function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) =>
           <h2 className="text-sm font-semibold mb-3">
             thClaws couldn't reach its backend
           </h2>
-          <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
-            The frontend loaded, but no reply came back from the Rust side
-            after 3 seconds. Usually means the WebView↔Rust IPC bridge
-            failed to initialise — common on older macOS x86 builds or
-            when a dependency is blocked by security software.
+          <p
+            className="text-xs mb-3"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            The frontend loaded, but no reply came back from the Rust side after
+            3 seconds. Usually means the WebView↔Rust IPC bridge failed to
+            initialise — common on older macOS x86 builds or when a dependency
+            is blocked by security software.
           </p>
           <ul
             className="text-[11px] list-disc pl-5 space-y-1 mb-3"
@@ -285,12 +312,17 @@ function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) =>
             <li>
               Platform: <code className="font-mono">{navigator.platform}</code>
             </li>
-            <li>UserAgent: <code className="font-mono">{navigator.userAgent.slice(0, 80)}…</code></li>
+            <li>
+              UserAgent:{" "}
+              <code className="font-mono">
+                {navigator.userAgent.slice(0, 80)}…
+              </code>
+            </li>
           </ul>
           <p className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
-            Try running with <code className="font-mono">THCLAWS_DEVTOOLS=1 thclaws</code>,
-            then right-click → Inspect to see the console. File an issue
-            at{" "}
+            Try running with{" "}
+            <code className="font-mono">THCLAWS_DEVTOOLS=1 thclaws</code>, then
+            right-click → Inspect to see the console. File an issue at{" "}
             <code className="font-mono">github.com/thClaws/thClaws/issues</code>{" "}
             with the console output and these details.
           </p>
@@ -312,7 +344,10 @@ function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) =>
     >
       <div
         className="rounded-lg shadow-2xl p-6 max-w-lg w-full mx-4"
-        style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}
+        style={{
+          background: "var(--bg-secondary)",
+          border: "1px solid var(--border)",
+        }}
       >
         <div className="flex items-center gap-2 mb-4">
           <FolderOpen size={20} style={{ color: "var(--accent)" }} />
@@ -323,10 +358,7 @@ function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) =>
             Working Directory
           </h2>
         </div>
-        <p
-          className="text-xs mb-3"
-          style={{ color: "var(--text-secondary)" }}
-        >
+        <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
           thClaws will operate inside this directory. All file tools are
           sandboxed to it. Change it now if needed.
         </p>
@@ -341,8 +373,13 @@ function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) =>
               border: "1px solid var(--border)",
             }}
             value={cwd}
-            onChange={(e) => { setCwd(e.target.value); setError(""); }}
-            onKeyDown={(e) => { if (e.key === "Enter") handleStart(); }}
+            onChange={(e) => {
+              setCwd(e.target.value);
+              setError("");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleStart();
+            }}
           />
           <button
             className="px-3 py-2 rounded text-xs font-medium shrink-0"
@@ -351,7 +388,10 @@ function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) =>
               color: "var(--text-secondary)",
               border: "1px solid var(--border)",
             }}
-            onClick={() => { setPicking(true); send({ type: "pick_directory", start: cwd }); }}
+            onClick={() => {
+              setPicking(true);
+              send({ type: "pick_directory", start: cwd });
+            }}
             disabled={picking}
             title="Browse for directory"
           >
@@ -359,7 +399,10 @@ function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) =>
           </button>
         </div>
         {error && (
-          <p className="text-xs mb-2" style={{ color: "var(--danger, #e06c75)" }}>
+          <p
+            className="text-xs mb-2"
+            style={{ color: "var(--danger, #e06c75)" }}
+          >
             {error}
           </p>
         )}
@@ -372,21 +415,26 @@ function StartupModal({ onStart }: { onStart: (cwd: string, initialTab?: Tab) =>
               Recent
             </p>
             <div className="flex flex-col gap-1">
-              {recentDirs.filter((d) => d !== cwd).map((dir) => (
-                <button
-                  key={dir}
-                  className="text-left px-2.5 py-1.5 rounded text-xs font-mono truncate hover:brightness-125 transition-colors"
-                  style={{
-                    background: "var(--bg-tertiary)",
-                    color: "var(--text-primary)",
-                    border: "1px solid var(--border)",
-                  }}
-                  onClick={() => { setCwd(dir); setError(""); }}
-                  title={dir}
-                >
-                  {dir}
-                </button>
-              ))}
+              {recentDirs
+                .filter((d) => d !== cwd)
+                .map((dir) => (
+                  <button
+                    key={dir}
+                    className="text-left px-2.5 py-1.5 rounded text-xs font-mono truncate hover:brightness-125 transition-colors"
+                    style={{
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--border)",
+                    }}
+                    onClick={() => {
+                      setCwd(dir);
+                      setError("");
+                    }}
+                    title={dir}
+                  >
+                    {dir}
+                  </button>
+                ))}
             </div>
           </div>
         )}
@@ -441,10 +489,27 @@ export default function App() {
   const [knownSessions, setKnownSessions] = useState<
     Array<{ id: string; messages: number; title?: string | null }>
   >([]);
+  // Was the agent ALREADY busy when this surface opened? `gui_busy_result`
+  // is the reply to the query useBusyState fires on mount, so the first one
+  // is the authoritative snapshot for "state at open". `null` until it
+  // lands — busyState itself starts optimistically idle, which is not the
+  // same thing.
+  const busyAtOpenRef = useRef<boolean | null>(null);
+  // Session the worker considers current, from `sessions_list.current_id`.
+  const currentSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
     const unsub = subscribe((msg: any) => {
       if (msg?.type === "initial_state" || msg?.type === "sessions_list") {
         if (Array.isArray(msg.sessions)) setKnownSessions(msg.sessions);
+        // `current_id` is "" until a session is actually current — that
+        // is "unknown", not "some other session", and treating it as the
+        // latter is what made the guard below miss.
+        if (typeof msg.current_id === "string" && msg.current_id) {
+          currentSessionIdRef.current = msg.current_id;
+        }
+      }
+      if (msg?.type === "gui_busy_result" && busyAtOpenRef.current === null) {
+        busyAtOpenRef.current = !!msg.busy;
       }
     });
     // useIPC opens the WS at module-load and fires frontend_ready in
@@ -459,10 +524,36 @@ export default function App() {
     return unsub;
   }, []);
   const autoLoadedRef = useRef(false);
+  // Did a turn start while this surface was already open? Then the
+  // conversation on screen is ours and there is nothing to auto-resume
+  // into — see the note on case 1.
+  const sawOwnTurnRef = useRef(false);
+  if (busyState.busy && busyAtOpenRef.current === false) {
+    sawOwnTurnRef.current = true;
+  }
   useEffect(() => {
     if (autoLoadedRef.current) return;
-    // Case 1 — agent busy.
+    // Case 1 — agent busy. Attach ONLY to a turn that was already running
+    // when this surface opened, or one running in a different session.
+    //
+    // A turn that starts while we're watching is our own: the transcript
+    // is live on screen and there is nothing to re-attach to. Loading it
+    // anyway makes the engine replay STORED history over the top, and the
+    // store holds only user/assistant/tool messages — so the streaming
+    // thinking block and the per-turn `[tokens: …]` footer of that turn
+    // were wiped the moment it finished. It looked like the usage footer
+    // had been dropped, but only ever on the FIRST message of a session
+    // (`autoLoadedRef` then disarms this for the rest of the mount).
     if (busyState.busy && busyState.sessionId) {
+      if (busyAtOpenRef.current === null) return; // snapshot not in yet
+      const ourOwnTurn =
+        !busyAtOpenRef.current &&
+        (!currentSessionIdRef.current ||
+          currentSessionIdRef.current === busyState.sessionId);
+      if (ourOwnTurn) {
+        autoLoadedRef.current = true;
+        return;
+      }
       autoLoadedRef.current = true;
       send({ type: "session_load", id: busyState.sessionId });
       return;
@@ -481,9 +572,28 @@ export default function App() {
     // agent. This auto-resume stays for the --serve/web surface, where
     // reopening a browser tab reconnects to a still-running engine.
     if (typeof window !== "undefined" && window.ipc) return;
+    // Auto-resume is a TAB-OPEN behaviour. Once the user has taken a turn
+    // here there is nothing to resume into, and the session list only
+    // reaches us AFTER that first turn is saved — so this used to fire
+    // right then, reloading the session we were already in. The reload
+    // repaints from stored history, which drops the turn's thinking block
+    // and its `[tokens: …]` footer: the reported "usage line disappears,
+    // but only on the first message".
+    if (sawOwnTurnRef.current) {
+      autoLoadedRef.current = true;
+      return;
+    }
     if (!knownSessions.length) return;
     const target = knownSessions.find((s) => (s.messages ?? 0) > 0);
     if (!target) return;
+    // Already in it — a load would only cost us the live transcript.
+    if (
+      currentSessionIdRef.current &&
+      target.id === currentSessionIdRef.current
+    ) {
+      autoLoadedRef.current = true;
+      return;
+    }
     autoLoadedRef.current = true;
     send({ type: "session_load", id: target.id });
   }, [busyState.busy, busyState.sessionId, knownSessions]);
@@ -499,7 +609,8 @@ export default function App() {
       send({ type: "app_close" });
     };
     window.addEventListener("keydown", onKeyDown, { capture: true });
-    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, []);
 
   // Global "stop the agent" hotkey: Cmd+. on macOS, Ctrl+. elsewhere.
@@ -523,7 +634,8 @@ export default function App() {
       send({ type: "shell_cancel" });
     };
     window.addEventListener("keydown", onKeyDown, { capture: true });
-    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, []);
 
   // ⌘⇧U / Ctrl⇧U — toggle full-screen UI tab. Mirrors the
@@ -611,8 +723,9 @@ export default function App() {
   const [showLineConnect, setShowLineConnect] = useState(false);
   const [showTelegramConnect, setShowTelegramConnect] = useState(false);
   const [showMessengerConnect, setShowMessengerConnect] = useState(false);
-  const [instructionsScope, setInstructionsScope] =
-    useState<"global" | "folder" | null>(null);
+  const [instructionsScope, setInstructionsScope] = useState<
+    "global" | "folder" | null
+  >(null);
   const closeInstructions = useCallback(() => setInstructionsScope(null), []);
 
   // M6.39.9: KMS browser + viewer state. `browsingKms` is the
@@ -644,7 +757,9 @@ export default function App() {
       if (msg.type !== "model_picker_open") return;
       const provider = typeof msg.provider === "string" ? msg.provider : "";
       const current = typeof msg.current === "string" ? msg.current : "";
-      const models = Array.isArray(msg.models) ? (msg.models as PickerModel[]) : [];
+      const models = Array.isArray(msg.models)
+        ? (msg.models as PickerModel[])
+        : [];
       if (provider && models.length > 0) {
         setModelPicker({ provider, current, models });
       }
@@ -654,8 +769,9 @@ export default function App() {
   // Secrets-backend gate: we ask once at first launch so the app
   // never touches the OS keychain behind the user's back. `null` ==
   // not picked yet → show the chooser before the main UI.
-  const [secretsBackend, setSecretsBackend] =
-    useState<"keychain" | "dotenv" | "hosted" | null>(null);
+  const [secretsBackend, setSecretsBackend] = useState<
+    "keychain" | "dotenv" | "hosted" | null
+  >(null);
   const [secretsBackendChecked, setSecretsBackendChecked] = useState(false);
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -758,7 +874,8 @@ export default function App() {
     return unsub;
   }, []);
 
-  const modalOpen = showSettings || instructionsScope !== null || modelPicker !== null;
+  const modalOpen =
+    showSettings || instructionsScope !== null || modelPicker !== null;
   const effectiveTab =
     !teamEnabled && activeTab === "team"
       ? ("chat" as Tab)
@@ -775,18 +892,20 @@ export default function App() {
   if (!started) {
     return (
       <>
-        <StartupModal onStart={(cwd, initialTab) => {
-          setCurrentCwd(cwd);
-          if (initialTab) {
-            setActiveTab(initialTab);
-            // guiShell.tabDefault is pinned → enter full-screen UI
-            // automatically so the workspace opens like a dedicated
-            // gui-shell server (`thclaws --serve --gui-shell <id>`).
-            // Toggle off any time with ⌘⇧U / Ctrl⇧U.
-            if (initialTab === "ui") setFullscreen(true);
-          }
-          setStarted(true);
-        }} />
+        <StartupModal
+          onStart={(cwd, initialTab) => {
+            setCurrentCwd(cwd);
+            if (initialTab) {
+              setActiveTab(initialTab);
+              // guiShell.tabDefault is pinned → enter full-screen UI
+              // automatically so the workspace opens like a dedicated
+              // gui-shell server (`thclaws --serve --gui-shell <id>`).
+              // Toggle off any time with ⌘⇧U / Ctrl⇧U.
+              if (initialTab === "ui") setFullscreen(true);
+            }
+            setStarted(true);
+          }}
+        />
         <ApprovalModal />
       </>
     );
@@ -837,80 +956,82 @@ export default function App() {
       )}
       {/* Tab bar — hidden in full-screen UI mode */}
       {!fullscreen && (
-      <div
-        className="flex items-center gap-0 border-b select-none shrink-0"
-        style={{
-          background: "var(--bg-secondary)",
-          borderColor: "var(--border)",
-        }}
-      >
-        {/* Hamburger — opens the sidebar drawer on mobile only. */}
-        <button
-          onClick={() => setSidebarOpen((v) => !v)}
-          className="sm:hidden flex items-center justify-center p-2 shrink-0"
-          title="Menu"
-          aria-label="Toggle sidebar"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          <Menu size={18} />
-        </button>
-        {/* Tabs — horizontally scrollable when they don't fit (mobile);
-            labels collapse to icons below `sm`. */}
-        <div className="flex items-center overflow-x-auto no-scrollbar">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id);
-                // M6.39.12: switching tabs closes both the KMS viewer
-                // pane and the KMS browser sidebar — the user is moving
-                // back to "real work" (chat / terminal / files / team)
-                // and the KMS browse session is implicitly done.
-                setViewerTarget(null);
-                setBrowsingKms(null);
-                setGraphKms(null);
-              }}
-              className="flex items-center gap-1.5 px-3 sm:px-4 py-2.5 sm:py-2 text-xs font-medium transition-colors shrink-0"
-              style={{
-                color:
-                  effectiveTab === tab.id
-                    ? "var(--text-primary)"
-                    : "var(--text-secondary)",
-                background:
-                  effectiveTab === tab.id ? "var(--bg-primary)" : "transparent",
-                borderBottom:
-                  effectiveTab === tab.id
-                    ? "2px solid var(--accent)"
-                    : "2px solid transparent",
-              }}
-            >
-              {tab.icon}
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-        <div className="flex-1" />
-        <RunningChip />
-        <button
-          onClick={() => {
-            setActiveTab("ui");
-            setFullscreen(true);
+        <div
+          className="flex items-center gap-0 border-b select-none shrink-0"
+          style={{
+            background: "var(--bg-secondary)",
+            borderColor: "var(--border)",
           }}
-          className="flex items-center justify-center p-2 sm:p-1.5 mr-1 rounded hover:opacity-100 transition-opacity"
-          title={`Full-screen UI (${navigator.platform.startsWith("Mac") ? "⌘⇧U" : "Ctrl⇧U"})`}
-          style={{ color: "var(--text-secondary)", opacity: 0.7 }}
         >
-          <Maximize2 size={14} />
-        </button>
-        {/* Sign-in button gated by `ssoSignInEnabled` in settings.json (default
+          {/* Hamburger — opens the sidebar drawer on mobile only. */}
+          <button
+            onClick={() => setSidebarOpen((v) => !v)}
+            className="sm:hidden flex items-center justify-center p-2 shrink-0"
+            title="Menu"
+            aria-label="Toggle sidebar"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            <Menu size={18} />
+          </button>
+          {/* Tabs — horizontally scrollable when they don't fit (mobile);
+            labels collapse to icons below `sm`. */}
+          <div className="flex items-center overflow-x-auto no-scrollbar">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  // M6.39.12: switching tabs closes both the KMS viewer
+                  // pane and the KMS browser sidebar — the user is moving
+                  // back to "real work" (chat / terminal / files / team)
+                  // and the KMS browse session is implicitly done.
+                  setViewerTarget(null);
+                  setBrowsingKms(null);
+                  setGraphKms(null);
+                }}
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-2.5 sm:py-2 text-xs font-medium transition-colors shrink-0"
+                style={{
+                  color:
+                    effectiveTab === tab.id
+                      ? "var(--text-primary)"
+                      : "var(--text-secondary)",
+                  background:
+                    effectiveTab === tab.id
+                      ? "var(--bg-primary)"
+                      : "transparent",
+                  borderBottom:
+                    effectiveTab === tab.id
+                      ? "2px solid var(--accent)"
+                      : "2px solid transparent",
+                }}
+              >
+                {tab.icon}
+                <span className="hidden sm:inline">{tab.label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="flex-1" />
+          <RunningChip />
+          <button
+            onClick={() => {
+              setActiveTab("ui");
+              setFullscreen(true);
+            }}
+            className="flex items-center justify-center p-2 sm:p-1.5 mr-1 rounded hover:opacity-100 transition-opacity"
+            title={`Full-screen UI (${navigator.platform.startsWith("Mac") ? "⌘⇧U" : "Ctrl⇧U"})`}
+            style={{ color: "var(--text-secondary)", opacity: 0.7 }}
+          >
+            <Maximize2 size={14} />
+          </button>
+          {/* Sign-in button gated by `ssoSignInEnabled` in settings.json (default
             false) until the SSO feature is usable. Also stays hidden on any
             cloud-hosted workspace (gateway OR BYOK): the engine returns
             "hosted" from secrets_backend_get whenever THCLAWS_WORKSPACE_ID
             (or THCLAWS_GATEWAY_API_KEY) is set, so the visitor is already
             authenticated at the cloud-routing layer and a second SSO flow
             inside the workspace is just noise. */}
-        {ssoSignInEnabled && secretsBackend !== "hosted" && <LoginButton />}
-      </div>
+          {ssoSignInEnabled && secretsBackend !== "hosted" && <LoginButton />}
+        </div>
       )}
 
       {/* Main content */}
@@ -965,11 +1086,17 @@ export default function App() {
             const cls = `absolute inset-0 ${tabsHidden ? "invisible pointer-events-none tab-inactive" : ""}`;
             return (
               <div key={id} className={cls}>
-                {id === "terminal" && <TerminalView active={isActive} modalOpen={modalOpen} />}
-                {id === "chat" && <ChatView active={isActive} modalOpen={modalOpen} />}
+                {id === "terminal" && (
+                  <TerminalView active={isActive} modalOpen={modalOpen} />
+                )}
+                {id === "chat" && (
+                  <ChatView active={isActive} modalOpen={modalOpen} />
+                )}
                 {id === "files" && <FilesView active={isActive} />}
                 {id === "team" && <TeamView />}
-                {id === "ui" && <UITab active={isActive} fullscreen={fullscreen} />}
+                {id === "ui" && (
+                  <UITab active={isActive} fullscreen={fullscreen} />
+                )}
                 {id === "shell" && <ShellTab active={isActive} />}
                 {id === "browser" && <BrowserView active={isActive} />}
               </div>
@@ -1062,60 +1189,62 @@ export default function App() {
 
       {/* Status bar — hidden in full-screen UI mode */}
       {!fullscreen && (
-      <div
-        className="flex items-center gap-2 px-3 py-1.5 shrink-0 select-none border-t"
-        style={{
-          background: "var(--bg-secondary)",
-          borderColor: "var(--border)",
-          color: "var(--text-secondary)",
-          fontSize: "12px",
-          lineHeight: "16px",
-        }}
-      >
-        <button
-          onClick={() => {
-            // Kill the current PTY so a fresh one spawns in the new dir.
-            send({ type: "pty_kill" });
-            setStarted(false);
-            setCurrentCwd("");
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 shrink-0 select-none border-t"
+          style={{
+            background: "var(--bg-secondary)",
+            borderColor: "var(--border)",
+            color: "var(--text-secondary)",
+            fontSize: "12px",
+            lineHeight: "16px",
           }}
-          className="p-2 sm:p-1 rounded hover:bg-white/10 transition-colors"
-          title="Change working directory"
-          style={{ flexShrink: 0 }}
         >
-          <Folder size={14} style={{ opacity: 0.7 }} />
-        </button>
-        <span className="truncate font-mono" title={currentCwd}>
-          {currentCwd}
-        </span>
-        <div className="flex-1" />
-        <div className="relative" style={{ flexShrink: 0 }}>
           <button
-            ref={settingsButtonRef}
-            onClick={() => setShowSettingsMenu((v) => !v)}
+            onClick={() => {
+              // Kill the current PTY so a fresh one spawns in the new dir.
+              send({ type: "pty_kill" });
+              setStarted(false);
+              setCurrentCwd("");
+            }}
             className="p-2 sm:p-1 rounded hover:bg-white/10 transition-colors"
-            title="Settings"
+            title="Change working directory"
+            style={{ flexShrink: 0 }}
           >
-            <Settings size={14} style={{ opacity: 0.7 }} />
+            <Folder size={14} style={{ opacity: 0.7 }} />
           </button>
-          {showSettingsMenu && (
-            <SettingsMenu
-              anchorRef={settingsButtonRef}
-              onClose={() => setShowSettingsMenu(false)}
-              onPick={(choice) => {
-                if (choice === "api-keys") setShowSettings(true);
-                else if (choice === "global-instructions") setInstructionsScope("global");
-                else if (choice === "folder-instructions") setInstructionsScope("folder");
-                else if (choice === "line-connect") setShowLineConnect(true);
-                else if (choice === "telegram-connect")
-                  setShowTelegramConnect(true);
-                else if (choice === "messenger-connect")
-                  setShowMessengerConnect(true);
-              }}
-            />
-          )}
+          <span className="truncate font-mono" title={currentCwd}>
+            {currentCwd}
+          </span>
+          <div className="flex-1" />
+          <div className="relative" style={{ flexShrink: 0 }}>
+            <button
+              ref={settingsButtonRef}
+              onClick={() => setShowSettingsMenu((v) => !v)}
+              className="p-2 sm:p-1 rounded hover:bg-white/10 transition-colors"
+              title="Settings"
+            >
+              <Settings size={14} style={{ opacity: 0.7 }} />
+            </button>
+            {showSettingsMenu && (
+              <SettingsMenu
+                anchorRef={settingsButtonRef}
+                onClose={() => setShowSettingsMenu(false)}
+                onPick={(choice) => {
+                  if (choice === "api-keys") setShowSettings(true);
+                  else if (choice === "global-instructions")
+                    setInstructionsScope("global");
+                  else if (choice === "folder-instructions")
+                    setInstructionsScope("folder");
+                  else if (choice === "line-connect") setShowLineConnect(true);
+                  else if (choice === "telegram-connect")
+                    setShowTelegramConnect(true);
+                  else if (choice === "messenger-connect")
+                    setShowMessengerConnect(true);
+                }}
+              />
+            )}
+          </div>
         </div>
-      </div>
       )}
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
@@ -1123,14 +1252,10 @@ export default function App() {
         <LineConnectModal onClose={() => setShowLineConnect(false)} />
       )}
       {showTelegramConnect && (
-        <TelegramConnectModal
-          onClose={() => setShowTelegramConnect(false)}
-        />
+        <TelegramConnectModal onClose={() => setShowTelegramConnect(false)} />
       )}
       {showMessengerConnect && (
-        <MessengerConnectModal
-          onClose={() => setShowMessengerConnect(false)}
-        />
+        <MessengerConnectModal onClose={() => setShowMessengerConnect(false)} />
       )}
       {instructionsScope && (
         <InstructionsEditorModal

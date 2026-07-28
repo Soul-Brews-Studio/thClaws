@@ -1980,7 +1980,7 @@ fn build_gui_shell_history_payload(sessions_dir: Option<std::path::PathBuf>) -> 
         .into_iter()
         .find(|m| m.message_count > 0)?;
     let session = store.load(&meta.id).ok()?;
-    let display = crate::shared_session::DisplayMessage::from_messages(&session.messages);
+    let display = crate::shared_session::DisplayMessage::from_session(&session);
     if display.is_empty() {
         return None;
     }

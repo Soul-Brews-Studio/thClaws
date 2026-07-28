@@ -132,10 +132,17 @@ pub fn render_chat_dispatches(ev: &ViewEvent) -> Vec<String> {
             let arr: Vec<serde_json::Value> = messages
                 .iter()
                 .map(|m| {
-                    serde_json::json!({
+                    // `thinking` is omitted rather than null when the
+                    // turn had none, so the frontend's `msg.thinking`
+                    // check stays a plain truthiness test.
+                    let mut row = serde_json::json!({
                         "role": m.role,
                         "content": strip_ansi(&m.content),
-                    })
+                    });
+                    if let Some(t) = &m.thinking {
+                        row["thinking"] = serde_json::json!(strip_ansi(t));
+                    }
+                    row
                 })
                 .collect();
             vec![serde_json::json!({
@@ -901,18 +908,22 @@ mod chat_render_tests {
             DisplayMessage {
                 role: "user".into(),
                 content: "first prompt".into(),
+                thinking: None,
             },
             DisplayMessage {
                 role: "assistant".into(),
                 content: "ok".into(),
+                thinking: None,
             },
             DisplayMessage {
                 role: "tool".into(),
                 content: "Bash".into(),
+                thinking: None,
             },
             DisplayMessage {
                 role: "user".into(),
                 content: "follow-up".into(),
+                thinking: None,
             },
         ];
         let out = render_terminal_ansi(&mut state, &ViewEvent::HistoryReplaced(msgs))
@@ -941,10 +952,12 @@ mod chat_render_tests {
             DisplayMessage {
                 role: "user".into(),
                 content: "research \x1b[1mGPUs\x1b[0m".into(),
+                thinking: None,
             },
             DisplayMessage {
                 role: "assistant".into(),
                 content: "done".into(),
+                thinking: None,
             },
         ];
         let out = render_gui_shell_dispatch(&ViewEvent::HistoryReplaced(msgs))

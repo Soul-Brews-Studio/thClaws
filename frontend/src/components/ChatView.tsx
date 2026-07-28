@@ -189,19 +189,14 @@ function wrapBareJsonBlocks(content: string): string {
   while ((fm = fenceRe.exec(content)) !== null) {
     fenced.push([fm.index, fm.index + fm[0].length]);
   }
-  const inFence = (i: number) =>
-    fenced.some(([s, e]) => i >= s && i < e);
+  const inFence = (i: number) => fenced.some(([s, e]) => i >= s && i < e);
 
   const out: string[] = [];
   let i = 0;
   while (i < content.length) {
     const ch = content[i];
     const atLineStart = i === 0 || content[i - 1] === "\n";
-    if (
-      atLineStart &&
-      (ch === "{" || ch === "[") &&
-      !inFence(i)
-    ) {
+    if (atLineStart && (ch === "{" || ch === "[") && !inFence(i)) {
       const close = ch === "{" ? "}" : "]";
       let depth = 0;
       let j = i;
@@ -260,7 +255,8 @@ function blobToBase64(blob: Blob): Promise<string> {
       if (typeof result === "string") resolve(dataUrlToBase64(result));
       else reject(new Error("FileReader: non-string result"));
     };
-    reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("FileReader failed"));
     reader.readAsDataURL(blob);
   });
 }
@@ -319,7 +315,10 @@ export function ChatView({ active, modalOpen }: Props) {
   // streaming turn — slash commands fire instantly so there's nothing
   // useful to autocomplete while the model is still talking.
   const slashOpen =
-    !askPrompt && !streaming && input.startsWith("/") && !input.slice(1).includes(" ");
+    !askPrompt &&
+    !streaming &&
+    input.startsWith("/") &&
+    !input.slice(1).includes(" ");
   const slashQuery = slashOpen ? input.slice(1).split(/\s/)[0] : "";
   const slashFiltered = slashOpen
     ? filterCommands(slashCommands, slashQuery)
@@ -327,7 +326,8 @@ export function ChatView({ active, modalOpen }: Props) {
 
   const showAttachmentError = (msg: string) => {
     setAttachmentError(msg);
-    if (errorTimerRef.current !== null) window.clearTimeout(errorTimerRef.current);
+    if (errorTimerRef.current !== null)
+      window.clearTimeout(errorTimerRef.current);
     errorTimerRef.current = window.setTimeout(() => {
       setAttachmentError(null);
       errorTimerRef.current = null;
@@ -401,7 +401,8 @@ export function ChatView({ active, modalOpen }: Props) {
     }
     const id = crypto.randomUUID();
     droppedUploadIds.current.add(id);
-    const safeName = (file.name.split(/[/\\]/).pop() || "file").trim() || "file";
+    const safeName =
+      (file.name.split(/[/\\]/).pop() || "file").trim() || "file";
     setUploading(true);
     send({ type: "file_upload", id, path: `_uploads/${safeName}`, data });
   };
@@ -426,7 +427,9 @@ export function ChatView({ active, modalOpen }: Props) {
     const text = e.clipboardData?.getData("text/plain") ?? "";
     if (text.length >= PASTE_TO_FILE_THRESHOLD) {
       e.preventDefault();
-      void uploadAndInjectPath(new File([text], "pasted.txt", { type: "text/plain" }));
+      void uploadAndInjectPath(
+        new File([text], "pasted.txt", { type: "text/plain" }),
+      );
     }
   };
 
@@ -467,7 +470,9 @@ export function ChatView({ active, modalOpen }: Props) {
     fileInputRef.current?.click();
   };
 
-  const onUploadFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onUploadFilesSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const list = e.target.files;
     if (!list || list.length === 0) return;
     if (list.length > MAX_UPLOAD_FILES) {
@@ -488,13 +493,18 @@ export function ChatView({ active, modalOpen }: Props) {
     }
     setUploading(true);
     try {
-      const resp = await fetch(`${basePath()}upload`, { method: "POST", body: form });
+      const resp = await fetch(`${basePath()}upload`, {
+        method: "POST",
+        body: form,
+      });
       if (!resp.ok) {
         const detail = await resp.text().catch(() => "");
         showAttachmentError(`Upload failed (${resp.status}) ${detail}`);
       }
     } catch (err) {
-      showAttachmentError(`Upload failed: ${err instanceof Error ? err.message : String(err)}`);
+      showAttachmentError(
+        `Upload failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -516,10 +526,15 @@ export function ChatView({ active, modalOpen }: Props) {
             const path = msg.path as string;
             // Inject the saved path into the composer as text (space-padded),
             // so the user can prepend /summarize · /translate · /extract.
-            setInput((prev) => `${prev}${prev && !prev.endsWith(" ") ? " " : ""}${path} `);
+            setInput(
+              (prev) =>
+                `${prev}${prev && !prev.endsWith(" ") ? " " : ""}${path} `,
+            );
             inputRef.current?.focus();
           } else {
-            showAttachmentError(`Upload failed: ${(msg.error as string) ?? "unknown"}`);
+            showAttachmentError(
+              `Upload failed: ${(msg.error as string) ?? "unknown"}`,
+            );
           }
           break;
         }
@@ -563,7 +578,10 @@ export function ChatView({ active, modalOpen }: Props) {
                 { ...last, content: last.content + (msg.text as string) },
               ];
             }
-            return [...prev, { role: "assistant", content: msg.text as string }];
+            return [
+              ...prev,
+              { role: "assistant", content: msg.text as string },
+            ];
           });
           break;
         case "chat_error":
@@ -628,7 +646,8 @@ export function ChatView({ active, modalOpen }: Props) {
               role: "tool",
               content: msg.name as string,
               toolName: msg.name as string,
-              toolKind: typeof msg.tool_name === "string" ? msg.tool_name : undefined,
+              toolKind:
+                typeof msg.tool_name === "string" ? msg.tool_name : undefined,
               toolInput: msg.input,
               toolDone: false,
             },
@@ -759,7 +778,8 @@ export function ChatView({ active, modalOpen }: Props) {
           if (!id) break;
           setMessages((prev) => {
             const existing = prev.findIndex(
-              (m) => m.role === "workflow_review" && m.workflowReview?.id === id,
+              (m) =>
+                m.role === "workflow_review" && m.workflowReview?.id === id,
             );
             const next: ChatMessage = {
               role: "workflow_review",
@@ -836,33 +856,70 @@ export function ChatView({ active, modalOpen }: Props) {
           break;
         case "chat_history_replaced":
           if (msg.messages && Array.isArray(msg.messages)) {
-            setMessages(
-              (msg.messages as { role: string; content: string }[]).map(
-                (m) => {
-                  const role =
-                    m.role === "assistant"
-                      ? "assistant"
-                      : m.role === "tool"
-                        ? "tool"
-                        : m.role === "system"
-                          ? "system"
-                          : "user";
-                  // Restored tool entries are historical — they've
-                  // already finished. Mark them done so they render
-                  // with the ✓ glyph rather than the running ▸.
-                  // Backend sends the bare tool name as `content`.
-                  if (role === "tool") {
-                    return {
-                      role,
-                      content: m.content,
-                      toolName: m.content,
-                      toolDone: true,
-                    } satisfies ChatMessage;
-                  }
-                  return { role, content: m.content } satisfies ChatMessage;
-                },
-              ),
-            );
+            setMessages((prev) => {
+              // A replay of the conversation we are ALREADY showing is a
+              // no-op — and repainting from it would be destructive: the
+              // store keeps only user/assistant/tool messages, so the
+              // turn's thinking block and its `[tokens: …]` footer would
+              // vanish. (They did: any redundant session_load wiped the
+              // live footer, which read as "the usage line is gone".)
+              // Compare against the persisted-shaped subset of what's on
+              // screen and keep the richer live view when they match.
+              const incoming = msg.messages as {
+                role: string;
+                content: string;
+                thinking?: string;
+              }[];
+              // Compare on SPOKEN text only. The live view carries shapes
+              // the store never sees — a thinking-only assistant bubble,
+              // tool markers, the usage footer — so a strict element-by-
+              // element match would call an identical conversation
+              // "different" and repaint anyway.
+              const spoken = (rows: { role: string; content: string }[]) =>
+                rows
+                  .filter(
+                    (m) =>
+                      (m.role === "user" || m.role === "assistant") &&
+                      (m.content ?? "").trim() !== "",
+                  )
+                  .map((m) => `${m.role}:${m.content}`);
+              const mine = spoken(prev);
+              const theirs = spoken(incoming);
+              const sameConversation =
+                mine.length === theirs.length &&
+                mine.every((line, i) => line === theirs[i]);
+              if (sameConversation && mine.length > 0) return prev;
+              return incoming.map((m) => {
+                const role =
+                  m.role === "assistant"
+                    ? "assistant"
+                    : m.role === "tool"
+                      ? "tool"
+                      : m.role === "system"
+                        ? "system"
+                        : "user";
+                // Restored tool entries are historical — they've
+                // already finished. Mark them done so they render
+                // with the ✓ glyph rather than the running ▸.
+                // Backend sends the bare tool name as `content`.
+                if (role === "tool") {
+                  return {
+                    role,
+                    content: m.content,
+                    toolName: m.content,
+                    toolDone: true,
+                  } satisfies ChatMessage;
+                }
+                // Reasoning is persisted with the turn, so a reloaded
+                // conversation keeps its collapsed thinking blocks
+                // instead of losing them at the session boundary.
+                return {
+                  role,
+                  content: m.content,
+                  ...(m.thinking ? { thinking: m.thinking } : {}),
+                } satisfies ChatMessage;
+              });
+            });
             setStreaming(false);
             setAskPrompt(null);
           }
@@ -900,17 +957,12 @@ export function ChatView({ active, modalOpen }: Props) {
               .map((s) => s.trim())
               .find((s) => s.length > 0) ?? "(no result text)";
           const truncated =
-            firstLine.length > 240
-              ? `${firstLine.slice(0, 237)}…`
-              : firstLine;
+            firstLine.length > 240 ? `${firstLine.slice(0, 237)}…` : firstLine;
           const seconds = (durationMs / 1000).toFixed(1);
           const content = `✓ /${agentName} done in ${seconds}s — ${truncated}${
             id ? `  (id: ${id})` : ""
           }`;
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content },
-          ]);
+          setMessages((prev) => [...prev, { role: "system", content }]);
           break;
         }
         case "chat_side_channel_error": {
@@ -923,16 +975,11 @@ export function ChatView({ active, modalOpen }: Props) {
               .map((s) => s.trim())
               .find((s) => s.length > 0) ?? "unknown error";
           const truncated =
-            firstLine.length > 240
-              ? `${firstLine.slice(0, 237)}…`
-              : firstLine;
+            firstLine.length > 240 ? `${firstLine.slice(0, 237)}…` : firstLine;
           const content = `✗ /${agentName} failed — ${truncated}${
             id ? `  (id: ${id})` : ""
           }`;
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content },
-          ]);
+          setMessages((prev) => [...prev, { role: "system", content }]);
           break;
         }
       }
@@ -1007,14 +1054,14 @@ export function ChatView({ active, modalOpen }: Props) {
   // browser via the vetted `open_external` IPC. MCP-Apps tools render
   // their own widgets inline via `McpAppIframe`, so we don't need
   // an in-app lightbox for image previews — links can just hand off.
-  const handleChatLinkClick = useCallback((
-    e: React.MouseEvent<HTMLAnchorElement>,
-    href: string,
-  ) => {
-    if (!href) return;
-    e.preventDefault();
-    send({ type: "open_external", url: href });
-  }, []);
+  const handleChatLinkClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+      if (!href) return;
+      e.preventDefault();
+      send({ type: "open_external", url: href });
+    },
+    [],
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1165,7 +1212,10 @@ export function ChatView({ active, modalOpen }: Props) {
     // The slash popup owns the arrows when open (handled above, returns first).
     // Entering history from a fresh draft needs the caret on the edge line so
     // multi-line editing keeps working; once navigating, Up/Down always cycle.
-    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.nativeEvent.isComposing) {
+    if (
+      (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+      !e.nativeEvent.isComposing
+    ) {
       const el = e.currentTarget;
       const caret = el.selectionStart ?? input.length;
       const navigating = histIndexRef.current !== -1;
@@ -1246,371 +1296,374 @@ export function ChatView({ active, modalOpen }: Props) {
     el.style.overflowY = sh > maxHeight ? "auto" : "hidden";
   }, [input]);
 
-  const messageElements = useMemo(() => messages.map((msg, i) => {
-          // (Pre-fix this map opened with a side-channel bubble render
-          // pulling state off `msg.sideChannel`. The bubble showed
-          // live tool-call markers + streamed prose for every /dream
-          // / /agent spawn, which duplicated the BackgroundAgentsSidebar
-          // and crowded the chat. Live progress is sidebar-only now;
-          // the chat gets a one-line system message on done/error
-          // pushed by the `chat_side_channel_done` / `_error`
-          // handlers above — same `role: "system"` shape as any
-          // other system note, no special render branch needed.)
-          // Tool calls render as a thin one-line indicator (▸ running,
-          // ✓ done) rather than a full bubble — the chat tab is for
-          // the user↔assistant conversation; raw tool output lives on
-          // the Terminal tab.
-          // dev-plan/32 Tier 3 workflow review bubble. Renders a
-          // dedicated card with Approve / Cancel / Re-author buttons;
-          // each click posts a `workflow_decision` back through IPC.
-          if (msg.role === "workflow_review" && msg.workflowReview) {
-            const wr = msg.workflowReview;
-            return (
-              <WorkflowReviewBubble
-                key={`${i}-${wr.id}-${wr.revision}`}
-                id={wr.id}
-                script={wr.script}
-                prompt={wr.prompt}
-                model={wr.model}
-                revision={wr.revision}
-              />
-            );
-          }
-          if (msg.role === "tool") {
-            const glyph = msg.toolDone ? "✓" : "▸";
-            const copied = copiedMessageIndex === i;
-            // MCP-Apps tools widen the bubble so the embedded iframe
-            // gets meaningful width. Plain tools keep the thin
-            // one-liner indicator.
-            const widget = msg.uiResource;
-            // TodoWrite gets a custom card showing the rendered list
-            // — the user wants to see plan-style progression even
-            // though TodoWrite is the casual scratchpad. Each call
-            // shows the snapshot at that point; successive cards let
-            // the user see the diff over time.
-            const todos = (() => {
-              if (msg.toolKind !== "TodoWrite") return null;
-              const inp = msg.toolInput as { todos?: unknown } | undefined;
-              if (!inp || !Array.isArray(inp.todos)) return null;
-              return inp.todos as TodoItemInput[];
-            })();
-            return (
-              <div key={i} className="flex justify-start">
-                <div
-                  className={`group flex max-w-[92%] sm:max-w-[80%] flex-col gap-1 ${widget || todos ? "w-[92%] sm:w-[80%]" : ""}`}
-                  style={{
-                    color: "var(--text-secondary)",
-                    fontFamily:
-                      "Menlo, Monaco, 'Courier New', monospace",
-                    paddingLeft: 2,
-                    // The 0.7 dim signals "this tool finished" on the
-                    // text-only indicator. Skip it when there's an
-                    // embedded MCP-Apps widget — opacity inherits into
-                    // the iframe and washes out widget content (light
-                    // mode is most visible). The widget is the focus;
-                    // the parent indicator above it doesn't need the
-                    // dim treatment when there's actual UI to look at.
-                    opacity: msg.toolDone && !widget ? 0.7 : 1,
-                  }}
-                >
-                  <div className="inline-flex items-center gap-1 text-xs">
-                    <span className="truncate">
-                      {glyph} {msg.toolName ?? msg.content}
-                      {msg.toolSource && msg.toolDone && (
-                        <span style={{ opacity: 0.7 }}>
-                          {" "}
-                          (via {msg.toolSource})
-                        </span>
-                      )}
-                    </span>
-                    <CopyMessageButton
-                      copied={copied}
-                      compact
-                      onCopy={() => copyMessage(msg, i)}
-                    />
-                  </div>
-                  {todos && todos.length > 0 && (
-                    <div
-                      className="mt-1 rounded border px-2 py-1.5"
-                      style={{
-                        borderColor: "var(--border, #2a2a2a)",
-                        background: "var(--surface-1, rgba(255,255,255,0.03))",
-                        fontFamily:
-                          "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-                      }}
-                    >
-                      {todos.map((t) => {
-                        const glyphForStatus =
-                          t.status === "completed"
-                            ? "✓"
-                            : t.status === "in_progress"
-                              ? "◉"
-                              : "☐";
-                        const colorForStatus =
-                          t.status === "completed"
-                            ? "var(--success, #6cc070)"
-                            : t.status === "in_progress"
-                              ? "var(--warning, #d4a657)"
-                              : "var(--text-secondary)";
-                        return (
-                          <div
-                            key={t.id}
-                            className="flex items-baseline gap-2"
-                            style={{
-                              fontSize: "11px",
-                              lineHeight: "1.5",
-                            }}
-                          >
-                            <span
-                              style={{
-                                color: colorForStatus,
-                                fontFamily:
-                                  "Menlo, Monaco, 'Courier New', monospace",
-                                fontSize: "11px",
-                              }}
-                            >
-                              {glyphForStatus}
-                            </span>
-                            <span
-                              style={{
-                                textDecoration:
-                                  t.status === "completed"
-                                    ? "line-through"
-                                    : "none",
-                                color:
-                                  t.status === "pending"
-                                    ? "var(--text-secondary)"
-                                    : "var(--text-primary)",
-                                wordBreak: "break-word",
-                              }}
-                            >
-                              {t.content}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {widget && msg.toolDone && (
-                    <McpAppIframe
-                      uri={widget.uri}
-                      html={widget.html}
-                      allowSameOrigin={widget.allowSameOrigin === true}
-                      autoSize={widget.autoSize === true}
-                      parentToolName={msg.toolName ?? ""}
-                      toolResult={{
-                        content: [{ type: "text", text: msg.content }],
-                        isError: false,
-                      }}
-                    />
-                  )}
-                </div>
-              </div>
-            );
-          }
-
-          const isAssistant = msg.role === "assistant";
-          const isSystem = msg.role === "system";
-          const isError = msg.role === "error";
-          const copied = copiedMessageIndex === i;
-          // Restored chat histories can be a wall of tool indicators
-          // between user turns; an extra blank line before each user
-          // message makes turn boundaries scannable. We apply it only
-          // when the previous message was something other than a
-          // user bubble — back-to-back user inputs (rare, but
-          // possible) keep the standard `space-y-3` spacing.
-          const needsTurnGap =
-            msg.role === "user" && i > 0 && messages[i - 1]?.role !== "user";
+  const messageElements = useMemo(
+    () =>
+      messages.map((msg, i) => {
+        // (Pre-fix this map opened with a side-channel bubble render
+        // pulling state off `msg.sideChannel`. The bubble showed
+        // live tool-call markers + streamed prose for every /dream
+        // / /agent spawn, which duplicated the BackgroundAgentsSidebar
+        // and crowded the chat. Live progress is sidebar-only now;
+        // the chat gets a one-line system message on done/error
+        // pushed by the `chat_side_channel_done` / `_error`
+        // handlers above — same `role: "system"` shape as any
+        // other system note, no special render branch needed.)
+        // Tool calls render as a thin one-line indicator (▸ running,
+        // ✓ done) rather than a full bubble — the chat tab is for
+        // the user↔assistant conversation; raw tool output lives on
+        // the Terminal tab.
+        // dev-plan/32 Tier 3 workflow review bubble. Renders a
+        // dedicated card with Approve / Cancel / Re-author buttons;
+        // each click posts a `workflow_decision` back through IPC.
+        if (msg.role === "workflow_review" && msg.workflowReview) {
+          const wr = msg.workflowReview;
           return (
-            <div
-              key={i}
-              className={`flex ${msg.role === "user" ? "justify-end" : isSystem || isError ? "justify-center" : "justify-start"}${needsTurnGap ? " pt-4" : ""}`}
-            >
+            <WorkflowReviewBubble
+              key={`${i}-${wr.id}-${wr.revision}`}
+              id={wr.id}
+              script={wr.script}
+              prompt={wr.prompt}
+              model={wr.model}
+              revision={wr.revision}
+            />
+          );
+        }
+        if (msg.role === "tool") {
+          const glyph = msg.toolDone ? "✓" : "▸";
+          const copied = copiedMessageIndex === i;
+          // MCP-Apps tools widen the bubble so the embedded iframe
+          // gets meaningful width. Plain tools keep the thin
+          // one-liner indicator.
+          const widget = msg.uiResource;
+          // TodoWrite gets a custom card showing the rendered list
+          // — the user wants to see plan-style progression even
+          // though TodoWrite is the casual scratchpad. Each call
+          // shows the snapshot at that point; successive cards let
+          // the user see the diff over time.
+          const todos = (() => {
+            if (msg.toolKind !== "TodoWrite") return null;
+            const inp = msg.toolInput as { todos?: unknown } | undefined;
+            if (!inp || !Array.isArray(inp.todos)) return null;
+            return inp.todos as TodoItemInput[];
+          })();
+          return (
+            <div key={i} className="flex justify-start">
               <div
-                className={`group relative max-w-[92%] sm:max-w-[80%] rounded-lg py-2 pl-3 pr-9 text-sm ${isAssistant ? "" : "whitespace-pre-wrap"}`}
+                className={`group flex max-w-[92%] sm:max-w-[80%] flex-col gap-1 ${widget || todos ? "w-[92%] sm:w-[80%]" : ""}`}
                 style={{
-                  background:
-                    msg.role === "user"
-                      ? "var(--chat-user-bg)"
-                      : isError
-                        ? "color-mix(in srgb, #f85149 12%, transparent)"
-                        : isSystem
-                          ? "transparent"
-                          : "var(--bg-secondary)",
-                  color:
-                    msg.role === "user"
-                      ? "var(--chat-user-fg)"
-                      : isError
-                        ? "#f85149"
-                        : isSystem
-                          ? "var(--text-secondary)"
-                          : "var(--text-primary)",
-                  border: isError
-                    ? "1px solid color-mix(in srgb, #f85149 50%, transparent)"
-                    : isSystem
-                      ? "1px solid var(--border)"
-                      : "none",
-                  fontFamily: isSystem
-                    ? "Menlo, Monaco, 'Courier New', monospace"
-                    : "inherit",
-                  fontSize: isSystem ? "12px" : "14px",
+                  color: "var(--text-secondary)",
+                  fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+                  paddingLeft: 2,
+                  // The 0.7 dim signals "this tool finished" on the
+                  // text-only indicator. Skip it when there's an
+                  // embedded MCP-Apps widget — opacity inherits into
+                  // the iframe and washes out widget content (light
+                  // mode is most visible). The widget is the focus;
+                  // the parent indicator above it doesn't need the
+                  // dim treatment when there's actual UI to look at.
+                  opacity: msg.toolDone && !widget ? 0.7 : 1,
                 }}
               >
-                {isAssistant && msg.thinking && (
-                  // Reasoning models (DeepSeek v4/r1, OpenAI o-series,
-                  // NVIDIA NIM glm4.7, …) emit `reasoning_content` before
-                  // their final answer. Show it as a dim collapsible
-                  // block above the assistant text so the user sees the
-                  // model is working — but visibly distinct from its
-                  // final reply.
-                  <details
-                    className="mb-2 rounded border px-2 py-1"
-                    open={!msg.content}
+                <div className="inline-flex items-center gap-1 text-xs">
+                  <span className="truncate">
+                    {glyph} {msg.toolName ?? msg.content}
+                    {msg.toolSource && msg.toolDone && (
+                      <span style={{ opacity: 0.7 }}>
+                        {" "}
+                        (via {msg.toolSource})
+                      </span>
+                    )}
+                  </span>
+                  <CopyMessageButton
+                    copied={copied}
+                    compact
+                    onCopy={() => copyMessage(msg, i)}
+                  />
+                </div>
+                {todos && todos.length > 0 && (
+                  <div
+                    className="mt-1 rounded border px-2 py-1.5"
                     style={{
                       borderColor: "var(--border, #2a2a2a)",
                       background: "var(--surface-1, rgba(255,255,255,0.03))",
-                      fontSize: "12px",
-                      color: "var(--text-secondary)",
-                      fontStyle: "italic",
+                      fontFamily:
+                        "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
                     }}
                   >
-                    <summary
-                      className="cursor-pointer select-none text-xs"
-                      style={{ fontStyle: "normal" }}
-                    >
-                      ▾ Thinking (
-                      {(msg.thinkingChars ?? msg.thinking.length).toLocaleString()}{" "}
-                      chars
-                      {(msg.thinkingChars ?? 0) > msg.thinking.length
-                        ? `, showing last ${msg.thinking.length.toLocaleString()}`
-                        : ""}
-                      )
-                    </summary>
-                    <div className="mt-1 whitespace-pre-wrap">
-                      {
-                        // While the reasoning is still streaming (no
-                        // answer text yet → details forced open), render
-                        // only a tail ticker: relayouting the full block
-                        // on every delta is what froze the webview on
-                        // hours-long runs. The full (capped) text renders
-                        // once the answer starts and the block collapses.
-                        msg.content || msg.thinking.length <= 4000
-                          ? msg.thinking
-                          : `…${msg.thinking.slice(-4000)}`
-                      }
-                    </div>
-                  </details>
-                )}
-                {isAssistant ? (
-                  // Assistant turns are rendered through react-markdown
-                  // so headings/lists/code-blocks/tables come out as
-                  // proper HTML rather than literal **bold** text.
-                  // remark-gfm adds GitHub-flavored markdown (tables,
-                  // strikethrough, task lists). rehype-highlight runs
-                  // syntax highlighting against fenced code blocks —
-                  // styled by the .hljs-* rules in index.css.
-                  //
-                  // SECURITY: msg.content is untrusted (model output).
-                  // The pipeline above is the safe stack — no
-                  // allowDangerousHtml, no allowSvg, no rehype-raw.
-                  // rehype-highlight is a CSS-class applier (no code
-                  // execution); fenced-code language IDs flow into it
-                  // unchecked but are rendered as text. Don't add HTML
-                  // pass-through plugins or dangerouslySetInnerHTML
-                  // here without rethinking that threat model.
-                  <div className="markdown-body">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeHighlight]}
-                      components={{
-                        // Intercept link clicks so the wry webview
-                        // never navigates away from the chat. Image
-                        // URLs open in a lightbox; everything else
-                        // hands off to the OS browser.
-                        a: ({ href, children, ...rest }) => (
-                          <a
-                            {...rest}
-                            href={href}
-                            onClick={(e) =>
-                              handleChatLinkClick(e, href ?? "")
-                            }
-                          >
-                            {children}
-                          </a>
-                        ),
-                        // Markdown `![alt](url)` images render inline.
-                        // A workspace-relative src (e.g. `output/img-….jpg`
-                        // written by TextToImage) is routed through
-                        // /file-asset via resolveAssetSrc — otherwise the
-                        // browser resolves it against the page origin and
-                        // 404s. Click-to-zoom isn't needed: MCP-Apps tools
-                        // produce their own iframe widgets, and any other
-                        // inline image (e.g. attached by the user) is
-                        // already shown at full bubble width.
-                        img: ({ src, alt, ...rest }) => (
-                          <img
-                            {...rest}
-                            src={resolveAssetSrc(
-                              typeof src === "string" ? src : undefined,
-                            )}
-                            alt={alt}
+                    {todos.map((t) => {
+                      const glyphForStatus =
+                        t.status === "completed"
+                          ? "✓"
+                          : t.status === "in_progress"
+                            ? "◉"
+                            : "☐";
+                      const colorForStatus =
+                        t.status === "completed"
+                          ? "var(--success, #6cc070)"
+                          : t.status === "in_progress"
+                            ? "var(--warning, #d4a657)"
+                            : "var(--text-secondary)";
+                      return (
+                        <div
+                          key={t.id}
+                          className="flex items-baseline gap-2"
+                          style={{
+                            fontSize: "11px",
+                            lineHeight: "1.5",
+                          }}
+                        >
+                          <span
                             style={{
-                              maxWidth: "100%",
-                              height: "auto",
-                              borderRadius: 6,
+                              color: colorForStatus,
+                              fontFamily:
+                                "Menlo, Monaco, 'Courier New', monospace",
+                              fontSize: "11px",
                             }}
-                          />
-                        ),
-                      }}
-                    >
-                      {wrapBareJsonBlocks(stripThinkBlocks(msg.content))}
-                    </ReactMarkdown>
+                          >
+                            {glyphForStatus}
+                          </span>
+                          <span
+                            style={{
+                              textDecoration:
+                                t.status === "completed"
+                                  ? "line-through"
+                                  : "none",
+                              color:
+                                t.status === "pending"
+                                  ? "var(--text-secondary)"
+                                  : "var(--text-primary)",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {t.content}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
-                ) : isError ? (
-                  <span>
-                    <span aria-hidden="true" style={{ marginRight: 6 }}>
-                      ⚠
-                    </span>
-                    {msg.content}
-                  </span>
-                ) : (
-                  msg.content
                 )}
-                {msg.injectionState && (
-                  // Mid-turn injection badge (issue #106). "queued"
-                  // → message sits in the agent's queue; "delivered"
-                  // → agent drained it at a tool_result boundary and
-                  // the LLM now sees it in the next turn's context.
-                  <span
-                    className="ml-2 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider align-middle"
-                    style={{
-                      background:
-                        msg.injectionState === "queued"
-                          ? "color-mix(in srgb, var(--accent) 18%, transparent)"
-                          : "color-mix(in srgb, #22c55e 22%, transparent)",
-                      color:
-                        msg.injectionState === "queued"
-                          ? "var(--accent)"
-                          : "#22c55e",
-                      fontWeight: 600,
+                {widget && msg.toolDone && (
+                  <McpAppIframe
+                    uri={widget.uri}
+                    html={widget.html}
+                    allowSameOrigin={widget.allowSameOrigin === true}
+                    autoSize={widget.autoSize === true}
+                    parentToolName={msg.toolName ?? ""}
+                    toolResult={{
+                      content: [{ type: "text", text: msg.content }],
+                      isError: false,
                     }}
-                    title={
-                      msg.injectionState === "queued"
-                        ? "Queued — the agent will see this at the next tool boundary"
-                        : "Delivered — the agent has read this message"
-                    }
-                  >
-                    {msg.injectionState === "queued" ? "queued" : "delivered"}
-                  </span>
+                  />
                 )}
-                <CopyMessageButton
-                  copied={copied}
-                  onCopy={() => copyMessage(msg, i)}
-                />
               </div>
             </div>
           );
-        }), [messages, copiedMessageIndex, copyMessage, handleChatLinkClick]);
+        }
+
+        const isAssistant = msg.role === "assistant";
+        const isSystem = msg.role === "system";
+        const isError = msg.role === "error";
+        const copied = copiedMessageIndex === i;
+        // Restored chat histories can be a wall of tool indicators
+        // between user turns; an extra blank line before each user
+        // message makes turn boundaries scannable. We apply it only
+        // when the previous message was something other than a
+        // user bubble — back-to-back user inputs (rare, but
+        // possible) keep the standard `space-y-3` spacing.
+        const needsTurnGap =
+          msg.role === "user" && i > 0 && messages[i - 1]?.role !== "user";
+        return (
+          <div
+            key={i}
+            className={`flex ${msg.role === "user" ? "justify-end" : isSystem || isError ? "justify-center" : "justify-start"}${needsTurnGap ? " pt-4" : ""}`}
+          >
+            <div
+              className={`group relative max-w-[92%] sm:max-w-[80%] rounded-lg py-2 pl-3 pr-9 text-sm ${isAssistant ? "" : "whitespace-pre-wrap"}`}
+              style={{
+                background:
+                  msg.role === "user"
+                    ? "var(--chat-user-bg)"
+                    : isError
+                      ? "color-mix(in srgb, #f85149 12%, transparent)"
+                      : isSystem
+                        ? "transparent"
+                        : "var(--bg-secondary)",
+                color:
+                  msg.role === "user"
+                    ? "var(--chat-user-fg)"
+                    : isError
+                      ? "#f85149"
+                      : isSystem
+                        ? "var(--text-secondary)"
+                        : "var(--text-primary)",
+                border: isError
+                  ? "1px solid color-mix(in srgb, #f85149 50%, transparent)"
+                  : isSystem
+                    ? "1px solid var(--border)"
+                    : "none",
+                fontFamily: isSystem
+                  ? "Menlo, Monaco, 'Courier New', monospace"
+                  : "inherit",
+                fontSize: isSystem ? "12px" : "14px",
+              }}
+            >
+              {isAssistant && msg.thinking && (
+                // Reasoning models (DeepSeek v4/r1, OpenAI o-series,
+                // NVIDIA NIM glm4.7, …) emit `reasoning_content` before
+                // their final answer. Show it as a dim collapsible
+                // block above the assistant text so the user sees the
+                // model is working — but visibly distinct from its
+                // final reply.
+                <details
+                  className="mb-2 rounded border px-2 py-1"
+                  open={!msg.content}
+                  style={{
+                    borderColor: "var(--border, #2a2a2a)",
+                    background: "var(--surface-1, rgba(255,255,255,0.03))",
+                    fontSize: "12px",
+                    color: "var(--text-secondary)",
+                    fontStyle: "italic",
+                  }}
+                >
+                  <summary
+                    className="cursor-pointer select-none text-xs"
+                    style={{ fontStyle: "normal" }}
+                  >
+                    ▾ Thinking (
+                    {(
+                      msg.thinkingChars ?? msg.thinking.length
+                    ).toLocaleString()}{" "}
+                    chars
+                    {(msg.thinkingChars ?? 0) > msg.thinking.length
+                      ? `, showing last ${msg.thinking.length.toLocaleString()}`
+                      : ""}
+                    )
+                  </summary>
+                  <div className="mt-1 whitespace-pre-wrap">
+                    {
+                      // While the reasoning is still streaming (no
+                      // answer text yet → details forced open), render
+                      // only a tail ticker: relayouting the full block
+                      // on every delta is what froze the webview on
+                      // hours-long runs. The full (capped) text renders
+                      // once the answer starts and the block collapses.
+                      msg.content || msg.thinking.length <= 4000
+                        ? msg.thinking
+                        : `…${msg.thinking.slice(-4000)}`
+                    }
+                  </div>
+                </details>
+              )}
+              {isAssistant ? (
+                // Assistant turns are rendered through react-markdown
+                // so headings/lists/code-blocks/tables come out as
+                // proper HTML rather than literal **bold** text.
+                // remark-gfm adds GitHub-flavored markdown (tables,
+                // strikethrough, task lists). rehype-highlight runs
+                // syntax highlighting against fenced code blocks —
+                // styled by the .hljs-* rules in index.css.
+                //
+                // SECURITY: msg.content is untrusted (model output).
+                // The pipeline above is the safe stack — no
+                // allowDangerousHtml, no allowSvg, no rehype-raw.
+                // rehype-highlight is a CSS-class applier (no code
+                // execution); fenced-code language IDs flow into it
+                // unchecked but are rendered as text. Don't add HTML
+                // pass-through plugins or dangerouslySetInnerHTML
+                // here without rethinking that threat model.
+                <div className="markdown-body">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeHighlight]}
+                    components={{
+                      // Intercept link clicks so the wry webview
+                      // never navigates away from the chat. Image
+                      // URLs open in a lightbox; everything else
+                      // hands off to the OS browser.
+                      a: ({ href, children, ...rest }) => (
+                        <a
+                          {...rest}
+                          href={href}
+                          onClick={(e) => handleChatLinkClick(e, href ?? "")}
+                        >
+                          {children}
+                        </a>
+                      ),
+                      // Markdown `![alt](url)` images render inline.
+                      // A workspace-relative src (e.g. `output/img-….jpg`
+                      // written by TextToImage) is routed through
+                      // /file-asset via resolveAssetSrc — otherwise the
+                      // browser resolves it against the page origin and
+                      // 404s. Click-to-zoom isn't needed: MCP-Apps tools
+                      // produce their own iframe widgets, and any other
+                      // inline image (e.g. attached by the user) is
+                      // already shown at full bubble width.
+                      img: ({ src, alt, ...rest }) => (
+                        <img
+                          {...rest}
+                          src={resolveAssetSrc(
+                            typeof src === "string" ? src : undefined,
+                          )}
+                          alt={alt}
+                          style={{
+                            maxWidth: "100%",
+                            height: "auto",
+                            borderRadius: 6,
+                          }}
+                        />
+                      ),
+                    }}
+                  >
+                    {wrapBareJsonBlocks(stripThinkBlocks(msg.content))}
+                  </ReactMarkdown>
+                </div>
+              ) : isError ? (
+                <span>
+                  <span aria-hidden="true" style={{ marginRight: 6 }}>
+                    ⚠
+                  </span>
+                  {msg.content}
+                </span>
+              ) : (
+                msg.content
+              )}
+              {msg.injectionState && (
+                // Mid-turn injection badge (issue #106). "queued"
+                // → message sits in the agent's queue; "delivered"
+                // → agent drained it at a tool_result boundary and
+                // the LLM now sees it in the next turn's context.
+                <span
+                  className="ml-2 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider align-middle"
+                  style={{
+                    background:
+                      msg.injectionState === "queued"
+                        ? "color-mix(in srgb, var(--accent) 18%, transparent)"
+                        : "color-mix(in srgb, #22c55e 22%, transparent)",
+                    color:
+                      msg.injectionState === "queued"
+                        ? "var(--accent)"
+                        : "#22c55e",
+                    fontWeight: 600,
+                  }}
+                  title={
+                    msg.injectionState === "queued"
+                      ? "Queued — the agent will see this at the next tool boundary"
+                      : "Delivered — the agent has read this message"
+                  }
+                >
+                  {msg.injectionState === "queued" ? "queued" : "delivered"}
+                </span>
+              )}
+              <CopyMessageButton
+                copied={copied}
+                onCopy={() => copyMessage(msg, i)}
+              />
+            </div>
+          </div>
+        );
+      }),
+    [messages, copiedMessageIndex, copyMessage, handleChatLinkClick],
+  );
 
   const awaitingUserAnswer = askPrompt !== null;
   // Allow typing while the agent is streaming so the user can queue
@@ -1626,7 +1679,7 @@ export function ChatView({ active, modalOpen }: Props) {
     ? !input.trim()
     : streaming
       ? !input.trim() || input.trim().startsWith("/") || attachments.length > 0
-      : (!input.trim() && attachments.length === 0);
+      : !input.trim() && attachments.length === 0;
   // The full question now renders as a markdown card above the input
   // (see `<AskCard>` below) — the placeholder is just a short hint
   // that points at the card. Truncating multi-line markdown into a
@@ -1695,8 +1748,8 @@ export function ChatView({ active, modalOpen }: Props) {
                 fontStyle: "italic",
               }}
             >
-              Waiting for first response… (some hosted models cold-start
-              for 30–120s before the first byte)
+              Waiting for first response… (some hosted models cold-start for
+              30–120s before the first byte)
             </div>
           </div>
         )}
@@ -1832,7 +1885,9 @@ export function ChatView({ active, modalOpen }: Props) {
                 className="px-2 py-2 rounded text-sm transition-colors inline-flex items-center justify-center"
                 style={{
                   background: "var(--bg-tertiary)",
-                  color: uploading ? "var(--text-secondary)" : "var(--text-primary)",
+                  color: uploading
+                    ? "var(--text-secondary)"
+                    : "var(--text-primary)",
                   border: "1px solid var(--border)",
                   cursor: uploading || streaming ? "not-allowed" : "pointer",
                   minHeight: "36px",
@@ -1907,8 +1962,12 @@ export function ChatView({ active, modalOpen }: Props) {
               disabled={submitDisabled}
               className="px-4 py-2 rounded text-sm font-medium transition-colors"
               style={{
-                background: submitDisabled ? "var(--bg-tertiary)" : "var(--accent)",
-                color: submitDisabled ? "var(--text-secondary)" : "var(--accent-fg)",
+                background: submitDisabled
+                  ? "var(--bg-tertiary)"
+                  : "var(--accent)",
+                color: submitDisabled
+                  ? "var(--text-secondary)"
+                  : "var(--accent-fg)",
                 cursor: submitDisabled ? "not-allowed" : "pointer",
               }}
             >

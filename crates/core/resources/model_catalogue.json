@@ -1,7 +1,7 @@
 {
   "schema": 4,
   "source": "baseline 2026-06-10 — pricing synced from LiteLLM (github.com/BerriAI/litellm)",
-  "fetched_at": "2026-07-27T00:00:00Z",
+  "fetched_at": "2026-07-28T00:00:00Z",
   "providers": {
     "anthropic": {
       "list_url": "https://api.anthropic.com/v1/models",
@@ -1689,11 +1689,6 @@
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
         },
-        "nvidia/nvidia/ising-calibration-1-35b-a3b": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
         "nvidia/nvidia/ising-calibration-1.5-31b": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models",
@@ -1884,6 +1879,11 @@
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
         },
+        "nvidia/nvidia/riva-translate-4b-instruct-v2": {
+          "context": 131072,
+          "source": "https://integrate.api.nvidia.com/v1/models",
+          "verified_at": "2026-07-28"
+        },
         "nvidia/nvidia/vila": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
@@ -2017,6 +2017,11 @@
           "context": 262144,
           "source": "https://ollama.com/v1/models",
           "verified_at": "2026-06-13"
+        },
+        "ollama-cloud/kimi-k3": {
+          "context": 262144,
+          "source": "https://ollama.com/v1/models",
+          "verified_at": "2026-07-28"
         },
         "ollama-cloud/minimax-m2.5": {
           "context": 262144,
@@ -4455,31 +4460,9 @@
           "output_per_mtok": 0.6,
           "cached_input_per_mtok": 0.075
         },
-        "openai/gpt-4o-search-preview": {
-          "context": 128000,
-          "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
-          "verified_at": "2026-06-10",
-          "free": false,
-          "chat": true,
-          "input_per_mtok": 2.5,
-          "output_per_mtok": 10.0,
-          "cached_input_per_mtok": 1.25
-        },
         "openai/gpt-5": {
           "context": 400000,
           "max_output": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
-          "verified_at": "2026-06-10",
-          "free": false,
-          "chat": true,
-          "input_per_mtok": 1.25,
-          "output_per_mtok": 10.0,
-          "cached_input_per_mtok": 0.125
-        },
-        "openai/gpt-5-chat": {
-          "context": 128000,
-          "max_output": 16384,
           "source": "https://openrouter.ai/api/v1/models + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,

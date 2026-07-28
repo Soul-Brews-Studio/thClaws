@@ -547,9 +547,51 @@ pub enum ViewEvent {
 pub struct DisplayMessage {
     pub role: String,
     pub content: String,
+    /// The model's reasoning for this turn, when it produced any. Kept
+    /// out of `content` so the surface can render it the way it renders
+    /// live reasoning — a collapsed block above the answer — rather
+    /// than inlining it into the reply text.
+    pub thinking: Option<String>,
 }
 
 impl DisplayMessage {
+    /// Same as [`from_messages`], plus the session's stored per-turn
+    /// usage footers dropped back in as `system` rows at the message
+    /// counts they were recorded at. This is what a reload should
+    /// render: the live view shows those footers, so history that
+    /// silently omits them is a different conversation.
+    pub fn from_session(session: &crate::session::Session) -> Vec<Self> {
+        let usage = &session.turn_usage;
+        if usage.is_empty() {
+            return Self::from_messages(&session.messages);
+        }
+        let mut out: Vec<Self> = Vec::new();
+        let mut next = 0usize;
+        for (i, _) in session.messages.iter().enumerate() {
+            // Rebuild one message at a time so a footer recorded at
+            // `after = N` lands after exactly N messages' worth of rows.
+            out.extend(Self::from_messages(&session.messages[i..=i]));
+            while next < usage.len() && usage[next].after == i + 1 {
+                out.push(DisplayMessage {
+                    role: "system".into(),
+                    content: usage[next].text.clone(),
+                    thinking: None,
+                });
+                next += 1;
+            }
+        }
+        // Footers recorded past the end (history trimmed by a compaction
+        // since) still belong at the bottom rather than being dropped.
+        for u in &usage[next..] {
+            out.push(DisplayMessage {
+                role: "system".into(),
+                content: u.text.clone(),
+                thinking: None,
+            });
+        }
+        out
+    }
+
     pub fn from_messages(messages: &[Message]) -> Vec<Self> {
         let mut out: Vec<DisplayMessage> = Vec::new();
         // Map tool_use_id → tool name so when we later see a
@@ -575,6 +617,7 @@ impl DisplayMessage {
             // the Terminal tab) — except AskUserQuestion's, which IS
             // the user's typed reply and renders as a user bubble.
             let mut text_parts: Vec<String> = Vec::new();
+            let mut thinking_parts: Vec<String> = Vec::new();
             let mut deferred_tools: Vec<DisplayMessage> = Vec::new();
             let mut deferred_user_replies: Vec<DisplayMessage> = Vec::new();
             for b in &m.content {
@@ -584,12 +627,13 @@ impl DisplayMessage {
                     // it in the chat-list display. When the GUI gets a
                     // dedicated "show thinking" toggle, surface this
                     // there instead of the main bubble.
-                    ContentBlock::Thinking { .. } => {}
+                    ContentBlock::Thinking { content, .. } => thinking_parts.push(content.clone()),
                     ContentBlock::ToolUse { id, name, .. } => {
                         tool_use_names.insert(id.clone(), name.clone());
                         deferred_tools.push(DisplayMessage {
                             role: "tool".into(),
                             content: name.clone(),
+                            thinking: None,
                         });
                     }
                     ContentBlock::ToolResult {
@@ -613,6 +657,7 @@ impl DisplayMessage {
                                 deferred_user_replies.push(DisplayMessage {
                                     role: "user".into(),
                                     content: trimmed.to_string(),
+                                    thinking: None,
                                 });
                             }
                         }
@@ -632,10 +677,16 @@ impl DisplayMessage {
             // user message so the prior assistant question reads
             // before the answer in the chat list.
             let text = text_parts.join("\n");
-            if !text.is_empty() {
+            let thinking = if thinking_parts.is_empty() {
+                None
+            } else {
+                Some(thinking_parts.join("\n"))
+            };
+            if !text.is_empty() || thinking.is_some() {
                 out.push(DisplayMessage {
                     role: role.to_string(),
                     content: text,
+                    thinking,
                 });
             }
             out.extend(deferred_tools);
@@ -2314,7 +2365,7 @@ async fn run_worker(
                     let _ = crate::permissions::take_pre_plan_mode();
                     crate::permissions::set_current_mode_and_broadcast(state.agent.permission_mode);
                 }
-                let display = DisplayMessage::from_messages(&state.session.messages);
+                let display = DisplayMessage::from_session(&state.session);
                 let _ = events_tx.send(ViewEvent::HistoryReplaced(display));
                 // Refresh so the sidebar's "current session" highlight
                 // moves to the freshly-loaded id.
@@ -5096,14 +5147,22 @@ async fn drive_turn_stream_inner(
                 } else {
                     String::new()
                 };
-                let _ = events_tx.send(ViewEvent::TurnUsage(format!(
+                let usage_line = format!(
                     "[tokens: {}in/{}out{} · {}{}]",
                     usage.input_tokens,
                     usage.output_tokens,
                     cache_info,
                     crate::tool_display::format_duration(turn_start.elapsed()),
                     cost_str
-                )));
+                );
+                // Persist alongside the turn so reopening the session
+                // shows what each turn cost, instead of a conversation
+                // with every cost line stripped out.
+                if let Some(store) = &state.session_store {
+                    let path = store.path_for(&state.session.id);
+                    let _ = state.session.append_turn_usage_to(&path, &usage_line);
+                }
+                let _ = events_tx.send(ViewEvent::TurnUsage(usage_line));
 
                 let _ = events_tx.send(ViewEvent::TurnDone);
             }
@@ -6103,6 +6162,81 @@ mod tests {
         assert_eq!(display.len(), 1);
         assert_eq!(display[0].role, "tool");
         assert_eq!(display[0].content, "AskUserQuestion");
+    }
+    /// A reloaded conversation has to look like the live one: the
+    /// model's reasoning comes back as a collapsed block, and each
+    /// turn's cost footer lands under the turn it belongs to.
+    #[test]
+    fn from_session_restores_thinking_and_usage_footers() {
+        use crate::types::{ContentBlock, Message, Role};
+        let mut session = crate::session::Session::new("m", "/tmp");
+        session.messages = vec![
+            Message::user("first"),
+            Message {
+                role: Role::Assistant,
+                content: vec![
+                    ContentBlock::Thinking {
+                        content: "weighing it up".into(),
+                        signature: None,
+                    },
+                    ContentBlock::Text { text: "one".into() },
+                ],
+            },
+            Message::user("second"),
+            Message {
+                role: Role::Assistant,
+                content: vec![ContentBlock::Text { text: "two".into() }],
+            },
+        ];
+        session.turn_usage = vec![
+            crate::session::TurnUsage {
+                after: 2,
+                text: "[tokens: 10in/2out · 1s]".into(),
+            },
+            crate::session::TurnUsage {
+                after: 4,
+                text: "[tokens: 20in/4out · 2s]".into(),
+            },
+        ];
+
+        let display = DisplayMessage::from_session(&session);
+        let shape: Vec<(&str, &str)> = display
+            .iter()
+            .map(|d| (d.role.as_str(), d.content.as_str()))
+            .collect();
+        assert_eq!(
+            shape,
+            vec![
+                ("user", "first"),
+                ("assistant", "one"),
+                ("system", "[tokens: 10in/2out · 1s]"),
+                ("user", "second"),
+                ("assistant", "two"),
+                ("system", "[tokens: 20in/4out · 2s]"),
+            ],
+            "each footer belongs under its own turn"
+        );
+        assert_eq!(
+            display[1].thinking.as_deref(),
+            Some("weighing it up"),
+            "reasoning survives the reload"
+        );
+        assert!(display[4].thinking.is_none());
+    }
+
+    /// A footer recorded past the end — history trimmed by a compaction
+    /// after the fact — still renders rather than disappearing.
+    #[test]
+    fn from_session_keeps_footers_recorded_past_the_end() {
+        let mut session = crate::session::Session::new("m", "/tmp");
+        session.messages = vec![crate::types::Message::user("only")];
+        session.turn_usage = vec![crate::session::TurnUsage {
+            after: 9,
+            text: "[tokens: 1in/1out · 0s]".into(),
+        }];
+        let display = DisplayMessage::from_session(&session);
+        assert_eq!(display.len(), 2);
+        assert_eq!(display[1].role, "system");
     }
 
     // Regression test for issue #148: `progress_buf.drain(..drain)` in

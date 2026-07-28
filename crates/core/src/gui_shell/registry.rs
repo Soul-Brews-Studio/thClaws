@@ -532,6 +532,24 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    /// Every shipped shell's manifest must pass the same validation the
+    /// authoring tool applies. media-studio shipped with `["tool.invoke",
+    /// "storage"]` — neither is a real permission — and nothing caught it
+    /// because validation only ran on manifests written through the tool.
+    /// Undeclared perms fall back to "allow everything", so the mistake
+    /// was invisible until someone read the file.
+    #[test]
+    fn builtin_manifests_validate() {
+        for shell in ShellRegistry::builtin_only().builtin.values() {
+            if let Err(e) = shell.manifest.validate() {
+                panic!(
+                    "built-in shell '{}' has an invalid manifest: {e}",
+                    shell.manifest.id
+                );
+            }
+        }
+    }
+
     #[test]
     fn registry_resolves_session_explorer() {
         let r = ShellRegistry::builtin_only();

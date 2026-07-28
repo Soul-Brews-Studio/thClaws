@@ -44,6 +44,7 @@
 //   thclaws.connectors.add({name,url,headers}) -> Promise<{ok,name,path}>       // connectors.write (HTTP only)
 //   thclaws.connectors.remove(name)  -> Promise<{ok,name,scope}>                // connectors.write
 //   thclaws.skills.install(url, {name,user}) -> Promise<{ok,report,scope}>      // needs skills.write
+//   thclaws.llm.complete({prompt,system,maxTokens}) -> Promise<{text,model}>   // needs llm.complete
 //   thclaws.plugins.list()           -> Promise<{plugins:[{name,version,enabled,scope,skills,commands,agents,mcpServers}]}>  // plugins.read
 //   thclaws.plugins.install(url, {user}) -> Promise<{ok,name,version,skills,commands,agents,mcpServers}>  // plugins.write
 //   thclaws.plugins.setEnabled(name, on) -> Promise<{ok,name,enabled,scope}>    // plugins.write
@@ -993,6 +994,29 @@
           );
         }
         return send("connector_remove", { name });
+      },
+    },
+
+    // One-shot completion on whatever model the session is using right
+    // now. For a language-model step that serves the shell's own UI —
+    // rewriting a prompt, naming something — not the user's chat. Needs
+    // `llm.complete`; the reply is `{text, model}`.
+    llm: {
+      /**
+       * @param {{prompt: string, system?: string, maxTokens?: number}} spec
+       */
+      complete(spec) {
+        const { prompt, system, maxTokens } = spec || {};
+        if (typeof prompt !== "string" || !prompt.trim()) {
+          return Promise.reject(
+            new TypeError("thclaws.llm.complete: prompt must be a non-empty string"),
+          );
+        }
+        return send("llm_complete", {
+          prompt: prompt.trim(),
+          system: typeof system === "string" ? system : "",
+          maxTokens: Number.isFinite(maxTokens) ? maxTokens : undefined,
+        });
       },
     },
 
