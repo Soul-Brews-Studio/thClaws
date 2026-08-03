@@ -4245,6 +4245,29 @@ pub fn build_provider(config: &AppConfig) -> Result<Arc<dyn Provider>> {
                     .with_strip_model_prefix("lmstudio/"),
             ));
         }
+        ProviderKind::VLlm | ProviderKind::LlamaCpp => {
+            // Self-hosted OpenAI-compatible servers. Auth is off by default
+            // (vLLM only checks a key when launched with --api-key), so send
+            // a placeholder — the OpenAI client always emits an
+            // Authorization header and both servers ignore it when unset.
+            // Honors the per-kind base-URL env, then the Settings-editable
+            // default.
+            let (env_var, fallback, prefix) = match kind {
+                ProviderKind::VLlm => ("VLLM_BASE_URL", "http://localhost:8000/v1", "vllm/"),
+                _ => ("LLAMACPP_BASE_URL", "http://localhost:8080/v1", "llamacpp/"),
+            };
+            let base = std::env::var(env_var).unwrap_or_else(|_| fallback.to_string());
+            let url = if base.ends_with("/chat/completions") {
+                base
+            } else {
+                format!("{}/chat/completions", base.trim_end_matches('/'))
+            };
+            return Ok(Arc::new(
+                OpenAIProvider::new("local-no-auth".to_string())
+                    .with_base_url(url)
+                    .with_strip_model_prefix(prefix),
+            ));
+        }
         ProviderKind::ChatGptCodex => {
             // ChatGPT-subscription Codex auth: read CodexAuth from
             // ~/.config/thclaws/auth/default.json, falling back to legacy
@@ -4290,6 +4313,11 @@ pub fn build_provider(config: &AppConfig) -> Result<Arc<dyn Provider>> {
         {
             String::from("gateway-placeholder")
         }
+        // OpenAI-compatible endpoints are commonly local runtimes (vLLM /
+        // llama.cpp / SGLang / Atlas) with no auth. The OpenAI client always
+        // sends *some* Authorization header, so a placeholder is harmless —
+        // never block a local compat endpoint on a missing key.
+        None if matches!(kind, ProviderKind::OpenAICompat) => String::from("local-no-auth"),
         None => {
             let envar = kind.api_key_env().unwrap_or("<none>");
             return Err(Error::Config(format!(
@@ -4695,6 +4723,8 @@ pub fn build_provider(config: &AppConfig) -> Result<Arc<dyn Provider>> {
         ProviderKind::Ollama
         | ProviderKind::OllamaAnthropic
         | ProviderKind::LMStudio
+        | ProviderKind::VLlm
+        | ProviderKind::LlamaCpp
         | ProviderKind::AgentSdk
         | ProviderKind::ChatGptCodex => {
             unreachable!("handled above")
@@ -4735,10 +4765,13 @@ impl Provider for NoProviderPlaceholder {
 /// key) doesn't crash the app — the user ends up on whichever provider
 /// is actually configured, with a yellow warning explaining the swap.
 ///
-/// Fallback order picks providers that don't need auth first (Ollama
-/// variants), then hosted providers in an order that usually matches
-/// user preference. If *nothing* is available, returns `None` so the
-/// caller can start the REPL in a degraded state where the user is
+/// Fallback order is local-only (Ollama variants) and every entry is
+/// probed before it's offered — a user with no key and no local runtime
+/// gets `None` and an actionable error, not a swap to something that
+/// isn't installed. Nothing here is persisted: the swap lives in the
+/// caller's in-memory `AppConfig`, so `settings.json` and any `--model`
+/// override survive untouched. If *nothing* is available, returns `None`
+/// so the caller can start the REPL in a degraded state where the user is
 /// prompted to configure a key before the first turn.
 pub async fn build_provider_with_fallback(
     config: &mut AppConfig,
@@ -4788,7 +4821,7 @@ pub async fn build_provider_with_fallback(
     config.model = original;
     (None, Some(
         format!(
-            "no usable LLM provider for `{}` and no local fallback (Ollama / LMStudio) reachable. Set an API key via Settings → Provider API keys, run `/model <provider>/<model>` to switch, or start a local runtime (see Chapter 2).",
+            "no usable LLM provider for `{}` and no local fallback (Ollama / LMStudio / vLLM / llama.cpp) reachable. Set an API key via Settings → Provider API keys, run `/model <provider>/<model>` to switch, or start a local runtime (see Chapter 2).",
             config.model
         ),
     ))
@@ -14733,10 +14766,11 @@ mod tests {
     }
 
     /// Regression: an exported-but-empty env var ("ANTHROPIC_API_KEY=")
-    /// must NOT count as configured. Before the fix, it did — and
-    /// auto_fallback_model in the GUI refused to switch off Anthropic
-    /// even after the user pasted a key for a different provider, because
-    /// `std::env::var(name).is_ok()` returns true for empty values.
+    /// must NOT count as configured. Before the fix, it did — the GUI's
+    /// post-key switch refused to move off Anthropic even after the user
+    /// pasted a key for a different provider, because
+    /// `std::env::var(name).is_ok()` returns true for empty values. Still
+    /// load-bearing: `provider_has_credentials` gates that switch.
     /// Trace: https://github.com/thClaws/thClaws (screenshot in Thai)
     #[test]
     fn empty_env_var_treated_as_unset() {

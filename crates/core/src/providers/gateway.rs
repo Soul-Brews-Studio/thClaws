@@ -86,6 +86,8 @@ fn is_local_provider(kind: ProviderKind) -> bool {
         ProviderKind::Ollama
             | ProviderKind::OllamaAnthropic
             | ProviderKind::LMStudio
+            | ProviderKind::VLlm
+            | ProviderKind::LlamaCpp
             | ProviderKind::AgentSdk
     )
 }

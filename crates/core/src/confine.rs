@@ -189,6 +189,18 @@ pub fn build_policy(
         write_roots.push(PathBuf::from(dev));
     }
 
+    // GPU/accelerator nodes — NVML/CUDA open these read-write, so confined
+    // commands on DGX/Jetson fail NVML init ("Unknown Error") without them.
+    // Char devices again, not a filesystem escape.
+    if let Ok(rd) = std::fs::read_dir("/dev") {
+        for e in rd.flatten() {
+            if e.file_name().to_string_lossy().starts_with("nvidia") {
+                write_roots.push(e.path());
+            }
+        }
+    }
+    write_roots.push(PathBuf::from("/dev/dri"));
+
     let home = crate::util::home_dir();
     if mode == ConfineMode::Workspace {
         if let Some(h) = &home {
@@ -773,7 +785,8 @@ mod linux {
 
     /// bubblewrap fallback (read-masking + older kernels). Needs an
     /// unprivileged user namespace — on AppArmor-restricted hosts this fails the
-    /// probe and we run unconfined. `--dev /dev` covers `/dev/*`.
+    /// probe and we run unconfined. `--dev /dev` is a minimal devtmpfs (basic
+    /// nodes only) — accelerator devices must be re-bound explicitly.
     fn bwrap_wrap(command: &str, policy: &ConfinePolicy) -> Option<tokio::process::Command> {
         if binary_on_path("bwrap").is_none() {
             fallback_to_screening_once(
@@ -792,6 +805,16 @@ mod linux {
         let mut c = tokio::process::Command::new("bwrap");
         c.arg("--ro-bind").arg("/").arg("/");
         c.arg("--dev").arg("/dev");
+        // --dev hides GPU nodes → NVML breaks on DGX/Jetson; re-expose them.
+        if let Ok(rd) = std::fs::read_dir("/dev") {
+            for e in rd.flatten() {
+                if e.file_name().to_string_lossy().starts_with("nvidia") {
+                    let p = e.path();
+                    c.arg("--dev-bind-try").arg(&p).arg(&p);
+                }
+            }
+        }
+        c.arg("--dev-bind-try").arg("/dev/dri").arg("/dev/dri");
         c.arg("--proc").arg("/proc");
         c.arg("--tmpfs").arg("/tmp");
         for r in &policy.write_roots {

@@ -1878,18 +1878,12 @@ async fn handle_socket(socket: WebSocket, state: ServeState, shared: Arc<SharedS
 /// fresh from disk on every WS connect so an F5 refresh always
 /// reflects the current `AppConfig` / sessions / MCP / KMS state.
 ///
-/// Auto-fallback model: if the saved model's provider has no
-/// credentials but another provider does, switch + persist so the
-/// "ready" indicator in the sidebar is accurate after the user adds
-/// a key.
+/// Reports the saved model's readiness as-is — no auto-switch. The
+/// previous behaviour rewrote settings.json to a local runtime whenever
+/// the active provider lacked credentials, without probing that the
+/// runtime existed; see the matching note in gui.rs's SendInitialState.
 fn build_initial_state_payload(sessions_dir: Option<std::path::PathBuf>) -> String {
-    let mut config = AppConfig::load().unwrap_or_default();
-    if let Some(new_model) = crate::providers::auto_fallback_model(&config) {
-        let mut project = crate::config::ProjectConfig::load().unwrap_or_default();
-        project.set_model(&new_model);
-        let _ = project.save();
-        config = AppConfig::load().unwrap_or_default();
-    }
+    let config = AppConfig::load().unwrap_or_default();
     let provider_name = config.detect_provider().unwrap_or("unknown");
     let provider_ready = provider_has_credentials(&config);
     // Consult the live MCP_TOOL_COUNTS cache (populated by the

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.109.0] — 2026-08-03
+
+Spark Guru lands as a Thai-language DGX assistant that diagnoses and tunes local inference engines, vLLM and llama.cpp get first-class provider support, and the managed browser is now off by default for new workspaces.
+
+### Added
+- **Spark Guru: a Thai DGX assistant with benchmarks, model downloader, and an M3 Training Coach.** The new agent diagnoses your local inference setup — a benchmark tab compares six engines (ollama, DeepSeek V4, Gemma, Qwen 9), a model downloader pulls models with hf_transfer for 20× faster downloads, provider switching and an Inference Engine tab let you reconfigure on the fly, deterministic checkup flags misconfigurations, and the M3 Training Coach walks through lab-doctor, lab-coach, and progress tracking.
+- **First-class vLLM + llama.cpp providers.** Local inference runtimes get proper provider integration; the unprobed Ollama fallback path is dropped.
+- **DGX one-liner installers.** A single command gets a DGX machine up and running with thClaws.
+
+### Changed
+- **Managed browser off by default.** New workspaces start with the browser disabled, and `THCLAWS_BROWSER_ENABLED` lets operators turn it off fleet-wide.
+- **Gateway default model → DeepSeek V4 Flash.**
+
+### Fixed
+- **Sandboxed commands can now access GPUs.** `/dev/nvidia*` and `/dev/dri` are exposed so local inference runs inside the sandbox.
+- **Tutorial Studio: tone marks render correctly on desktop.** The tone mark no longer overlaps sara am in Thai text rendering.
+- **Local OpenAI-compatible providers: no API key required.** Local runtimes skip the key check instead of demanding a dummy value.
+- **Local OpenAI-compatible providers: max_tokens clamped, thinking disabled for tool-calling.** Prevents runaway requests and incompatible parameters in tool-use scenarios.
+- **Model catalogue: Qwen3.8-max priced; Gemini Robotics-ER excluded from chat.**
+
 ## [0.108.0] — 2026-07-28
 
 Media Studio gets its biggest update yet with speech mode, resumable renders, and a polished UI, plus chat history now preserves thinking and cost footers across every turn.

@@ -320,10 +320,20 @@ fn announce_key_stored(provider: &str, ok: bool, error: &str, storage: &str, ctx
         "storage": storage,
     });
     (ctx.dispatch)(payload.to_string());
-    // Auto-switch + post-key model picker, mirroring gui.rs.
+    // Post-key switch + model picker. Switch to the provider whose key was
+    // just stored — that's what the user is telling us they want to use.
+    // (This previously called `auto_fallback_model`, which only ever
+    // returns a local runtime, so pasting an OpenAI key moved the session
+    // to Ollama.) Only fires when the active model can't be reached
+    // anyway, so a working setup is never disturbed.
     if ok {
         let cfg = crate::config::AppConfig::load().unwrap_or_default();
-        if let Some(new_model) = crate::providers::auto_fallback_model(&cfg) {
+        let stored_kind = crate::providers::ProviderKind::ALL
+            .iter()
+            .copied()
+            .find(|k| k.name() == provider);
+        let switch_to = stored_kind.filter(|_| !crate::providers::provider_has_credentials(&cfg));
+        if let Some(new_model) = switch_to.map(|k| k.default_model().to_string()) {
             let mut project = crate::config::ProjectConfig::load().unwrap_or_default();
             project.set_model(&new_model);
             let _ = project.save();
@@ -348,7 +358,10 @@ fn announce_key_stored(provider: &str, ok: bool, error: &str, storage: &str, ctx
             if crate::providers::thclaws_gateway::hides_unpriced_models(&new_cfg, provider) {
                 models.retain(|(_, e)| e.input_per_mtok.is_some() && e.output_per_mtok.is_some());
             }
-            let runtime_loaded = matches!(provider, "ollama" | "ollama-anthropic" | "lmstudio");
+            let runtime_loaded = matches!(
+                provider,
+                "ollama" | "ollama-anthropic" | "lmstudio" | "vllm" | "llamacpp"
+            );
             if models.len() >= 3 && !runtime_loaded {
                 let _ = crate::providers::ProviderKind::detect(&new_cfg.model);
                 let model_rows: Vec<serde_json::Value> = models

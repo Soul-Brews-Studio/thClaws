@@ -289,13 +289,12 @@ fn pick_directory_native(start_dir: &str, title: &str) -> Option<String> {
 // crate::shared_session::build_session_list (the worker-side variant
 // that includes current_id) is still consumed by the worker loop.
 
-// provider_has_credentials / kind_has_credentials / auto_fallback_model
-// moved to crate::providers in M6.36 SERVE9e so the WS transport can
-// share the same readiness logic. Re-import here to keep gui.rs's
-// existing call sites compiling unchanged.
-// kind_has_credentials migrated to handle_ipc; the SendInitialState
-// builder still uses auto_fallback_model + provider_has_credentials.
-use crate::providers::{auto_fallback_model, provider_has_credentials};
+// provider_has_credentials / kind_has_credentials moved to
+// crate::providers in M6.36 SERVE9e so the WS transport can share the
+// same readiness logic. Re-import here to keep gui.rs's existing call
+// sites compiling unchanged. kind_has_credentials migrated to
+// handle_ipc; the SendInitialState builder uses provider_has_credentials.
+use crate::providers::provider_has_credentials;
 
 /// Resolve the AGENTS.md path for the Settings → Instructions editor.
 /// `scope="global"` → `~/.config/thclaws/AGENTS.md`, `scope="folder"` →
@@ -1526,27 +1525,17 @@ fn run_gui_inner(serve: Option<crate::server::ServeConfig>) {
                 ));
             }
             Event::UserEvent(UserEvent::SendInitialState) => {
-                let mut config = AppConfig::load().unwrap_or_default();
-                // If the saved model's provider has no key but another
-                // provider does, auto-switch and persist. Keeps the
-                // sidebar's "ready" indicator honest across restarts —
-                // after the user sets (say) an Agentic Press key, the
-                // next launch lands on ap/* instead of showing a stuck
-                // "no API key" on the OpenAI default.
-                if let Some(new_model) = auto_fallback_model(&config) {
-                    let mut project = crate::config::ProjectConfig::load()
-                        .unwrap_or_default();
-                    project.set_model(&new_model);
-                    let _ = project.save();
-                    // The user's `--model X` choice has been deemed
-                    // unreachable; drop the CLI override so the reload
-                    // returns the fallback (Y), not X. Without this the
-                    // session would keep re-pinning to a model whose
-                    // provider has no credentials, defeating the entire
-                    // auto-fallback affordance.
-                    crate::config::clear_cli_model_override();
-                    config = AppConfig::load().unwrap_or_default();
-                }
+                let config = AppConfig::load().unwrap_or_default();
+                // No auto-switch here. This used to rewrite settings.json to
+                // a local runtime whenever the active provider had no key —
+                // without checking that the runtime was installed, and while
+                // dropping the user's `--model` override. Most users have no
+                // local runtime, so the swap only moved the failure from an
+                // actionable "no API key" to a connection refused on the
+                // first prompt. `provider_ready` below reports the state
+                // honestly instead; the startup path
+                // (`build_provider_with_fallback`) still offers a local
+                // fallback, but only after probing that it answers.
                 let provider_name = config.detect_provider().unwrap_or("unknown");
                 let provider_ready = provider_has_credentials(&config);
                 let mcp_servers = build_mcp_servers_payload(&config);

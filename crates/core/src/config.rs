@@ -516,7 +516,21 @@ fn default_auto_learn_kms() -> String {
 /// skipped when the launch command isn't on PATH, so node-less
 /// desktops see the Browser tab's setup hint instead of spawn errors.
 fn default_browser_enabled() -> bool {
-    true
+    // `THCLAWS_BROWSER_ENABLED=0` flips the DEFAULT off for a whole
+    // fleet without touching anyone's settings.json — cloud runners set
+    // it, because the managed Chromium is spawned at startup whether or
+    // not a workspace ever asks for a browser tool, and it OOM-killed a
+    // runner that never did. This is only the default: a workspace that
+    // sets `"browserEnabled": true` still gets it, since project/user
+    // settings are layered on top of this value.
+    !matches!(
+        std::env::var("THCLAWS_BROWSER_ENABLED")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "0" | "false" | "off" | "no"
+    )
 }
 
 /// Resolve a launch command on PATH (or as an absolute path). Shared
@@ -584,7 +598,7 @@ impl Default for AppConfig {
             openrouter_free_only: false,
             image_tools_enabled: false,
             hal_enabled: false,
-            browser_enabled: true,
+            browser_enabled: default_browser_enabled(),
             browser_headless: None,
             gateway_use_for: Vec::new(),
             gateway_proxy: false,
@@ -1148,6 +1162,7 @@ impl ProjectConfig {
   "_doc": "thClaws project settings. Every available field is listed below at its default value — change a value to override, or delete a field (or set it to null on Option fields) to inherit the global default. windowWidth/windowHeight default to a monitor-resolution-aware size picked at GUI startup (1760x962 on >=1920x1080 displays, 1200x800 otherwise) when left null. See user-manual ch10 for the field reference.",
   "_doc_model": "null = pick automatically from the first provider you have credentials for (DeepSeek → DashScope → OpenAI → Anthropic). Set an explicit id (e.g. \"claude-sonnet-4-6\") to pin one.",
   "_doc_askTools": "Tool names that ALWAYS prompt for approval even under permissions:auto (e.g. [\"Bash\",\"Write\"]). Interactive only — desktop GUI / CLI where a human can answer; ignored under -p, team agents, and multiuser pods (auto-approved, no one to ask).",
+  "_doc_browserEnabled": "Managed Playwright/Chromium browser tools. NEW workspaces start with this OFF — headless Chromium is the heaviest thing the engine launches (it OOM-killed a 1Gi cloud runner that never used it), so it's opt-in per workspace rather than a cost every project pays. Set true to turn it on; delete the key to inherit the built-in default (on). Existing workspaces are unaffected.",
   "workspaceVersion": 2,
   "model": null,
   "permissions": "auto",
@@ -1160,6 +1175,7 @@ impl ProjectConfig {
   "skillsListingStrategy": "full",
   "teamEnabled": false,
   "shellTabEnabled": false,
+  "browserEnabled": false,
   "halEnabled": false,
   "showRawResponse": false,
   "allowedTools": null,
@@ -2030,7 +2046,7 @@ impl AppConfig {
         // point a proxy user with no BYOK keys would find no reachable
         // provider and fall back to the compiled-in Anthropic placeholder
         // (claude-sonnet-4-6) instead of the intended gateway default
-        // (deepseek-v4-pro).
+        // (deepseek-v4-flash).
         let in_gateway_pod = crate::workdir::is_multiuser()
             || std::env::var("THCLAWS_USES_GATEWAY").ok().as_deref() == Some("1");
         // DERIVE the routed set from a single source of truth: the `gatewayProxy`
@@ -2871,6 +2887,69 @@ mod tests {
     /// When a new field is added to ProjectConfig, both the bootstrap
     /// body and the `expected` list below must grow — the field-list
     /// assertion fails otherwise.
+    /// `THCLAWS_BROWSER_ENABLED=0` turns the browser off for a whole
+    /// fleet — but only as the DEFAULT. A workspace that asks for it in
+    /// settings.json still gets it, which is what makes this safe to set
+    /// platform-wide.
+    #[test]
+    fn browser_env_sets_the_default_but_explicit_settings_still_win() {
+        let _guard = crate::kms::test_env_lock();
+
+        std::env::remove_var("THCLAWS_BROWSER_ENABLED");
+        assert!(default_browser_enabled(), "unset → on");
+
+        for off in ["0", "false", "off", "no", "FALSE"] {
+            std::env::set_var("THCLAWS_BROWSER_ENABLED", off);
+            assert!(!default_browser_enabled(), "{off} should disable");
+            assert!(
+                !AppConfig::default().browser_enabled,
+                "{off} must reach the base config, not just the serde default"
+            );
+        }
+
+        std::env::set_var("THCLAWS_BROWSER_ENABLED", "1");
+        assert!(default_browser_enabled(), "1 → on");
+
+        // The whole point: an explicit opt-in still overrides the fleet default.
+        std::env::set_var("THCLAWS_BROWSER_ENABLED", "0");
+        let mut cfg = AppConfig::default();
+        assert!(!cfg.browser_enabled);
+        let pc: ProjectConfig = serde_json::from_str(r#"{"browserEnabled": true}"#).unwrap();
+        pc.apply_to(&mut cfg);
+        assert!(
+            cfg.browser_enabled,
+            "settings.json wins over the env default"
+        );
+
+        std::env::remove_var("THCLAWS_BROWSER_ENABLED");
+    }
+
+    /// New workspaces opt OUT of the managed browser. The compiled
+    /// default stays ON, so existing projects (whose settings.json has
+    /// no such key) keep it — this is a first-run choice, not a global
+    /// flip.
+    #[test]
+    fn new_workspace_template_disables_the_browser_without_moving_the_global_default() {
+        let _guard = crate::kms::test_env_lock();
+        let dir = tempdir().unwrap();
+        std::env::set_var("THCLAWS_PROJECT_ROOT", dir.path());
+        assert!(ProjectConfig::ensure_default_exists());
+
+        let raw = std::fs::read_to_string(dir.path().join(".thclaws/settings.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(parsed["browserEnabled"], serde_json::json!(false));
+
+        let cfg: ProjectConfig = serde_json::from_str(&raw).unwrap();
+        assert_eq!(cfg.browser_enabled, Some(false), "the loader reads it back");
+
+        // A workspace that simply doesn't mention the key is unchanged.
+        let silent: ProjectConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(silent.browser_enabled, None);
+        assert!(default_browser_enabled(), "global default still on");
+
+        std::env::remove_var("THCLAWS_PROJECT_ROOT");
+    }
+
     #[test]
     fn ensure_default_exists_writes_full_template_then_is_idempotent() {
         let _guard = crate::kms::test_env_lock();

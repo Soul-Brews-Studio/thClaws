@@ -90,6 +90,18 @@ pub enum ProviderKind {
     QwenCloud,
     ZAi,
     LMStudio,
+    /// vLLM (`vllm serve`) — the standard self-hosted inference server for
+    /// GPU boxes. OpenAI-compatible at `/v1`, default port 8000, no auth
+    /// unless started with `--api-key`. Split out of [`OpenAICompat`] so it
+    /// gets its own `vllm/` namespace, base-URL env, and local-provider
+    /// treatment (gateway bypass, live model list) instead of sharing the
+    /// generic compat slot. The served id must match what `vllm serve` was
+    /// pointed at, so the default model is a placeholder.
+    VLlm,
+    /// llama.cpp's `llama-server` — OpenAI-compatible at `/v1`, default port
+    /// 8080, no auth. Serves one GGUF at a time and ignores the `model`
+    /// field in the request, so any id routes correctly.
+    LlamaCpp,
     AzureAIFoundry,
     OpenAICompat,
     DeepSeek,
@@ -223,6 +235,8 @@ impl ProviderKind {
         Self::QwenCloud,
         Self::ZAi,
         Self::LMStudio,
+        Self::VLlm,
+        Self::LlamaCpp,
         Self::AzureAIFoundry,
         Self::OpenAICompat,
         Self::DeepSeek,
@@ -254,6 +268,8 @@ impl ProviderKind {
             Self::QwenCloud => "qwen-cloud",
             Self::ZAi => "zai",
             Self::LMStudio => "lmstudio",
+            Self::VLlm => "vllm",
+            Self::LlamaCpp => "llamacpp",
             Self::AzureAIFoundry => "azure",
             Self::OpenAICompat => "openai-compat",
             Self::DeepSeek => "deepseek",
@@ -308,6 +324,15 @@ impl ProviderKind {
             // will populate the GUI dropdown with whatever's actually
             // loaded.
             Self::LMStudio => "lmstudio/llama-3.2-3b-instruct",
+            // vLLM serves exactly the model it was launched with, and the id
+            // is whatever was passed to `vllm serve` (usually an HF path), so
+            // no default can be right. This placeholder establishes the
+            // connection; `list_models` then fills the picker with the one
+            // real id and `/model vllm/<id>` switches to it.
+            Self::VLlm => "vllm/served-model",
+            // llama-server ignores the request's `model` field entirely (one
+            // GGUF per process), so this placeholder actually works as-is.
+            Self::LlamaCpp => "llamacpp/local-model",
             // Azure AI Foundry deployments are user-specific (each subscription
             // names its own deployments), so there's no sensible default. The
             // placeholder routes to the right provider but forces the user to
@@ -376,6 +401,8 @@ impl ProviderKind {
             Self::OllamaAnthropic => Some("OLLAMA_BASE_URL"),
             Self::ZAi => Some("ZAI_BASE_URL"),
             Self::LMStudio => Some("LMSTUDIO_BASE_URL"),
+            Self::VLlm => Some("VLLM_BASE_URL"),
+            Self::LlamaCpp => Some("LLAMACPP_BASE_URL"),
             Self::AzureAIFoundry => Some("AZURE_AI_FOUNDRY_ENDPOINT"),
             Self::OpenAICompat => Some("OPENAI_COMPAT_BASE_URL"),
             Self::DeepSeek => Some("DEEPSEEK_BASE_URL"),
@@ -401,6 +428,8 @@ impl ProviderKind {
             Self::Ollama
                 | Self::OllamaAnthropic
                 | Self::LMStudio
+                | Self::VLlm
+                | Self::LlamaCpp
                 | Self::AzureAIFoundry
                 | Self::OpenAICompat
                 // Self-hosted router: base URL / port varies per user, so the
@@ -433,6 +462,10 @@ impl ProviderKind {
             // Default port 1234; users routinely change it, hence the
             // editable Settings field above.
             Self::LMStudio => Some("http://localhost:1234/v1"),
+            // `vllm serve` binds 0.0.0.0:8000 and exposes /v1.
+            Self::VLlm => Some("http://localhost:8000/v1"),
+            // `llama-server` binds 127.0.0.1:8080 and exposes /v1.
+            Self::LlamaCpp => Some("http://localhost:8080/v1"),
             Self::AzureAIFoundry => Some("https://{resource}.services.ai.azure.com"),
             // Generic OAI-compat: users always set their own URL; this
             // placeholder just hints at the expected shape (path ending in /v1).
@@ -469,6 +502,11 @@ impl ProviderKind {
     /// return true. Used by the skill-recommended-model resolver to
     /// pick the first candidate the user can actually call.
     pub fn has_key_available(&self) -> bool {
+        // OpenAI-compatible endpoints are local runtimes (vLLM / llama.cpp /
+        // SGLang / Atlas) — auth optional, never require a key to be usable.
+        if matches!(self, Self::OpenAICompat) {
+            return true;
+        }
         let Some(env_var) = self.api_key_env() else {
             return true; // No auth required (local runtimes, AgentSdk).
         };
@@ -500,6 +538,9 @@ impl ProviderKind {
             Self::QwenCloud => Some("QWENCLOUD_API_KEY"),
             Self::ZAi => Some("ZAI_API_KEY"),
             Self::LMStudio => None, // Local runtime, no auth.
+            // Self-hosted; auth only if started with --api-key, which
+            // users set through the generic compat provider instead.
+            Self::VLlm | Self::LlamaCpp => None,
             Self::AzureAIFoundry => Some("AZURE_AI_FOUNDRY_API_KEY"),
             Self::OpenAICompat => Some("OPENAI_COMPAT_API_KEY"),
             Self::DeepSeek => Some("DEEPSEEK_API_KEY"),
@@ -601,6 +642,8 @@ impl ProviderKind {
             | Self::QwenCloud
             | Self::ZAi
             | Self::LMStudio
+            | Self::VLlm
+            | Self::LlamaCpp
             | Self::AzureAIFoundry
             | Self::OpenAICompat
             | Self::DeepSeek
@@ -710,6 +753,15 @@ impl ProviderKind {
             // Models look like lmstudio/<loaded-model-id>; the prefix
             // is stripped before the request reaches LMStudio.
             Some(Self::LMStudio)
+        } else if model.starts_with("vllm/") {
+            // Self-hosted vLLM. Models look like vllm/<served-id>, which is
+            // often an HF path (vllm/Qwen/Qwen3-8B) — only the leading
+            // "vllm/" is stripped, so the remaining slashes survive.
+            Some(Self::VLlm)
+        } else if model.starts_with("llamacpp/") {
+            // llama.cpp's llama-server. The id after the prefix is cosmetic
+            // (the server serves whichever GGUF it was started with).
+            Some(Self::LlamaCpp)
         } else if model.starts_with("oa/") {
             Some(Self::OllamaAnthropic)
         } else if model.starts_with("ollama/") {
@@ -1165,7 +1217,15 @@ pub fn kind_has_credentials(kind: Option<ProviderKind>) -> bool {
     let Some(kind) = kind else { return false };
     match kind {
         ProviderKind::AgentSdk => true,
-        ProviderKind::Ollama | ProviderKind::OllamaAnthropic | ProviderKind::LMStudio => true,
+        ProviderKind::Ollama
+        | ProviderKind::OllamaAnthropic
+        | ProviderKind::LMStudio
+        // Self-hosted runtimes — reachability is the real gate, not a key.
+        | ProviderKind::VLlm
+        | ProviderKind::LlamaCpp => true,
+        // OpenAI-compatible = local runtimes (vLLM / llama.cpp / SGLang / Atlas)
+        // pointed at OPENAI_COMPAT_BASE_URL; auth is optional (key sent if set).
+        ProviderKind::OpenAICompat => true,
         // ChatGptCodex auths via a file-based OAuth token, not an env
         // var, so the generic api_key_env() probe below always misses.
         ProviderKind::ChatGptCodex => {
@@ -1325,39 +1385,6 @@ pub async fn build_all_models_payload() -> String {
     .to_string()
 }
 
-/// If `cfg.model`'s provider has no credentials, pick the first
-/// **local / free** provider that's usable and return its default
-/// model. Returns `None` when the current model is already fine or
-/// no free fallback is available.
-///
-/// Paid providers are deliberately excluded from the fallback list:
-/// silently swapping a user's openrouter (or other) configuration to
-/// Anthropic / OpenAI when their key check momentarily fails has
-/// caused real bill surprises. Better UX: surface the error, let the
-/// user fix the credential or pick a provider explicitly via
-/// `/model …`. Free fallbacks (Ollama variants) stay on so a user
-/// running entirely local still gets a sane default at first launch.
-pub fn auto_fallback_model(cfg: &crate::config::AppConfig) -> Option<String> {
-    if provider_has_credentials(cfg) {
-        return None;
-    }
-    // Only no-cost providers are eligible. Each kind's
-    // `kind_has_credentials` enforces its own reachability check
-    // (Ollama variants return true unconditionally; the GUI layer
-    // probes the daemon before persisting the swap).
-    const ORDER: &[ProviderKind] = &[
-        ProviderKind::Ollama,
-        ProviderKind::OllamaAnthropic,
-        ProviderKind::LMStudio,
-    ];
-    for kind in ORDER {
-        if kind_has_credentials(Some(*kind)) {
-            return Some(kind.default_model().to_string());
-        }
-    }
-    None
-}
-
 /// Pick the default model for the highest-priority provider the user
 /// actually has usable credentials for — their own API key (env or
 /// keychain) **or** a gateway route — scanning in the order
@@ -1368,10 +1395,10 @@ pub fn auto_fallback_model(cfg: &crate::config::AppConfig) -> Option<String> {
 /// Anthropic. Returns `None` when none of the three are configured, in
 /// which case the caller keeps the compiled-in default.
 ///
-/// Distinct from [`auto_fallback_model`], which only ever falls back to
-/// free *local* providers when the *currently configured* provider is
-/// keyless; this picks the preferred *paid* default when nothing is
-/// configured yet.
+/// Distinct from `build_provider_with_fallback` (repl.rs), which swaps to
+/// a probed-reachable local runtime — in memory only — after the
+/// configured provider fails to build; this picks the preferred *paid*
+/// default when nothing is configured yet.
 pub fn preferred_default_model(cfg: &crate::config::AppConfig) -> Option<String> {
     // Ordered (provider, model) preference: the first provider the user can
     // reach — own key OR a gateway route — picks the session default. Models
@@ -1380,7 +1407,7 @@ pub fn preferred_default_model(cfg: &crate::config::AppConfig) -> Option<String>
     // each provider's standalone default. All four are priced in the
     // catalogue, so they're gateway-servable for proxied sessions.
     const ORDER: &[(ProviderKind, &str)] = &[
-        (ProviderKind::DeepSeek, "deepseek-v4-pro"),
+        (ProviderKind::DeepSeek, "deepseek-v4-flash"),
         (ProviderKind::DashScope, "dashscope/qwen3.7-max"),
         (ProviderKind::OpenAI, "gpt-5.5"),
         (ProviderKind::Anthropic, "claude-sonnet-4-6"),
@@ -1726,6 +1753,51 @@ mod tests {
         assert_eq!(ProviderKind::QwenCloud.default_model(), "qc/qwen-max");
     }
 
+    #[test]
+    fn detect_self_hosted_runtimes_split_out_of_openai_compat() {
+        // vLLM and llama.cpp used to share the generic `oai/` slot. They now
+        // carry their own namespace so each gets its own base URL and shows
+        // up separately in Settings; `oai/` keeps working for everything else.
+        assert_eq!(
+            ProviderKind::detect("vllm/Qwen/Qwen3-8B"),
+            Some(ProviderKind::VLlm),
+            "an HF-path served id keeps its inner slashes"
+        );
+        assert_eq!(
+            ProviderKind::detect("llamacpp/local-model"),
+            Some(ProviderKind::LlamaCpp)
+        );
+        assert_eq!(
+            ProviderKind::detect("oai/whatever"),
+            Some(ProviderKind::OpenAICompat),
+            "the generic compat endpoint is unchanged"
+        );
+
+        for kind in [ProviderKind::VLlm, ProviderKind::LlamaCpp] {
+            // Self-hosted: no key to check, editable endpoint, and never a
+            // gateway route (provider_segment falls through to None).
+            assert_eq!(kind.api_key_env(), None);
+            assert!(kind.endpoint_user_configurable());
+            assert!(kind_has_credentials(Some(kind)));
+            assert!(ProviderKind::ALL.contains(&kind));
+        }
+        assert_eq!(ProviderKind::VLlm.name(), "vllm");
+        assert_eq!(ProviderKind::VLlm.endpoint_env(), Some("VLLM_BASE_URL"));
+        assert_eq!(
+            ProviderKind::VLlm.default_endpoint(),
+            Some("http://localhost:8000/v1")
+        );
+        assert_eq!(ProviderKind::LlamaCpp.name(), "llamacpp");
+        assert_eq!(
+            ProviderKind::LlamaCpp.endpoint_env(),
+            Some("LLAMACPP_BASE_URL")
+        );
+        assert_eq!(
+            ProviderKind::LlamaCpp.default_endpoint(),
+            Some("http://localhost:8080/v1")
+        );
+    }
+
     // Serialises the env-var mutation in `preferred_default_model_*`
     // tests (api-key + gateway-key vars are process-global).
     static PREF_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -1848,7 +1920,7 @@ mod tests {
         cfg.gateway_use_for = vec!["openai".into(), "dashscope".into(), "deepseek".into()];
         assert_eq!(
             preferred_default_model(&cfg).as_deref(),
-            Some("deepseek-v4-pro")
+            Some("deepseek-v4-flash")
         );
 
         // None configured (no gateway route, host keys cleared) → None so

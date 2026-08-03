@@ -373,7 +373,58 @@ impl OpenAIProvider {
         if let Some(tc) = &self.tool_choice {
             body["tool_choice"] = tc.clone();
         }
+        if self.is_local_base() {
+            // Local Qwen3.x defaults to "thinking", which derails tool-calling
+            // (the model emits reasoning instead of a tool_call). Non-thinking
+            // is the recommended mode for agentic tool use; non-Qwen local
+            // servers ignore this template kwarg.
+            body["chat_template_kwargs"] = json!({"enable_thinking": false});
+        }
         body
+    }
+
+    /// True when the endpoint is a local OpenAI-compatible server (vLLM, ds4,
+    /// llama.cpp, …). These enforce `max_completion_tokens <= max_model_len`,
+    /// so our default (32000) 400s against a small served context.
+    fn is_local_base(&self) -> bool {
+        let b = self.base_url.as_str();
+        b.contains("localhost") || b.contains("127.0.0.1") || b.contains("0.0.0.0")
+    }
+
+    /// Best-effort fetch of the served model's `max_model_len` from `GET
+    /// /models` so `stream` can clamp `max_tokens`. `None` when the server
+    /// doesn't expose it (ds4/llama.cpp may omit it) — caller leaves the
+    /// request unchanged in that case.
+    async fn served_context(&self, model: &str) -> Option<u32> {
+        let url = self.list_models_url.clone().unwrap_or_else(|| {
+            self.base_url
+                .rsplit_once("/chat/completions")
+                .map(|(base, _)| format!("{base}/models"))
+                .unwrap_or_else(|| format!("{}/models", self.base_url.trim_end_matches('/')))
+        });
+        let resp = self
+            .client
+            .get(&url)
+            .header(self.auth_header_name(), self.auth_header_value())
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let v: Value = resp.json().await.ok()?;
+        let data = v.get("data")?.as_array()?;
+        let m = data
+            .iter()
+            .find(|m| m.get("id").and_then(Value::as_str) == Some(model))
+            .or_else(|| data.first())?;
+        // vLLM exposes `max_model_len`; ds4/OpenRouter-shaped servers use
+        // `context_length` (top-level or nested under `top_provider`).
+        m.get("max_model_len")
+            .or_else(|| m.get("context_length"))
+            .or_else(|| m.get("top_provider").and_then(|p| p.get("context_length")))
+            .and_then(Value::as_u64)
+            .map(|n| n as u32)
     }
 
     /// POST a prepared body to the chat/completions endpoint. Factored
@@ -573,6 +624,31 @@ impl Provider for OpenAIProvider {
             req.model = m.clone();
         }
         req.model = strip_wire_prefix(&req.model, self.strip_model_prefix.as_deref());
+        // Local OpenAI-compat backends (vLLM/ds4/…) reject
+        // `max_completion_tokens > max_model_len`; clamp to the served context
+        // so the default (32000) works against a small window. 2048 tokens of
+        // headroom left for the prompt.
+        if self.is_local_base() {
+            if let Some(ctx) = self.served_context(&req.model).await {
+                let mut est = crate::compaction::estimate_messages_tokens(&req.messages);
+                if let Some(sys) = &req.system {
+                    est += crate::tokens::estimate_tokens(sys);
+                }
+                if !req.tools.is_empty() {
+                    if let Ok(s) = serde_json::to_string(&req.tools) {
+                        est += crate::tokens::estimate_tokens(&s);
+                    }
+                }
+                // `estimate_tokens` under-counts (chars/2.8, worse for Thai);
+                // inflate 25% + fixed slack for the chat template so
+                // prompt+output stays under the served window.
+                let reserve = est + est / 4 + 1024;
+                let cap = (ctx as usize).saturating_sub(reserve).max(512) as u32;
+                if req.max_tokens > cap {
+                    req.max_tokens = cap;
+                }
+            }
+        }
         let body = self.build_body(&req);
         let mut resp = self.send_body(&body).await?;
 

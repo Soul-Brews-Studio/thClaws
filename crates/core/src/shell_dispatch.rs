@@ -485,7 +485,10 @@ pub async fn dispatch(
                 // runtime, not the catalogue. (Was <3, which wrongly hid the
                 // picker for 2-model providers like DeepSeek — flash/pro is a
                 // real choice.) Closes #25.
-                let runtime_loaded = matches!(prov, "ollama" | "ollama-anthropic" | "lmstudio");
+                let runtime_loaded = matches!(
+                    prov,
+                    "ollama" | "ollama-anthropic" | "lmstudio" | "vllm" | "llamacpp"
+                );
                 if !runtime_loaded {
                     let cat = crate::model_catalogue::EffectiveCatalogue::load();
                     let mut models = cat.list_models_for_provider(prov);
