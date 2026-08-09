@@ -82,14 +82,14 @@ hosted runtime ให้เช่า — ดู bullet ด้านล่าง�
   [บทที่ 25](ch25-workflows.md)
 - **Hire-able as a working agent — self-hosted sandbox ของคุณ** —
   ทิศกลับของ orchestration: thClaws เป็น *worker* ให้ orchestrator
-  ตัวอื่น (เช่น Paperclip / thcompany / Anthropic Managed Agents)
+  ตัวอื่น (เช่น scheduler, CI job หรือ control plane ของคุณเอง)
   จ้างไปทำงาน ทั้งแบบ **Employee** (`thclaws_local` — process บน
   เครื่องเดียวกัน — เทียบเท่า in-process sandbox) และ **Freelancer**
   (`thclaws_pod` — pod แยก รันบน VPS, cloud หรือ k3s ของคุณเอง —
   เทียบเท่า self-hosted sandbox ที่ agent loop อยู่ฝั่ง orchestrator
   ส่วน tool execution อยู่ใน perimeter ของ *คุณ*) orchestrator พูดผ่าน
   HTTP API เดียวกับที่ user/IDE ใช้
-  ([บทที่ 22](ch22-paperclip-adapter.md))
+  (ผ่าน `POST /agent/run` และ `GET /v1/agent/info`)
 - **จำสิ่งที่สำคัญในระยะยาว 3 ระดับ** —
   **`AGENTS.md` (หรือ `CLAUDE.md`)** ในโปรเจกต์ โดนฉีดเข้า prompt อัตโนมัติ
   ([บทที่ 8](ch08-memory-and-agents-md.md));
@@ -124,7 +124,7 @@ hosted runtime ให้เช่า — ดู bullet ด้านล่าง�
 - **API พร้อมใช้กับเครื่องมือมาตรฐาน** — `--serve` เปิดทั้ง
   `/v1/chat/completions` (OpenAI-compatible สำหรับ Cursor, Aider, n8n,
   openai-python) และ `/agent/run` + `/v1/agent/info` (thClaws-native
-  สำหรับ orchestrator เช่น thcompany) — agent ตัวเดียวให้บริการได้
+  สำหรับ orchestrator) — agent ตัวเดียวให้บริการได้
   ทั้งคนและซอฟต์แวร์พร้อมกัน
 - **Async webhook delivery** — งานที่รันยาว (deploy, build, multi-step
   research) ส่ง prompt + `x_callback` แล้วปิด connection ได้ thClaws
@@ -177,9 +177,9 @@ hosted runtime ให้เช่า — ดู bullet ด้านล่าง�
   ของทุก turn แสดงครบ orchestrator/UI คำนวณ cost ในเครื่องได้โดยไม่
   ต้องถาม provider
 - **Host thClaws ที่ไหนก็ได้** — ใช้บนเครื่องตัวเองได้ หรือ deploy ขึ้น
-  [thCompany.ai](https://thcompany.ai) เพื่อให้ thClaws รันบน cloud
+  host ที่คุณเลือก เพื่อให้ thClaws รันบน cloud
   ในชื่อของคุณ — จะถูก *Company จ้าง* (เป็น employee / freelancer ผ่าน
-  [บทที่ 22](ch22-paperclip-adapter.md)) หรือยืนเดี่ยวรับงานเองก็ได้
+  orchestrator) หรือยืนเดี่ยวรับงานเองก็ได้
   flow การ deploy มาในรูป plugin host จึงสลับเปลี่ยนได้ ไม่มีการล็อก
   client
 - **Session resume** — `thclaws --resume last` ทำงานต่อจาก session
@@ -240,7 +240,6 @@ key ที่ไหนและอย่างไร
 
 **เข้าถึงจากที่อื่น**
 - [บทที่ 21](ch21-line-and-browser-chat.md) — LINE chat + browser bridge
-- [บทที่ 22](ch22-paperclip-adapter.md) — Paperclip adapter (จ้าง thClaws ไปทำงานใน orchestrator)
 - [บทที่ 23](ch23-telegram.md) — Telegram bot
 - [บทที่ 24](ch24-messenger.md) — Facebook Page Messenger bot
 - [บทที่ 27](ch27-thclaws-cloud.md) — thClaws.cloud (catalog + hosted runtime)

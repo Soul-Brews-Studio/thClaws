@@ -180,8 +180,8 @@ use cases:
 - **AI Agent (API server) surface** — `--serve` also exposes
   `/v1/chat/completions` (OpenAI-compatible, so Cursor, Aider, n8n,
   openai-python can call it as-is) and `/agent/run` +
-  `/v1/agent/info` (thClaws-native, for orchestrators like
-  thcompany or Paperclip). One agent instance can serve humans and
+  `/v1/agent/info` (thClaws-native, for orchestrators). One agent
+  instance can serve humans and
   other software at the same time.
 
 Default bind is `127.0.0.1` only (single-user, localhost loopback).

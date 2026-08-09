@@ -184,7 +184,7 @@ engine ตัวเดียวกันถูก expose ผ่าน HTTP + Web
   `/v1/chat/completions` (OpenAI-compatible — ให้ Cursor, Aider,
   n8n, openai-python เรียกใช้ได้เลย) และ `/agent/run` +
   `/v1/agent/info` (thClaws-native สำหรับ orchestrator เช่น
-  thcompany หรือ Paperclip) — agent ตัวเดียวให้บริการได้ทั้งคน
+  orchestrator ทั่วไป) — agent ตัวเดียวให้บริการได้ทั้งคน
   และซอฟต์แวร์พร้อมกัน
 
 ค่าเริ่มต้น bind ที่ `127.0.0.1` เท่านั้น (single-user, localhost

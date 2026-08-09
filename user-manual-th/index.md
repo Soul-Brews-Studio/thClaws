@@ -30,7 +30,7 @@ deploy โปรเจกต์จริง ไม่ว่าจะเป็น
 | 19 | [การตั้งเวลา (Scheduling)](ch19-scheduling.md) |
 | 20 | [Background research (`/research`)](ch20-research.md) |
 | 21 | [LINE chat & web browser bridge](ch21-line-and-browser-chat.md) |
-| 22 | [Paperclip adapter](ch22-paperclip-adapter.md) |
+| 22 | [Paperclip adapter](ch22-paperclip-adapter.md) — *ยกเลิกแล้ว* |
 | 23 | [Telegram bot](ch23-telegram.md) |
 | 24 | [Facebook Page Messenger bot](ch24-messenger.md) |
 | 25 | [Workflows (`/workflow run`)](ch25-workflows.md) |

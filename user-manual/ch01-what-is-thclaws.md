@@ -102,15 +102,12 @@ dedicated bullet below and [Chapter 27](ch27-thclaws-cloud.md):
     `kms/bug/` to Thai") ([Chapter 25](ch25-workflows.md)).
 - **Hire-able as a working agent — your self-hosted sandbox.** The
   inverse direction of orchestration: thClaws itself runs as a
-  *worker* for another orchestrator (e.g. Paperclip / thcompany /
-  Anthropic Managed Agents), in either the **Employee** shape
-  (`thclaws_local` — a process on the same machine — equivalent to an
-  in-process sandbox) or the **Freelancer** shape (`thclaws_pod` — a
-  standalone pod that can run on a VPS, cloud, or your own k3s —
-  equivalent to a self-hosted sandbox where the agent loop is upstream
-  and tool execution stays inside *your* perimeter). The orchestrator
-  drives it through the same HTTP API users and IDEs use. See
-  [Chapter 22](ch22-paperclip-adapter.md).
+  *worker* for another orchestrator (a scheduler, a CI job, your own
+  control plane). It can share the caller's machine as a local process,
+  or stand alone as a pod on a VPS, cloud, or your own k3s — the agent
+  loop is upstream while tool execution stays inside *your* perimeter.
+  The orchestrator drives it through the same HTTP API users and IDEs
+  use: `POST /agent/run` and `GET /v1/agent/info`.
 - **Three tiers of long-term memory.**
   - **`AGENTS.md` / `CLAUDE.md`** — drop one in your repo; thClaws
     walks up from cwd and injects every match into the system prompt,
@@ -178,7 +175,7 @@ dedicated bullet below and [Chapter 27](ch27-thclaws-cloud.md):
 - **API-ready for standard tooling.** `--serve` exposes
   `/v1/chat/completions` (OpenAI-compatible for Cursor, Aider, n8n,
   openai-python) and `/agent/run` + `/v1/agent/info` (thClaws-native
-  for orchestrators like thcompany). One agent instance can serve
+  for orchestrators). One agent instance can serve
   humans and other software at the same time.
 - **Async webhook delivery.** Long-running runs (deploys, builds,
   multi-step research) send the prompt + `x_callback` and close the
@@ -260,12 +257,11 @@ dedicated bullet below and [Chapter 27](ch27-thclaws-cloud.md):
   block reports all five fields so orchestrators / UIs can compute
   cost locally without asking the provider.
 - **Host thClaws anywhere.** Run it locally on your own machine, or
-  deploy it to [thCompany.ai](https://thcompany.ai) so a cloud-hosted
-  thClaws runs under your account — either *hired by a Company* (as
-  employee or freelancer via [Chapter 22](ch22-paperclip-adapter.md))
-  or standing alone to take work directly. The deploy flow ships as a
-  plugin (`/plugin install …-deploy`) so hosts are swappable — the
-  client never locks you in.
+  deploy it to a host of your choice so a cloud-hosted thClaws runs
+  under your account — driven by an orchestrator, or standing alone to
+  take work directly. The deploy flow ships as a plugin
+  (`/plugin install …-deploy`) so hosts are swappable — the client
+  never locks you in.
 - **Session resume.** `thclaws --resume last` picks up where you left
   off; `thclaws --resume <id>` jumps to a specific session. Sessions
   live as JSONL under `.thclaws/sessions/` — git-friendly,
@@ -332,7 +328,6 @@ configuration you need:
 
 **Reaching thClaws from elsewhere**
 - [Chapter 21](ch21-line-and-browser-chat.md) — LINE chat + browser bridge
-- [Chapter 22](ch22-paperclip-adapter.md) — Paperclip adapter (let an orchestrator hire thClaws)
 - [Chapter 23](ch23-telegram.md) — Telegram bot
 - [Chapter 24](ch24-messenger.md) — Facebook Page Messenger bot
 - [Chapter 27](ch27-thclaws-cloud.md) — thClaws.cloud (catalog + hosted runtime)
