@@ -108,6 +108,7 @@ pub mod schedule;
 pub mod schedule_presets;
 pub mod sdk_mcp;
 pub mod secrets;
+pub mod sensitive;
 #[cfg(feature = "gui")]
 pub mod server;
 pub mod session;

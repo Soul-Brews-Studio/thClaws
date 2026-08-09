@@ -1312,7 +1312,18 @@ impl Agent {
                     Some(cap) => current_max_tokens.min(cap),
                     None => current_max_tokens,
                 };
-                let req = StreamRequest {
+                // dev-plan/55: swap Thai PII for `[ID_1]`-style placeholders
+                // on the way out, and restore it on the way back below.
+                // History stays plaintext — the masking lives at the wire, so
+                // every turn re-masks and coreference keeps the placeholders
+                // stable. Skipped for local models: nothing leaves the host,
+                // and masking would only cost the model context.
+                let masker = crate::sensitive::active().filter(|_| {
+                    !crate::providers::ProviderKind::detect(&active_model)
+                        .map(|k| k.is_local())
+                        .unwrap_or(false)
+                });
+                let mut req = StreamRequest {
                     model: active_model,
                     system: if system.is_empty() { None } else { Some(system.clone()) },
                     messages,
@@ -1321,6 +1332,9 @@ impl Agent {
                     thinking_budget,
                     stream_chunk_timeout_override: chunk_timeout_override,
                 };
+                if let Some(m) = &masker {
+                    m.mask_request(&mut req);
+                }
 
                 // Retry with exponential backoff on transient errors.
                 // Config errors (missing API key, bad model name, etc.)
@@ -1377,6 +1391,10 @@ impl Agent {
                 let mut turn_text = String::new();
                 let mut turn_thinking = String::new();
                 let mut turn_tool_uses: Vec<ContentBlock> = Vec::new();
+                // Un-masking carry buffer: a placeholder can straddle two
+                // text deltas, so the tail of a chunk that might still become
+                // one is held until the next chunk (flushed after the loop).
+                let mut mask_pending = String::new();
                 // L4 (M6.17): id → parse error message for any tool use
                 // whose JSON input failed to parse mid-stream. The per-
                 // tool dispatch loop emits a synthetic error tool_result
@@ -1387,8 +1405,23 @@ impl Agent {
                 while let Some(ev) = assembled.next().await {
                     match ev? {
                         AssembledEvent::Text(s) => {
-                            turn_text.push_str(&s);
-                            yield AgentEvent::Text(s);
+                            match &masker {
+                                // Persist the plain reading, show the marked
+                                // one: history and tools must never carry the
+                                // display wrapper, but the reader should see
+                                // which values were put back locally.
+                                Some(m) => {
+                                    let r = m.feed(&mut mask_pending, &s);
+                                    if !r.is_empty() {
+                                        turn_text.push_str(&r.plain);
+                                        yield AgentEvent::Text(r.display);
+                                    }
+                                }
+                                None => {
+                                    turn_text.push_str(&s);
+                                    yield AgentEvent::Text(s);
+                                }
+                            }
                         }
                         AssembledEvent::Thinking(s) => {
                             // Capture for persistence so it can be echoed
@@ -1424,7 +1457,16 @@ impl Agent {
                             // below can emit a matching error result.
                             turn_parse_errors.push((id, error));
                         }
-                        AssembledEvent::ToolUse(block) => {
+                        AssembledEvent::ToolUse(mut block) => {
+                            // Restore real values in the arguments BEFORE the
+                            // tool runs — otherwise a Write lands `[PHONE_1]`
+                            // in the user's file. Done on the parsed Value, so
+                            // a value carrying a quote can't break the JSON.
+                            if let Some(m) = &masker {
+                                if let ContentBlock::ToolUse { input, .. } = &mut block {
+                                    m.unmask_json(input);
+                                }
+                            }
                             // L1 (M6.17): announce the tool call as soon as
                             // it's parsed, BEFORE the per-tool execution
                             // loop's approval / plan-mode / dispatch gates.
@@ -1458,6 +1500,16 @@ impl Agent {
                                 cumulative_usage.accumulate(u);
                             }
                         }
+                    }
+                }
+
+                // Whatever the un-masker was still holding for a possible
+                // placeholder is plain text now that the stream is over.
+                if let Some(m) = &masker {
+                    let tail = m.flush(&mut mask_pending);
+                    if !tail.is_empty() {
+                        turn_text.push_str(&tail.plain);
+                        yield AgentEvent::Text(tail.display);
                     }
                 }
 
@@ -4035,6 +4087,130 @@ mod tests {
         assert_eq!(
             got[1], None,
             "override should clear after the first turn ends"
+        );
+    }
+
+    /// dev-plan/55 step 3 — the wire boundary, end to end. Unit-testing the
+    /// masker proves the helpers; this proves the choke point is in the right
+    /// place, which is the part that would actually leak. Two halves:
+    /// the provider must never see the phone number, and the user must never
+    /// see the placeholder — including when the model splits one across
+    /// stream chunks, which is the failure mode a naive per-chunk replace
+    /// would ship silently.
+    #[tokio::test]
+    async fn masking_hides_pii_from_the_provider_and_restores_it_locally() {
+        use std::sync::Mutex;
+        let _guard = crate::kms::test_env_lock();
+
+        struct CapturingProvider {
+            seen: Arc<Mutex<Vec<String>>>,
+        }
+        #[async_trait]
+        impl Provider for CapturingProvider {
+            async fn stream(&self, req: crate::providers::StreamRequest) -> Result<EventStream> {
+                let flat: String = req
+                    .messages
+                    .iter()
+                    .flat_map(|m| m.content.iter())
+                    .filter_map(|b| match b {
+                        ContentBlock::Text { text } => Some(text.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                self.seen.lock().unwrap().push(flat);
+                // Echo the placeholder back, split mid-token across two
+                // deltas the way a real stream would.
+                Ok(Box::pin(stream::iter(vec![
+                    Ok(ProviderEvent::TextDelta("โทรกลับที่ [PHO".into())),
+                    Ok(ProviderEvent::TextDelta("NE_1] ได้เลย".into())),
+                    Ok(ProviderEvent::ContentBlockStop),
+                    Ok(ProviderEvent::MessageStop {
+                        stop_reason: Some("end_turn".into()),
+                        usage: None,
+                    }),
+                ])))
+            }
+        }
+
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let agent = Agent::new(
+            Arc::new(CapturingProvider { seen: seen.clone() }),
+            ToolRegistry::default(),
+            "test-model",
+            "",
+        );
+
+        // Force a fresh masker so placeholder numbering is deterministic
+        // regardless of what other tests left in the process-wide map.
+        crate::sensitive::configure(false, Vec::new());
+        crate::sensitive::configure(true, Vec::new());
+        let out = collect_agent_turn(agent.run_turn("โทรหาผมที่ 081-234-5678 นะครับ".into())).await;
+        crate::sensitive::configure(false, Vec::new());
+
+        let sent = seen.lock().unwrap().join("\n");
+        assert!(
+            !sent.contains("081-234-5678"),
+            "phone number reached the provider: {sent}"
+        );
+        assert!(sent.contains("[PHONE_1]"), "not masked at all: {sent}");
+
+        let text = out.expect("turn should succeed").text;
+        assert!(
+            text.contains("081-234-5678"),
+            "reply not restored locally: {text}"
+        );
+        assert!(
+            !text.contains("PHONE_1"),
+            "placeholder leaked into the reply: {text}"
+        );
+        // The reader has to be able to tell a restored value from something
+        // the model actually knew.
+        assert!(
+            text.contains(crate::sensitive::MARK_OPEN),
+            "restored value not marked for the reader: {text}"
+        );
+
+        // History keeps plaintext, which is what makes turn 2 safe: it
+        // re-masks from the real value instead of shipping a stale copy.
+        let history = agent.history_snapshot();
+        let last = history.last().expect("assistant message");
+        let stored: String = last
+            .content
+            .iter()
+            .filter_map(|b| match b {
+                ContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            stored.contains("081-234-5678") && !stored.contains("PHONE_1"),
+            "history should hold plaintext, got {stored:?}"
+        );
+        assert!(
+            !stored.contains(crate::sensitive::MARK_OPEN),
+            "display marker persisted into history: {stored:?}"
+        );
+    }
+
+    /// The masker must stay off unless the user turns it on — a privacy
+    /// feature that silently rewrites prompts by default would be worse
+    /// than not shipping it.
+    #[tokio::test]
+    async fn masking_is_off_unless_configured() {
+        let _guard = crate::kms::test_env_lock();
+        crate::sensitive::configure(false, Vec::new());
+        assert!(crate::sensitive::active().is_none());
+        // Multiuser refuses to arm even when the setting says yes: one
+        // shared worker, one process-wide map, several members.
+        crate::workdir::set_multiuser(true);
+        crate::sensitive::configure(true, Vec::new());
+        let armed_under_multiuser = crate::sensitive::active().is_some();
+        crate::workdir::set_multiuser(false);
+        crate::sensitive::configure(false, Vec::new());
+        assert!(
+            !armed_under_multiuser,
+            "masking must not arm under multiuser"
         );
     }
 }

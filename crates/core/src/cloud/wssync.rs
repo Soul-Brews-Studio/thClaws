@@ -65,6 +65,32 @@ pub struct Binding {
     pub last_push: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_pull: Option<String>,
+    /// Monotonic counter of COMPLETED syncs for this folder↔workspace
+    /// pairing, bumped once per successful `/cloud push|pull` (dry runs and
+    /// failed syncs don't move it). Both ends record the same number, so
+    /// "rev 7" names one agreed state a user can point at in a bug report or
+    /// a handoff. Absent on a binding written before revisions existed —
+    /// treated as 0, so the next sync lands rev 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u64>,
+}
+
+/// The revision a sync that is about to complete should record: one past the
+/// highest either end has seen, so the counter never repeats or walks back
+/// even when one end synced without the other (a `--force`, a second machine,
+/// a run that died after the far end committed).
+///
+/// The local count only carries forward while the folder stays bound to the
+/// SAME workspace — re-pointing a folder (`--force-rebind`) starts a new
+/// pairing, so it picks up from the cloud's count rather than an unrelated
+/// local one.
+pub fn next_revision(prev: &Binding, workspace_id: &str, remote: Option<u64>) -> u64 {
+    let local = if prev.workspace_id.as_deref() == Some(workspace_id) {
+        prev.revision.unwrap_or(0)
+    } else {
+        0
+    };
+    local.max(remote.unwrap_or(0)) + 1
 }
 
 #[derive(Debug, Clone, Default)]
@@ -429,9 +455,12 @@ fn extract_tarball<R: Read>(reader: R, root: &Path) -> Result<(usize, BTreeSet<P
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("mkdir {}: {}", parent.display(), e))?;
         }
+        let mode = entry.header().mode().ok();
         let mut f =
             std::fs::File::create(&out).map_err(|e| format!("create {}: {}", out.display(), e))?;
         std::io::copy(&mut entry, &mut f).map_err(|e| format!("write {}: {}", out.display(), e))?;
+        drop(f);
+        apply_mode(&out, mode);
         incoming.insert(path);
         written += 1;
     }
@@ -471,6 +500,22 @@ pub fn untar_workspace(bytes: &[u8], root: &Path, delete: bool) -> Result<UntarR
     untar_workspace_from(std::io::Cursor::new(bytes), root, delete)
 }
 
+/// Restore the archived file mode. A teleport that drops the executable bit
+/// silently breaks every `scripts/*.sh`, git hook, and helper binary on the
+/// far end — `File::create` alone lands 0644. Only the permission bits are
+/// honoured, and only the executable bit is allowed to vary (0755 vs 0644) so
+/// a hostile or corrupt archive can't land setuid or world-writable files.
+#[cfg(unix)]
+fn apply_mode(path: &Path, mode: Option<u32>) {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(mode) = mode else { return };
+    let perms = if mode & 0o111 != 0 { 0o755 } else { 0o644 };
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(perms));
+}
+
+#[cfg(not(unix))]
+fn apply_mode(_path: &Path, _mode: Option<u32>) {}
+
 /// Reject archive entries that would escape the extraction root.
 fn is_unsafe_entry(path: &Path) -> bool {
     path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir))
@@ -508,26 +553,50 @@ pub struct FileEntry {
     pub sha256: String,
 }
 
-fn sha256_hex(data: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(data);
+fn hex(bytes: impl AsRef<[u8]>) -> String {
     let mut s = String::with_capacity(64);
-    for b in digest {
+    for b in bytes.as_ref() {
         s.push_str(&format!("{:02x}", b));
     }
     s
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex(Sha256::digest(data))
+}
+
+/// Hash one file without holding it in memory. `build_manifest` runs over the
+/// whole tree — including multi-GB media under the 10 GiB cap — so reading a
+/// file whole would spike RSS by its size on both the desktop and the runner
+/// pod (which has a memory limit). Returns `(size, sha256)`.
+fn hash_file(path: &Path) -> Result<(u64, String), String> {
+    use sha2::{Digest, Sha256};
+    let mut f = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut size = 0u64;
+    loop {
+        let n = f.read(&mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        size += n as u64;
+        hasher.update(&buf[..n]);
+    }
+    Ok((size, hex(hasher.finalize())))
 }
 
 /// Content manifest of the synced files under `root` (the diff input).
 pub fn build_manifest(root: &Path) -> Result<Vec<FileEntry>, String> {
     let mut out = Vec::new();
     for rel in walk_synced(root)? {
-        let data =
-            std::fs::read(root.join(&rel)).map_err(|e| format!("read {}: {}", rel.display(), e))?;
+        let (size, sha256) =
+            hash_file(&root.join(&rel)).map_err(|e| format!("read {}: {}", rel.display(), e))?;
         out.push(FileEntry {
             path: norm(&rel),
-            size: data.len() as u64,
-            sha256: sha256_hex(&data),
+            size,
+            sha256,
         });
     }
     Ok(out)
@@ -676,18 +745,55 @@ impl Reconcile {
 /// content differs today: that difference predates the base, which is exactly
 /// the per-end strip-rule skew case. Clock-free — nothing here reads an mtime,
 /// so it holds across machines with unsynced clocks.
+/// Path→hash view of a manifest with the per-end plumbing filtered out (the
+/// binding/settings/ignore files differ per end by design — see
+/// [`FINGERPRINT_SKIP`]).
+fn index(es: &[FileEntry]) -> BTreeMap<&str, &str> {
+    es.iter()
+        .filter(|e| !FINGERPRINT_SKIP.contains(&e.path.as_str()))
+        .map(|e| (e.path.as_str(), e.sha256.as_str()))
+        .collect()
+}
+
+/// Engine runtime state. It rides the teleport on purpose (sessions resume on
+/// the other end), but the engine rewrites it just by RUNNING — team status
+/// files, logs, locks — so it churns without the user touching anything.
+/// Callers reporting "did my work change?" count it apart from real edits.
+const STATE_PREFIX: &str = ".thclaws/state/";
+
+/// Is this path engine-written runtime state rather than user work?
+pub fn is_runtime_state(path: &str) -> bool {
+    path.starts_with(STATE_PREFIX)
+}
+
+/// What ONE end changed since the base it recorded: `(changed, removed)`,
+/// each sorted. This is the "is my folder dirty?" question — it needs no
+/// network and no view of the other end, unlike [`reconcile`]. Same plumbing
+/// filter, so per-end churn in the binding never reads as an edit.
+pub fn drift_since_base(base: &[FileEntry], current: &[FileEntry]) -> (Vec<String>, Vec<String>) {
+    let (b, c) = (index(base), index(current));
+    let mut changed = Vec::new();
+    for (path, hash) in &c {
+        if b.get(path) != Some(hash) {
+            changed.push(path.to_string());
+        }
+    }
+    let mut removed = Vec::new();
+    for path in b.keys() {
+        if !c.contains_key(path) {
+            removed.push(path.to_string());
+        }
+    }
+    // BTreeMap iteration is key-ordered, so both lists come out sorted.
+    (changed, removed)
+}
+
 pub fn reconcile(
     base_local: &[FileEntry],
     base_remote: &[FileEntry],
     local: &[FileEntry],
     remote: &[FileEntry],
 ) -> Reconcile {
-    fn index(es: &[FileEntry]) -> BTreeMap<&str, &str> {
-        es.iter()
-            .filter(|e| !FINGERPRINT_SKIP.contains(&e.path.as_str()))
-            .map(|e| (e.path.as_str(), e.sha256.as_str()))
-            .collect()
-    }
     let (bl, br, l, r) = (
         index(base_local),
         index(base_remote),
@@ -894,6 +1000,54 @@ mod tests {
         };
         write_binding(&root, &b).unwrap();
         assert_eq!(read_binding(&root).workspace_id.as_deref(), Some("ws-123"));
+        assert_eq!(
+            read_binding(&root).revision,
+            None,
+            "a binding written before revisions reads as unnumbered"
+        );
+    }
+
+    #[test]
+    fn revision_counts_completed_syncs_per_pairing() {
+        let bound = |id: &str, rev: Option<u64>| Binding {
+            workspace_id: Some(id.to_string()),
+            revision: rev,
+            ..Default::default()
+        };
+        // Never synced: the first sync lands rev 1.
+        assert_eq!(next_revision(&Binding::default(), "ws-1", None), 1);
+        // A pre-revision binding counts as 0, so it also lands rev 1.
+        assert_eq!(next_revision(&bound("ws-1", None), "ws-1", None), 1);
+        // Steady state: +1 each time.
+        assert_eq!(next_revision(&bound("ws-1", Some(7)), "ws-1", Some(7)), 8);
+        // The cloud moved on without us (another machine pushed) — go past
+        // the highest either end has seen, never reuse a number.
+        assert_eq!(next_revision(&bound("ws-1", Some(7)), "ws-1", Some(12)), 13);
+        // We moved on without the cloud (a runner that missed the revision
+        // call, or a fresh pod) — the local count still wins.
+        assert_eq!(next_revision(&bound("ws-1", Some(7)), "ws-1", None), 8);
+        // Re-pointing the folder at a DIFFERENT workspace starts that
+        // pairing's count, not this folder's unrelated history.
+        assert_eq!(next_revision(&bound("ws-1", Some(99)), "ws-2", Some(3)), 4);
+        assert_eq!(next_revision(&bound("ws-1", Some(99)), "ws-2", None), 1);
+    }
+
+    #[test]
+    fn revision_survives_a_binding_round_trip() {
+        let root = tmp("bind-rev");
+        write_binding(
+            &root,
+            &Binding {
+                workspace_id: Some("ws-9".into()),
+                revision: Some(4),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let b = read_binding(&root);
+        assert_eq!(b.revision, Some(4));
+        assert_eq!(next_revision(&b, "ws-9", Some(4)), 5);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -1086,6 +1240,56 @@ mod tests {
         let r = reconcile(&base_local, &base_remote, &local2, &remote);
         assert_eq!(r.push, vec!["src/main.rs"]);
         assert!(r.pull.is_empty() && r.conflicts.is_empty());
+    }
+
+    #[test]
+    fn drift_since_base_answers_dirty_without_the_other_end() {
+        let base = vec![
+            ent("kept.rs", "k"),
+            ent("edited.rs", "e"),
+            ent("gone.rs", "g"),
+            ent(".thclaws/settings.json", "s"),
+        ];
+        // Same tree with one edit, one deletion, one addition — plus the
+        // per-end settings churn that must NOT count as a local edit.
+        let now = vec![
+            ent("kept.rs", "k"),
+            ent("edited.rs", "e2"),
+            ent("added.rs", "a"),
+            ent(".thclaws/settings.json", "s_overlay"),
+        ];
+        let (changed, removed) = drift_since_base(&base, &now);
+        assert_eq!(
+            changed,
+            vec!["added.rs", "edited.rs"],
+            "sorted, plumbing out"
+        );
+        assert_eq!(removed, vec!["gone.rs"]);
+
+        // An untouched tree is clean even though the plumbing moved.
+        let (changed, removed) = drift_since_base(&base, &base);
+        assert!(changed.is_empty() && removed.is_empty());
+        let mut plumbing_only = base.clone();
+        plumbing_only[3] = ent(".thclaws/settings.json", "different");
+        let (changed, removed) = drift_since_base(&base, &plumbing_only);
+        assert!(
+            changed.is_empty() && removed.is_empty(),
+            "settings overlay is not a local change"
+        );
+    }
+
+    #[test]
+    fn build_manifest_hashes_large_files_without_holding_them() {
+        // Guards the streaming hash: a file bigger than the 64 KiB read buffer
+        // must hash to the same value as the in-memory digest.
+        let root = tmp("bighash");
+        let body: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(root.join("big.bin"), &body).unwrap();
+        let m = build_manifest(&root).unwrap();
+        let e = m.iter().find(|e| e.path == "big.bin").unwrap();
+        assert_eq!(e.size, body.len() as u64);
+        assert_eq!(e.sha256, sha256_hex(&body));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

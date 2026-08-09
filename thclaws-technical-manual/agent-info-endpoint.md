@@ -3,10 +3,8 @@
 Read-only endpoint that returns this daemon's capability snapshot —
 skills, MCP servers, model catalogue, version, optional external
 URL, feature flags. Used by orchestrators that treat thClaws as a
-sovereign agent (the Freelancer model — see
-[`dev-plan/26-thclaws-pod-as-freelancer.md`](../dev-plan/26-thclaws-pod-as-freelancer.md))
-so they can show what the freelancer is configured with without
-having pushed any of it.
+sovereign agent peer, so they can show what a daemon is configured
+with without having pushed any of it.
 
 For the corresponding *invocation* endpoint, see
 [`agent-endpoint.md`](agent-endpoint.md) (`POST /agent/run`). For the
@@ -14,18 +12,12 @@ OpenAI-compatible chat surface, see [`openai-api.md`](openai-api.md).
 
 ## Why this exists
 
-dev-plan/25 (`thclaws_local`) and dev-plan/26 (`thclaws_pod`) treat
-thClaws differently:
-
-- An **Employee** (`thclaws_local`) shares the orchestrator's
-  filesystem. thcompany materializes skills/MCP/instructions into
-  the agent's workspace before each run — thcompany knows what it
-  pushed.
-- A **Freelancer** (`thclaws_pod`) lives anywhere with HTTPS
-  reachability — own pod, cloud VPS, laptop. thcompany doesn't
-  manage the freelancer's toolkit. To still show "this agent has
-  these skills" in the UI, thcompany polls
-  `GET /v1/agent/info` periodically and caches the snapshot.
+An orchestrator that provisions a daemon's workspace already knows
+what it put there. One that merely *reaches* a daemon over HTTPS —
+someone else's pod, a cloud VPS, a laptop — does not: it doesn't
+manage that daemon's toolkit. To still show "this agent has these
+skills" in a UI, poll `GET /v1/agent/info` periodically and cache the
+snapshot.
 
 The endpoint is also useful for operators verifying a fresh pod
 ("does the daemon I just spun up see my skills?") and for any
@@ -78,7 +70,7 @@ No body, no query params. Pure read.
     "supports_agent_run": true
   },
   "external_access": {
-    "ui_url": "https://agent-abc.tenant.thcompany.ai",
+    "ui_url": "https://agent-abc.example.com",
     "configured": true
   },
   "features": {
@@ -98,7 +90,7 @@ No body, no query params. Pure read.
 | `git_sha` | string | Short commit hash at build time, or `"unknown"` if the build environment had no git. |
 | `git_dirty` | bool | `true` when the working tree had uncommitted changes at build time. |
 | `build_profile` | string | `"debug"` or `"release"`. |
-| `workspace_dir` | string | Daemon's CWD at start. For a pod that's typically `/workspace`. For a `thclaws_local` subprocess it's whatever the parent paperclip-adapter set. |
+| `workspace_dir` | string | Daemon's CWD at start. For a pod that's typically `/workspace`. For a locally-spawned subprocess it's whatever the parent set. |
 | `skills[]` | array | Same shape `SkillStore::discover()` produces. `source` is bucketed into `"builtin" \| "user" \| "plugin" \| "project"`. |
 | `mcp_servers[]` | array | Configured MCP servers (config + plugin contributions, name-deduped). `command` is the spawn command summary or the URL (for HTTP-transport servers). `tool_count` is **`null` in v1** — counting tools requires spawning each server, which is too expensive for an info endpoint. The field is reserved for a future enrichment pass that populates it post-first-run. |
 | `model_capabilities.default_model` | string | `AppConfig.model` — the daemon's configured default. |
@@ -118,11 +110,10 @@ or `version_capabilities` in later iterations).
 
 ## Caching
 
-The handler caches the snapshot for **30 seconds**. A
-thcompany page that fans out to N pods on every refresh shouldn't
-melt them. The cache is process-global (one slot per daemon, not
-per-caller) — back-to-back polls within the window return the same
-content.
+The handler caches the snapshot for **30 seconds**. A dashboard that
+fans out to N daemons on every refresh shouldn't melt them. The cache
+is process-global (one slot per daemon, not per-caller) — back-to-back
+polls within the window return the same content.
 
 If you need an unconditional fresh read, wait 30s or restart the
 daemon. There's no `?force=1` query param by design — operators
@@ -169,26 +160,11 @@ curl -s -H 'Authorization: Bearer secret-xyz' \
 # restart → fresh response reflecting the new skill.
 ```
 
-## How thcompany consumes this
-
-thcompany's `agentPodCapabilitiesService.pollAndStore(agentId)`
-(`thcompany/server/src/services/agent-pod-capabilities.ts`) hits
-this endpoint, persists the snapshot on the agent row
-(`agents.pod_capabilities` JSONB), and surfaces it in the agent's
-"Capabilities" UI card. See
-[`adapter-thclaws-pod.md`](../thcompany-technical-manual/adapter-thclaws-pod.md)
-for the orchestrator side. The TypeScript client lives at
-`thcompany/packages/adapters/thclaws-pod/src/server/info-poll.ts`
-with a tolerant validator + specific error codes
-(`transport_unreachable`, `invalid_api_key`, `endpoint_unavailable`,
-`parse_failed`, `http_<status>`).
-
 ## See also
 
 - [`agent-endpoint.md`](agent-endpoint.md) — `POST /agent/run` (invocation surface).
 - [`openai-api.md`](openai-api.md) — `POST /v1/chat/completions` (external-client surface).
 - [`model-catalogue.md`](model-catalogue.md) — `available_models[]` source of truth.
-- [`../dev-plan/26-thclaws-pod-as-freelancer.md`](../dev-plan/26-thclaws-pod-as-freelancer.md) — the Freelancer architecture this endpoint enables.
 
 ## Implementation pointers
 

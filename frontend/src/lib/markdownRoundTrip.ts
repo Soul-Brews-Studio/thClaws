@@ -388,13 +388,95 @@ export const markdownExtensions = [
   HtmlComment,
 ];
 
+/// Info string marking a code block that came from a `---` YAML block,
+/// so `yamlBlock` below can write it back out with its dashes instead of
+/// as a fence. Kept out of the `language-yaml` namespace on purpose —
+/// a hand-written ```yaml fence must stay a fence.
+const YAML_RULE_LANG = "yaml-md-rule";
+
+/// Index of the `---` closing a YAML block opened at `open`, or -1. The
+/// author's signal is contiguity: no blank line between the dashes and
+/// their contents (a blank line means two separate rules), and a first
+/// line that reads as YAML.
+function yamlBlockEnd(lines: string[], open: number): number {
+  const first = (lines[open + 1] ?? "").trimEnd();
+  if (!/^[\w.-]+\s*:/.test(first) && !first.startsWith("- ")) return -1;
+  for (let i = open + 1; i < lines.length; i++) {
+    if (lines[i].trim() === "") return -1;
+    if (/^-{3,}\s*$/.test(lines[i])) return i;
+  }
+  return -1;
+}
+
+/// Rewrite `---` into what the author meant before handing markdown to
+/// the converter — the same two CommonMark traps `file_preview.rs`
+/// fixes for the read-only preview, except here they're *destructive*:
+/// whatever the parse yields is what the save writes back.
+///
+/// - A paragraph line followed directly by `---` is a setext H2, so a
+///   section separator ate the line above it and saved it as `## …`.
+///   Insert the blank line that makes it a plain rule.
+/// - A `---` pair with nothing blank between it and its contents is
+///   YAML (frontmatter, metadata blocks), and the closing `---`
+///   underlined the last key. Park it in a code block tagged
+///   `YAML_RULE_LANG`, which `yamlBlock` unwraps back to `---` on save.
+///
+/// Fenced code is skipped, and so are list / quote / table lines
+/// (already a rule there — a blank line would only loosen the list).
+function normalizeRules(md: string): string {
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let fence: string | null = null;
+  let prevBlank = true;
+  let prevParagraph = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.replace(/\r$/, "").trimStart();
+    const indent = line.length - line.trimStart().length;
+    const opener = indent <= 3 ? /^(```+|~~~+)/.exec(trimmed)?.[1] : undefined;
+    if (fence) {
+      if (opener && opener[0] === fence[0] && opener.length >= fence.length) fence = null;
+    } else if (opener) {
+      fence = opener;
+    } else if (indent === 0 && /^-{3,}\s*$/.test(trimmed)) {
+      const end = prevBlank ? yamlBlockEnd(lines, i) : -1;
+      if (end > 0) {
+        out.push("```" + YAML_RULE_LANG, ...lines.slice(i + 1, end), "```", "");
+        i = end;
+        prevBlank = true;
+        prevParagraph = false;
+        continue;
+      }
+      if (prevParagraph) out.push("");
+    }
+    out.push(line);
+    prevBlank = trimmed === "";
+    prevParagraph =
+      !fence && indent === 0 && trimmed !== "" && !/^([-*+>#|=]|\d+[.)])/.test(trimmed);
+  }
+  return out.join("\n");
+}
+
+// Undo the parking above: a `YAML_RULE_LANG` block is written back with
+// its original `---` delimiters, byte for byte. Without this the save
+// would turn every frontmatter block in the file into a fenced code
+// block.
+turndownService.addRule("yamlBlock", {
+  filter: (node) =>
+    node.nodeName === "PRE" &&
+    !!node.firstChild &&
+    (node.firstChild as HTMLElement).className?.includes(YAML_RULE_LANG),
+  replacement: (_content, node) =>
+    `\n\n---\n${(node.textContent ?? "").replace(/\n+$/, "")}\n---\n\n`,
+});
+
 /// Markdown → HTML for `editor.commands.setContent`. `baseDir` is the
 /// directory of the file being edited (workspace-relative or absolute);
 /// pass it so relative image references resolve, omit it when the
 /// content has no place on disk.
 export function markdownToEditorHtml(md: string, baseDir?: string): string {
   if (!md) return "";
-  const parsed = marked.parse(md);
+  const parsed = marked.parse(normalizeRules(md));
   const html = commentsToPlaceholders(typeof parsed === "string" ? parsed : "");
   return baseDir ? rewriteImageSrcs(html, baseDir) : html;
 }

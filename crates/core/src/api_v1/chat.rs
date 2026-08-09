@@ -142,8 +142,8 @@ pub struct UsageRow {
     // downstream consumers. Each is Optional + skipped when None so
     // strict-OpenAI clients see a usage block that's a SUPERSET of
     // the standard shape (extra fields, never missing standard ones).
-    // Consumers (paperclip-adapter, thcompany) compute USD locally
-    // using the rate table from /v1/models. thClaws never emits cost.
+    // Consumers compute USD locally using the rate table from
+    // /v1/models. thClaws never emits cost.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cached_input_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]

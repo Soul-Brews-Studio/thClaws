@@ -2,15 +2,12 @@
 //!
 //! Read-only, idempotent description of what this thClaws daemon
 //! knows: skills, MCP servers, model catalogue, version, optional
-//! external-access URL. Polled by thcompany's
-//! `agentPodCapabilitiesService` so the freelancer's UI shows
-//! current capability info without thcompany having pushed any of it.
-//!
-//! See `dev-plan/26-thclaws-pod-as-freelancer.md` for the design.
+//! external-access URL. An orchestrator polls it to show current
+//! capability info without the daemon having to push any of it.
 //!
 //! Cached for ~30s. The skill scan is cheap (filesystem walk + parse)
-//! but the cache exists so a thcompany page that fans out to N pods
-//! on every refresh doesn't melt them.
+//! but the cache exists so a dashboard that fans out to N daemons on
+//! every refresh doesn't melt them.
 
 use axum::response::Json;
 use serde::Serialize;
@@ -29,8 +26,8 @@ pub struct AgentInfo {
     pub git_dirty: bool,
     pub build_profile: &'static str,
     /// thClaws's working directory at daemon start. For a pod this is
-    /// usually `/workspace`; for a `thclaws_local` daemon it's
-    /// `process.cwd()` of the parent paperclip-adapter caller.
+    /// usually `/workspace`; for a locally-spawned daemon it's the
+    /// caller's own working directory.
     pub workspace_dir: String,
     pub skills: Vec<SkillInfo>,
     pub mcp_servers: Vec<McpServerInfo>,
@@ -54,10 +51,10 @@ pub struct SkillInfo {
 pub struct McpServerInfo {
     pub name: String,
     pub command: Option<String>,
-    /// `null` ⇒ tool count not yet probed. Phase A doesn't spawn MCP
-    /// servers just to count their tools — that's deferred so the
-    /// info endpoint stays cheap. thcompany should treat `null` as
-    /// "unknown, will populate after first agent run".
+    /// `null` ⇒ tool count not yet probed. The endpoint doesn't spawn
+    /// MCP servers just to count their tools — that's deferred so it
+    /// stays cheap. Clients should treat `null` as "unknown, will
+    /// populate after first agent run".
     pub tool_count: Option<usize>,
 }
 

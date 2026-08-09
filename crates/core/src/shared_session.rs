@@ -1359,7 +1359,9 @@ async fn run_worker(
     // providers read on every `byte_stream.next()`. Live; subsequent
     // `/reload` paths re-apply via the same setter (see lines ~1877,
     // ~1965 where AppConfig::load is re-invoked).
-    crate::providers::set_stream_chunk_timeout_secs(config.stream_chunk_timeout_secs);
+    // Re-applied by the settings watcher below, so a Settings-menu toggle
+    // lands without a restart.
+    config.apply_process_globals();
 
     // Shared SkillTool store — we keep a handle in WorkerState so
     // `/skill install` can repopulate it without restarting.
@@ -3438,9 +3440,7 @@ async fn run_worker(
                 let prev_model = state.config.model.clone();
                 match crate::config::AppConfig::load() {
                     Ok(new_config) => {
-                        crate::providers::set_stream_chunk_timeout_secs(
-                            new_config.stream_chunk_timeout_secs,
-                        );
+                        new_config.apply_process_globals();
                         state.config = new_config;
                     }
                     Err(e) => {
@@ -3579,9 +3579,7 @@ async fn run_worker(
                 // from the NEW workspace win.
                 match crate::config::AppConfig::load() {
                     Ok(new_config) => {
-                        crate::providers::set_stream_chunk_timeout_secs(
-                            new_config.stream_chunk_timeout_secs,
-                        );
+                        new_config.apply_process_globals();
                         state.config = new_config;
                     }
                     Err(e) => {

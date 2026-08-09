@@ -744,6 +744,9 @@ pub struct MergeStats {
     pub added: Vec<String>,
     pub unchanged: usize,
     pub skipped_no_context: usize,
+    /// Rows whose guessed context was replaced by a real one this run.
+    /// Reported because it silently changes a model's usable window.
+    pub context_corrected: Vec<String>,
 }
 
 /// Format the per-provider report lines. Header always shows added +
@@ -753,6 +756,16 @@ pub struct MergeStats {
 /// dumping hundreds of lines). `suffix` carries provider-specific extras
 /// (e.g. OpenAI's "X filtered: fine-tunes/audio/image/embedding").
 const MAX_LIST_IDS: usize = 30;
+
+/// Does this row's context come from the blanket provider default rather
+/// than a published number? `merge_discovered` stamps exactly this marker
+/// when it has to guess, so the marker is the only reliable signal — the
+/// value itself can coincide with a real one.
+fn is_unverified_context(e: &ModelEntry) -> bool {
+    e.source
+        .as_deref()
+        .is_some_and(|s| s.contains("(context unverified)"))
+}
 
 fn push_provider_stats(
     report: &mut Vec<String>,
@@ -767,6 +780,12 @@ fn push_provider_stats(
         header.push_str(&format!(
             ", {} skipped (no context)",
             stats.skipped_no_context
+        ));
+    }
+    if !stats.context_corrected.is_empty() {
+        header.push_str(&format!(
+            ", {} context corrected",
+            stats.context_corrected.len()
         ));
     }
     if let Some(s) = suffix {
@@ -879,6 +898,27 @@ fn merge_discovered(
             if existing.max_output.is_none() {
                 if let Some(max) = mirrored_max_output {
                     existing.max_output = Some(max);
+                }
+            }
+            // Upgrade a GUESSED context once a real one shows up. A row
+            // seeded while OpenRouter didn't know the model got the
+            // provider's blanket `default_context` and an "(context
+            // unverified)" stamp — and, before this, kept it forever, because
+            // an existing row was never re-examined. That froze
+            // opencode-go/deepseek-v4-* at 131072 for a 1M model (#190): the
+            // same id reads 1048576 on every provider that publishes its own
+            // number, so users were being compacted 8× too early.
+            //
+            // Only rows still carrying the unverified stamp are touched — a
+            // context the provider itself reported stays authoritative.
+            if is_unverified_context(existing) {
+                if let Some(real) = openrouter_ctx_by_bare.get(&id).copied() {
+                    if existing.context != Some(real) {
+                        existing.context = Some(real);
+                        existing.source = Some(format!("{OPENROUTER_URL} via bare id"));
+                        existing.verified_at = Some(today.into());
+                        stats.context_corrected.push(id.clone());
+                    }
                 }
             }
             stats.unchanged += 1;
@@ -1329,6 +1369,83 @@ mod tests {
     fn civil_from_days_known_dates() {
         assert_eq!(civil_from_days(20_567), (2026, 4, 24));
         assert_eq!(civil_from_days(0), (1970, 1, 1));
+    }
+
+    #[test]
+    fn guessed_context_is_upgraded_once_a_real_one_exists() {
+        // #190: a row seeded while OpenRouter didn't know the model got the
+        // provider's blanket default plus an "(context unverified)" stamp,
+        // and — before this — kept it forever, because an existing row was
+        // never re-examined. opencode-go/deepseek-v4-* sat at 131072 for a
+        // 1M model as a result.
+        let mut cat = Catalogue {
+            schema: CURRENT_SCHEMA,
+            source: String::new(),
+            fetched_at: String::new(),
+            providers: BTreeMap::new(),
+            aliases: Default::default(),
+            fallback: Default::default(),
+        };
+        let pc = cat
+            .providers
+            .entry("opencode-go".into())
+            .or_insert_with(ProviderCatalogue::default);
+        pc.default_context = Some(131_072);
+        pc.models.insert(
+            "deepseek-v4-flash".into(),
+            ModelEntry {
+                context: Some(131_072),
+                source: Some("https://opencode.ai/zen/go/v1/models (context unverified)".into()),
+                verified_at: Some("2026-06-22".into()),
+                ..Default::default()
+            },
+        );
+        // A row whose context the provider itself published must NOT move,
+        // even when OpenRouter disagrees — its number is authoritative.
+        pc.models.insert(
+            "capped-model".into(),
+            ModelEntry {
+                context: Some(32_768),
+                source: Some("https://opencode.ai/zen/go/v1/models".into()),
+                verified_at: Some("2026-06-22".into()),
+                ..Default::default()
+            },
+        );
+
+        let ctx_by_bare = HashMap::from([
+            ("deepseek-v4-flash".to_string(), 1_048_576u32),
+            ("capped-model".to_string(), 1_048_576u32),
+        ]);
+        let stats = merge_discovered(
+            &mut cat,
+            "opencode-go",
+            "https://opencode.ai/zen/go/v1/models",
+            vec!["deepseek-v4-flash".into(), "capped-model".into()],
+            &ctx_by_bare,
+            &HashMap::new(),
+            "2026-08-09",
+        );
+
+        let models = &cat.providers["opencode-go"].models;
+        assert_eq!(models["deepseek-v4-flash"].context, Some(1_048_576));
+        assert_eq!(
+            models["deepseek-v4-flash"].verified_at.as_deref(),
+            Some("2026-08-09"),
+            "an upgraded row is re-dated"
+        );
+        assert!(
+            !is_unverified_context(&models["deepseek-v4-flash"]),
+            "the unverified stamp is cleared once a real number lands"
+        );
+        assert_eq!(
+            models["capped-model"].context,
+            Some(32_768),
+            "a provider-published context is never overwritten"
+        );
+        assert_eq!(
+            stats.context_corrected,
+            vec!["deepseek-v4-flash".to_string()]
+        );
     }
 
     #[test]

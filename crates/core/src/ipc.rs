@@ -4888,6 +4888,43 @@ pub fn handle_ipc(msg: Value, ctx: &IpcContext) -> bool {
             (ctx.dispatch)(payload.to_string());
         }
 
+        // Sensitive-data masking (`sensitive.enabled`, dev-plan/55). Nested
+        // block on disk so the later mode routing (tokenize vs gate) has a
+        // home; the GUI only flips `enabled`.
+        "sensitive_enabled_get" => {
+            let enabled = crate::config::ProjectConfig::load()
+                .and_then(|c| c.sensitive)
+                .and_then(|s| s.enabled)
+                .unwrap_or(false);
+            let payload = serde_json::json!({
+                "type": "sensitive_enabled",
+                "enabled": enabled,
+            });
+            (ctx.dispatch)(payload.to_string());
+        }
+
+        "sensitive_enabled_set" => {
+            let enabled = msg
+                .get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let mut cfg = crate::config::ProjectConfig::load().unwrap_or_default();
+            let mut block = cfg.sensitive.take().unwrap_or_default();
+            block.enabled = Some(enabled);
+            cfg.sensitive = Some(block);
+            let (ok, error) = match cfg.save() {
+                Ok(()) => (true, String::new()),
+                Err(e) => (false, e.to_string()),
+            };
+            let payload = serde_json::json!({
+                "type": "sensitive_enabled_result",
+                "enabled": enabled,
+                "ok": ok,
+                "error": error,
+            });
+            (ctx.dispatch)(payload.to_string());
+        }
+
         // Browser tools (`browserEnabled`) — the INVERSE of the
         // media/team toggles: opt-OUT, default ON. Same get/set shape so
         // the Settings menu can flip it; the Playwright MCP is injected at

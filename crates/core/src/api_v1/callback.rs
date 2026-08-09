@@ -105,8 +105,8 @@ pub struct PayloadUsage {
     pub completion_tokens: u32,
     pub total_tokens: u32,
     // dev-plan/24: extra token-type counts for downstream cost compute.
-    // Receivers (paperclip-adapter, thcompany) multiply these by the
-    // pricing rates from /v1/models. thClaws never emits cost_usd.
+    // Receivers multiply these by the pricing rates from /v1/models.
+    // thClaws never emits cost_usd.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cached_input_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]

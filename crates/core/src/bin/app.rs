@@ -260,7 +260,7 @@ enum Command {
     /// pod. Sessions / memory / team-runtime on the pod side are
     /// preserved across deploys. See dev-plan/28 for the contract.
     Deploy {
-        /// Pod base URL (e.g. https://co-test.thcompany.ai). Required.
+        /// Pod base URL (e.g. https://agent.example.com). Required.
         #[arg(long)]
         pod: String,
         /// Bearer token for the pod's /v1/* API. Falls back to

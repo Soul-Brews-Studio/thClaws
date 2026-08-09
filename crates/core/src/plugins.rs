@@ -614,31 +614,47 @@ pub fn all_plugins_all_scopes() -> Vec<Plugin> {
     out
 }
 
+/// Resolve one manifest section's directories to absolute paths.
+///
+/// A section the manifest doesn't declare falls back to `conventional`
+/// when that subdir exists on disk — Claude Code plugins rely on the
+/// convention instead of declaring it, so an absent key means "look in
+/// the usual place", not "contributes nothing". `conventional: None`
+/// opts a section out (agents have no such convention here).
+///
+/// Every surface that asks what a plugin contributes — the loaders and
+/// [`contributions`] alike — resolves through this, so a listing can't
+/// disagree with what actually loads.
+fn section_dirs(root: &Path, rels: &[String], conventional: Option<&str>) -> Vec<PathBuf> {
+    if !rels.is_empty() {
+        return rels.iter().map(|rel| root.join(rel)).collect();
+    }
+    match conventional {
+        Some(name) => {
+            let dir = root.join(name);
+            if dir.is_dir() {
+                vec![dir]
+            } else {
+                Vec::new()
+            }
+        }
+        None => Vec::new(),
+    }
+}
+
 /// Flatten all enabled plugins' skill directories into absolute paths.
 /// Each entry is a directory that contains one-or-more `<skill>/SKILL.md`
 /// subdirectories (compatible with [`crate::skills::SkillStore`] discovery).
 ///
-/// When a plugin's manifest doesn't declare `skills`, we fall back to a
-/// conventional `skills/` subdir if one exists. This mirrors Claude
-/// Code's auto-discovery behavior so anthropics-style plugins (which
-/// rely on the `skills/` convention rather than declaring it
-/// explicitly in the manifest) install in thClaws unchanged.
+/// Undeclared `skills` falls back to a conventional `skills/` subdir —
+/// see [`section_dirs`] — so anthropics-style plugins install unchanged.
 pub fn plugin_skill_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     for plugin in installed_plugins_all_scopes() {
         let Ok(manifest) = plugin.manifest() else {
             continue;
         };
-        if manifest.skills.is_empty() {
-            let conventional = plugin.path.join("skills");
-            if conventional.is_dir() {
-                dirs.push(conventional);
-            }
-        } else {
-            for rel in &manifest.skills {
-                dirs.push(plugin.path.join(rel));
-            }
-        }
+        dirs.extend(section_dirs(&plugin.path, &manifest.skills, Some("skills")));
     }
     dirs
 }
@@ -651,16 +667,11 @@ pub fn plugin_command_dirs() -> Vec<PathBuf> {
         let Ok(manifest) = plugin.manifest() else {
             continue;
         };
-        if manifest.commands.is_empty() {
-            let conventional = plugin.path.join("commands");
-            if conventional.is_dir() {
-                dirs.push(conventional);
-            }
-        } else {
-            for rel in &manifest.commands {
-                dirs.push(plugin.path.join(rel));
-            }
-        }
+        dirs.extend(section_dirs(
+            &plugin.path,
+            &manifest.commands,
+            Some("commands"),
+        ));
     }
     dirs
 }
@@ -668,15 +679,15 @@ pub fn plugin_command_dirs() -> Vec<PathBuf> {
 /// Flatten all enabled plugins' agent directories. Returned dirs feed
 /// `AgentDefsConfig::load_with_extra`; plugin agents merge additively
 /// and never clobber a user's or project's existing agent by name.
+///
+/// No conventional fallback: agents must be declared explicitly.
 pub fn plugin_agent_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     for plugin in installed_plugins_all_scopes() {
         let Ok(manifest) = plugin.manifest() else {
             continue;
         };
-        for rel in &manifest.agents {
-            dirs.push(plugin.path.join(rel));
-        }
+        dirs.extend(section_dirs(&plugin.path, &manifest.agents, None));
     }
     dirs
 }
@@ -701,10 +712,10 @@ pub fn contributions(plugin: &Plugin) -> Contributions {
     };
     // A skill is a directory holding a SKILL.md; commands and agents are
     // plain `.md` files. Anything else in those dirs isn't a contribution.
-    let count = |rels: &[String], want_dir: bool| -> usize {
+    let count = |dirs: &[PathBuf], want_dir: bool| -> usize {
         let mut n = 0;
-        for rel in rels {
-            let Ok(entries) = std::fs::read_dir(plugin.path.join(rel)) else {
+        for dir in dirs {
+            let Ok(entries) = std::fs::read_dir(dir) else {
                 continue;
             };
             for e in entries.flatten() {
@@ -723,9 +734,15 @@ pub fn contributions(plugin: &Plugin) -> Contributions {
     let mut mcp_servers: Vec<String> = manifest.mcp_servers.keys().cloned().collect();
     mcp_servers.sort();
     Contributions {
-        skills: count(&manifest.skills, true),
-        commands: count(&manifest.commands, false),
-        agents: count(&manifest.agents, false),
+        skills: count(
+            &section_dirs(&plugin.path, &manifest.skills, Some("skills")),
+            true,
+        ),
+        commands: count(
+            &section_dirs(&plugin.path, &manifest.commands, Some("commands")),
+            false,
+        ),
+        agents: count(&section_dirs(&plugin.path, &manifest.agents, None), false),
         mcp_servers,
     }
 }
@@ -1063,6 +1080,65 @@ mod tests {
         let m = read_manifest(dir.path()).unwrap();
         assert_eq!(m.name, "from-thclaws");
         assert_eq!(m.skills, vec!["skills".to_string()]);
+    }
+
+    /// A Claude Code plugin declares no `skills` / `commands` — it
+    /// relies on the directory convention. `plugin_skill_dirs` honoured
+    /// that but `contributions` read the empty manifest lists directly,
+    /// so `/plugin list` reported `skills: 0` for a plugin whose skill
+    /// was loading fine. Both go through `section_dirs` now.
+    #[test]
+    fn contributions_counts_conventional_dirs_a_bare_manifest_omits() {
+        let dir = tempdir().unwrap();
+        write_manifest(dir.path(), r#"{"name": "bare", "version": "1.0.0"}"#);
+
+        let skill = dir.path().join("skills/last30days");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(skill.join("SKILL.md"), "---\nname: last30days\n---\n").unwrap();
+        // A dir without SKILL.md is not a skill.
+        std::fs::create_dir_all(dir.path().join("skills/not-a-skill")).unwrap();
+
+        std::fs::create_dir_all(dir.path().join("commands")).unwrap();
+        std::fs::write(dir.path().join("commands/brief.md"), "# brief").unwrap();
+
+        // Agents have no conventional fallback, so this stays uncounted
+        // — the listing must match what `plugin_agent_dirs` loads.
+        std::fs::create_dir_all(dir.path().join("agents")).unwrap();
+        std::fs::write(dir.path().join("agents/researcher.md"), "# researcher").unwrap();
+
+        let plugin = Plugin {
+            name: "bare".into(),
+            source: String::new(),
+            path: dir.path().to_path_buf(),
+            version: "1.0.0".into(),
+            enabled: true,
+        };
+        let got = contributions(&plugin);
+        assert_eq!(got.skills, 1, "conventional skills/ must be counted");
+        assert_eq!(got.commands, 1, "conventional commands/ must be counted");
+        assert_eq!(got.agents, 0, "agents have no conventional fallback");
+    }
+
+    /// The counts a listing shows have to be the ones the loaders act
+    /// on, whether the manifest declares its dirs or leans on the
+    /// convention. Guards the two from drifting apart again.
+    #[test]
+    fn section_dirs_backs_both_the_loader_and_the_listing() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("skills")).unwrap();
+
+        // Declared wins, and is returned even when absent from disk —
+        // an explicit path is the author's claim, not a guess.
+        let declared = section_dirs(dir.path(), &["custom".to_string()], Some("skills"));
+        assert_eq!(declared, vec![dir.path().join("custom")]);
+
+        let fallback = section_dirs(dir.path(), &[], Some("skills"));
+        assert_eq!(fallback, vec![dir.path().join("skills")]);
+
+        // Convention only applies when the dir is really there.
+        assert!(section_dirs(dir.path(), &[], Some("commands")).is_empty());
+        // Opted out entirely.
+        assert!(section_dirs(dir.path(), &[], None).is_empty());
     }
 
     /// The full disk round-trip: what `save` writes, and what `load`

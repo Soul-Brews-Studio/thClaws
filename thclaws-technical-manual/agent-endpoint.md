@@ -1,8 +1,8 @@
 # `POST /agent/run` — agent endpoint
 
 The thClaws-native HTTP surface for orchestrators that drive thClaws
-as a sovereign agent peer (paperclip-adapter / thcompany / custom
-schedulers), not as an OpenAI-compatible LLM endpoint.
+as a sovereign agent peer (custom schedulers, CI, your own control
+plane), not as an OpenAI-compatible LLM endpoint.
 
 For the OpenAI-compatible chat endpoint that external clients
 (Cursor, Aider, n8n, openai-python) use, see
@@ -62,7 +62,7 @@ Content-Type: application/json
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `prompt` | string | yes | The user turn. Joined from wake/handoff/task markdown by the orchestrator. |
-| `workspace_dir` | string | no | Absolute path. Daemon's `SkillStore::discover_in` reads `<dir>/.claude/skills/` + `<dir>/.thclaws/skills/`. Rejected with 400 if relative, missing, or outside `THCLAWS_AGENT_WORKSPACE_ROOT` when that env is set. **Optional since dev-plan/26 Phase B**: when omitted or empty, the daemon falls back to its own CWD. Freelancer-mode pods (dev-plan/26) leave it off; Employee-mode adapters (paperclip-adapter for `thclaws_local`) supply it. |
+| `workspace_dir` | string | no | Absolute path. Daemon's `SkillStore::discover_in` reads `<dir>/.claude/skills/` + `<dir>/.thclaws/skills/`. Rejected with 400 if relative, missing, or outside `THCLAWS_AGENT_WORKSPACE_ROOT` when that env is set. **Optional**: when omitted or empty, the daemon falls back to its own CWD. A single-purpose pod leaves it off; an orchestrator driving many workspaces from one daemon supplies it. |
 | `system` | string | no | Appended to thClaws's default system prompt. Does NOT replace the default — the default carries the tool-aware scaffolding the agent needs. |
 | `model` | string | no | Override the daemon's configured default. Routes via the same `ProviderKind::detect` logic the chat endpoint uses. |
 | `session_id` | string | no | Reserved for session resume across turns. Phase A on the server accepts but does not yet persist; phase B/C will. |
@@ -91,8 +91,7 @@ When `workspace_dir` is **supplied**, hard rules enforced by
 Validation failures return `400 Bad Request` with an
 `invalid_workspace_dir` error code.
 
-When `workspace_dir` is **omitted** (dev-plan/26 Phase B freelancer
-mode), the daemon uses its own current working directory and skips
+When `workspace_dir` is **omitted**, the daemon uses its own current working directory and skips
 the `THCLAWS_AGENT_WORKSPACE_ROOT` check — operators control the
 daemon's CWD at launch time, which IS the safety boundary. The
 caller's omission is interpreted as "use whatever you booted from",
@@ -233,12 +232,12 @@ been flushed.
 | `x_callback` async | yes | yes (identical semantics) |
 | Streaming | named SSE events + `[DONE]` | OpenAI chunks + `[DONE]` |
 
-> **MCP status (2026-05): the per-request workspace path for MCP servers is wired on the adapter side — `materialize-workspace.ts` writes `<workspace_dir>/.thclaws/mcp.json` when the orchestrator supplies servers — but the thClaws daemon's `build_runtime_for_workspace` still loads MCP from `AppConfig.mcp_servers` only. The file is written defensively for the upcoming closer of this loop; until then, MCP server changes require a daemon restart, same as before dev-plan/25. Tracking under dev-plan/25 "Open questions".
+> **MCP status (2026-05): an orchestrator may write `<workspace_dir>/.thclaws/mcp.json` per request, but the thClaws daemon's `build_runtime_for_workspace` still loads MCP from `AppConfig.mcp_servers` only. The file is written defensively for the upcoming closer of this loop; until then, MCP server changes require a daemon restart, same as before dev-plan/25. Tracking under dev-plan/25 "Open questions".
 
 External tools (Cursor, Aider) keep using `/v1/chat/completions`
 unchanged. orchestrators that previously used the chat endpoint
 should switch to `/agent/run` to gain skill / MCP / plugin
-injection — paperclip-adapter does this in dev-plan/25 Phase B.
+injection.
 
 ## Auth
 
@@ -257,15 +256,15 @@ Start thClaws with workspace-root gating:
 
 ```sh
 export THCLAWS_API_TOKEN=secret-xyz
-export THCLAWS_AGENT_WORKSPACE_ROOT=/var/thcompany/agents
+export THCLAWS_AGENT_WORKSPACE_ROOT=/var/thclaws/agents
 thclaws --serve --bind 127.0.0.1 --port 8443
 ```
 
 Make a workspace and drop a skill in:
 
 ```sh
-mkdir -p /var/thcompany/agents/agent-1/.thclaws/skills/deploy
-cat > /var/thcompany/agents/agent-1/.thclaws/skills/deploy/SKILL.md <<'EOF'
+mkdir -p /var/thclaws/agents/agent-1/.thclaws/skills/deploy
+cat > /var/thclaws/agents/agent-1/.thclaws/skills/deploy/SKILL.md <<'EOF'
 ---
 name: deploy
 description: Deploy this repo to staging
@@ -283,7 +282,7 @@ curl -N http://127.0.0.1:8443/agent/run \
   -H 'Content-Type: application/json' \
   -d '{
     "prompt": "Ship the current branch to staging.",
-    "workspace_dir": "/var/thcompany/agents/agent-1"
+    "workspace_dir": "/var/thclaws/agents/agent-1"
   }'
 ```
 
@@ -304,7 +303,6 @@ skill body told the agent to run, then `event: result` + `[DONE]`.
 - [`openai-api.md`](openai-api.md) — `/v1/chat/completions` (the external-client endpoint).
 - [`model-catalogue.md`](model-catalogue.md) — `/v1/models` pricing block (unchanged; shared between both endpoints).
 - [`../dev-plan/25-thclaws-as-agent.md`](../dev-plan/25-thclaws-as-agent.md) — the architectural pivot this endpoint implements.
-- thcompany side: [`thcompany-technical-manual/adapter-thclaws-local.md`](../thcompany-technical-manual/adapter-thclaws-local.md).
 
 ## Job Artifacts — `collect_files`
 

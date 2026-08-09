@@ -1,7 +1,7 @@
 {
   "schema": 4,
   "source": "baseline 2026-06-10 — pricing synced from LiteLLM (github.com/BerriAI/litellm)",
-  "fetched_at": "2026-08-03T00:00:00Z",
+  "fetched_at": "2026-08-09T00:00:00Z",
   "providers": {
     "anthropic": {
       "list_url": "https://api.anthropic.com/v1/models",
@@ -1504,15 +1504,10 @@
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
         },
-        "nvidia/deepseek-ai/deepseek-v4-flash": {
+        "nvidia/deepseek-ai/deepseek-v4-flash-0731": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/deepseek-ai/deepseek-v4-pro": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
+          "source": "https://integrate.api.nvidia.com/v1/models",
+          "verified_at": "2026-08-09"
         },
         "nvidia/google/codegemma-1.1-7b": {
           "context": 131072,
@@ -1665,11 +1660,6 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/mistralai/mistral-large-2-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
-          "verified_at": "2026-05-04"
-        },
-        "nvidia/mistralai/mistral-medium-3.5-128b": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
@@ -1984,17 +1974,15 @@
       "list_url": "https://ollama.com/v1/models",
       "default_context": 262144,
       "models": {
-        "ollama-cloud/deepseek-v4-flash": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified) + litellm:deepseek-v4-flash",
-          "verified_at": "2026-06-22",
-          "input_per_mtok": 0.14,
-          "output_per_mtok": 0.28
-        },
         "ollama-cloud/deepseek-v4-flash:0731": {
           "context": 262144,
           "source": "https://ollama.com/v1/models",
           "verified_at": "2026-08-03"
+        },
+        "ollama-cloud/deepseek-v4-flash:preview": {
+          "context": 262144,
+          "source": "https://ollama.com/v1/models",
+          "verified_at": "2026-08-09"
         },
         "ollama-cloud/deepseek-v4-pro": {
           "context": 262144,
@@ -2793,16 +2781,16 @@
       "default_context": 131072,
       "models": {
         "opencode-go/deepseek-v4-flash": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models (context unverified) + litellm:deepseek-v4-flash",
-          "verified_at": "2026-06-22",
+          "context": 1048576,
+          "source": "https://opencode.ai/zen/go/v1/models (context: DeepSeek V4 published 1M window; opencode zen /v1/models omits context) + litellm:deepseek-v4-flash",
+          "verified_at": "2026-08-09",
           "input_per_mtok": 0.14,
           "output_per_mtok": 0.28
         },
         "opencode-go/deepseek-v4-pro": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models (context unverified) + litellm:deepseek-v4-pro",
-          "verified_at": "2026-06-22",
+          "context": 1048576,
+          "source": "https://opencode.ai/zen/go/v1/models (context: DeepSeek V4 published 1M window; opencode zen /v1/models omits context) + litellm:deepseek-v4-pro",
+          "verified_at": "2026-08-09",
           "input_per_mtok": 0.435,
           "output_per_mtok": 0.87
         },
@@ -2849,9 +2837,9 @@
           "verified_at": "2026-05-14"
         },
         "opencode-go/kimi-k2.6": {
-          "context": 200000,
-          "source": "https://opencode.ai/zen/go/v1/models (context: Moonshot Kimi K2 family published window)",
-          "verified_at": "2026-05-14"
+          "context": 262144,
+          "source": "https://opencode.ai/zen/go/v1/models (context: measured — a 250,622-token prompt was accepted 2026-08-09; Moonshot Kimi K2 spec 256K)",
+          "verified_at": "2026-08-09"
         },
         "opencode-go/kimi-k2.7-code": {
           "context": 131072,
@@ -6980,6 +6968,11 @@
           "verified_at": "2026-06-22",
           "input_per_mtok": 0.435,
           "output_per_mtok": 0.87
+        },
+        "tokenrouter/dreamina-seedance-2-5-hc": {
+          "context": 128000,
+          "source": "https://api.tokenrouter.com/v1/models",
+          "verified_at": "2026-08-09"
         },
         "tokenrouter/ex/gpt-5.4": {
           "context": 128000,

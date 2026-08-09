@@ -534,6 +534,9 @@ pub async fn run_with_engine(
                         "/workspace/sync/trash",
                         post(sync_trash).layer(DefaultBodyLimit::max(16 * 1024 * 1024)),
                     )
+                    // Agreed sync revision, recorded after a sync lands (both
+                    // directions) so the two ends name the same number.
+                    .route("/workspace/sync/revision", post(sync_revision))
                     .route_layer(axum::middleware::from_fn(sync_bearer_gate)),
             )
             .with_state(state)
@@ -582,20 +585,26 @@ struct SyncStatResp {
     busy: bool,
     engine_version: &'static str,
     workspace_id: Option<String>,
+    /// Last sync revision this runner agreed to (see `sync_revision`).
+    revision: Option<u64>,
 }
 
 async fn sync_stat(State(state): State<ServeState>) -> Response {
     let root = state.workspace.as_path();
     match crate::cloud::wssync::stat_workspace(root) {
-        Ok(s) => Json(SyncStatResp {
-            file_count: s.file_count,
-            bytes: s.bytes,
-            empty: crate::cloud::wssync::is_empty(root).unwrap_or(false),
-            busy: crate::agent_activity::busy_count() > 0,
-            engine_version: env!("CARGO_PKG_VERSION"),
-            workspace_id: crate::cloud::wssync::read_binding(root).workspace_id,
-        })
-        .into_response(),
+        Ok(s) => {
+            let binding = crate::cloud::wssync::read_binding(root);
+            Json(SyncStatResp {
+                file_count: s.file_count,
+                bytes: s.bytes,
+                empty: crate::cloud::wssync::is_empty(root).unwrap_or(false),
+                busy: crate::agent_activity::busy_count() > 0,
+                engine_version: env!("CARGO_PKG_VERSION"),
+                workspace_id: binding.workspace_id,
+                revision: binding.revision,
+            })
+            .into_response()
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
 }
@@ -745,6 +754,34 @@ async fn sync_push(
         }
         Ok(Err(e)) => (StatusCode::BAD_REQUEST, e).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("join: {e}")).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct RevisionReq {
+    revision: u64,
+    workspace_id: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct RevisionResp {
+    revision: u64,
+}
+
+/// Record the revision the client just completed. Monotonic on purpose: a
+/// late or replayed call can only raise the counter, never walk it back to a
+/// number a user has already seen quoted.
+async fn sync_revision(State(state): State<ServeState>, Json(req): Json<RevisionReq>) -> Response {
+    let root = state.workspace.as_path();
+    let mut b = crate::cloud::wssync::read_binding(root);
+    let revision = req.revision.max(b.revision.unwrap_or(0));
+    b.revision = Some(revision);
+    if let Some(id) = req.workspace_id {
+        b.workspace_id = Some(id);
+    }
+    match crate::cloud::wssync::write_binding(root, &b) {
+        Ok(()) => Json(RevisionResp { revision }).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
 }
 
@@ -1169,6 +1206,21 @@ async fn sync_bearer_gate(
     req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
+    // dev-plan/42+45 isolation: every `/workspace/sync/*` handler operates on
+    // `state.workspace`, which in a multiuser pod is the SHARED root holding
+    // every tenant's `workspace-<id>/`. `multiuser_auth` proves who the caller
+    // is but the handlers don't scope to them — so an authenticated co-tenant
+    // could pull a tarball of everyone's workspace (`.env`, `state/kms/`,
+    // sessions) or push over all of them. Per-tenant sync isn't defined for a
+    // shared workspace, so the surface is closed rather than half-scoped.
+    if crate::workdir::is_multiuser() {
+        return (
+            StatusCode::FORBIDDEN,
+            "workspace sync is disabled on a multiuser workspace — /cloud push|pull operate on \
+             the whole pod directory, which is shared across tenants here",
+        )
+            .into_response();
+    }
     let required = std::env::var("THCLAWS_SYNC_REQUIRE_AUTH")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);

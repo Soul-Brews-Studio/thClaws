@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   SquareTerminal,
   SlidersHorizontal,
+  ShieldCheck,
 } from "lucide-react";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import { send, subscribe } from "../hooks/useIPC";
@@ -129,6 +130,12 @@ export function SettingsMenu({
   // MCP is injected at startup, so toggling needs a restart to take effect.
   const [browserEnabled, setBrowserEnabled] = useState<boolean | null>(null);
   const [browserDirty, setBrowserDirty] = useState(false);
+  // Sensitive-data masking (`sensitive.enabled`, dev-plan/55). Opt-in: it
+  // rewrites the prompt, so the user asks for it explicitly.
+  const [sensitiveEnabled, setSensitiveEnabled] = useState<boolean | null>(
+    null,
+  );
+  const [sensitiveDirty, setSensitiveDirty] = useState(false);
   // Persisted GUI zoom factor (multiplier, 1.0 = native). Loaded
   // once when the menu opens; updated optimistically on selection
   // so the dropdown reflects the click without a round-trip. #47.
@@ -188,6 +195,17 @@ export function SettingsMenu({
       ) {
         setBrowserEnabled(msg.enabled as boolean);
         setBrowserDirty(true);
+      } else if (
+        msg.type === "sensitive_enabled" &&
+        typeof msg.enabled === "boolean"
+      ) {
+        setSensitiveEnabled(msg.enabled as boolean);
+      } else if (
+        msg.type === "sensitive_enabled_result" &&
+        typeof msg.enabled === "boolean"
+      ) {
+        setSensitiveEnabled(msg.enabled as boolean);
+        setSensitiveDirty(true);
       } else if (msg.type === "gui_scale_value" && typeof msg.scale === "number") {
         setGuiScale(msg.scale as number);
       }
@@ -197,6 +215,7 @@ export function SettingsMenu({
     send({ type: "hal_enabled_get" });
     send({ type: "shell_tab_enabled_get" });
     send({ type: "browser_enabled_get" });
+    send({ type: "sensitive_enabled_get" });
     send({ type: "gui_scale_get" });
     return unsub;
   }, []);
@@ -230,6 +249,11 @@ export function SettingsMenu({
     // Default ON, so an unknown (null) state toggles to off.
     const next = !(browserEnabled ?? true);
     send({ type: "browser_enabled_set", enabled: next });
+  };
+
+  const toggleSensitive = () => {
+    const next = !(sensitiveEnabled ?? false);
+    send({ type: "sensitive_enabled_set", enabled: next });
   };
 
   // Close on click-outside (excluding the anchor so a second click on
@@ -733,6 +757,14 @@ export function SettingsMenu({
               enabled={browserEnabled}
               dirty={browserDirty}
               onToggle={toggleBrowser}
+            />
+            <FeatureFlagRow
+              icon={<ShieldCheck size={12} />}
+              label="Sensitive-data masking"
+              desc="Thai ID / phone / plate / names → [ID_1] before text leaves the machine, restored in the reply · skipped for local models (writes `.thclaws/settings.json`)"
+              enabled={sensitiveEnabled}
+              dirty={sensitiveDirty}
+              onToggle={toggleSensitive}
             />
           </div>
         )}

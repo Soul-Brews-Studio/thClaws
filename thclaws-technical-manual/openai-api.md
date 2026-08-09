@@ -10,8 +10,8 @@ The webapp + WebSocket are unchanged; the OpenAI surface is additive.
 > **Note**: this endpoint is the **external-client surface**. It exposes
 > thClaws as a model-shaped endpoint — request bodies don't carry
 > skills, MCP servers, plugins, or workspace context, so callers can't
-> inject those things. For *orchestrators* (paperclip-adapter,
-> thcompany, custom schedulers) that want skill / MCP / plugin
+> inject those things. For *orchestrators* (custom schedulers, CI,
+> your own control plane) that want skill / MCP / plugin
 > injection per request, use the agent-shaped
 > [`POST /agent/run`](agent-endpoint.md) endpoint instead. Both share
 > the same `--serve` listener and `THCLAWS_API_TOKEN` auth.
@@ -108,7 +108,7 @@ catalogue hasn't recorded it for a given id.
 Optional. USD-denominated rates from the model catalogue. dev-
 plan/24 made this the canonical discovery surface for any client
 that needs to estimate cost — n8n nodes, Zapier integrations,
-custom dashboards, paperclip-adapter's optional live-refresh path.
+custom dashboards, any client with a live-refresh path.
 
 Fields:
 
@@ -202,9 +202,8 @@ by strict-OpenAI clients. Consumers compute cost via `pricing` rates
   (`reasoning_per_mtok`) can subtract.
 
 `thClaws does NOT include cost_usd on the response.` Cost computation
-is the consumer's responsibility — see [`paperclip-adapter` § cost
-compute](paperclip-adapter.md) if you're using thcompany's setup, or
-fetch `/v1/models` pricing and compute yourself.
+is the consumer's responsibility — fetch `/v1/models` pricing and
+compute it yourself.
 
 **Stream response (SSE)**
 
@@ -491,8 +490,7 @@ transcript.
 
 `No cost_usd field.` Same convention as the sync response — the
 receiver computes cost from `usage` × pricing fetched from `/v1/models`
-(or a locally-bundled snapshot — see the [paperclip-adapter cost
-compute](paperclip-adapter.md) for the reference implementation).
+(or a locally-bundled snapshot of it).
 
 ### Retry policy
 
@@ -610,9 +608,6 @@ This is **Chat Completions only** — by design.
   the trust model the OpenAI endpoints inherit.
 - [`docker.md`](docker.md) — container packaging for `thclaws --serve`;
   the OpenAI endpoints work identically inside the container.
-- [`paperclip-adapter.md`](paperclip-adapter.md) — for the
-  Paperclip-specific integration path (an alternative to driving
-  thClaws via the OpenAI API).
 - [`model-catalogue.md`](model-catalogue.md) — pricing schema, how
   rates are sourced (LiteLLM sync), how to refresh, decision tree
   for `compute_cost_usd`.

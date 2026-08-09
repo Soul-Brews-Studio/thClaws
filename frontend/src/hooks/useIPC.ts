@@ -73,7 +73,7 @@ let wsConnectQueue: IPCMessage[] = [];
 /**
  * Path prefix the frontend lives under, with a trailing slash.
  *
- * Local + thcompany deploys serve at `/` so this returns `/`. Hosted
+ * Local + self-hosted deploys serve at `/` so this returns `/`. Hosted
  * agents on thclaws.cloud serve under `/u/<handle>/<slug>/` — every
  * runtime URL (WebSocket, /upload, etc.) needs to include that prefix
  * so requests reach the right pod after Caddy strips it. Recomputed

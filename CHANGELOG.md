@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.110.0] — 2026-08-09
+
+Thai PII gets masked before it ever reaches the model, the dashboard shows plan expiry on every workspace card, and a stale context-window guess no longer freezes the catalogue.
+
+### Added
+- **Sensitive-data masking for Thai PII.** A new engine-wide pipeline detects, tokenizes, and masks Thai personally identifiable information — ID numbers, phone numbers, and other sensitive patterns — before the model ever sees it. A Settings toggle controls masking per workspace; when unmasked values are put back into the output, the model is briefed about what it never saw.
+- **Cloud sync numbering and revision tracking.** `/cloud push` and `/cloud pull` now assign incrementing sequence numbers, and `/cloud revision` shows the sync history.
+- **Dashboard: plan expiry on workspace cards.** Each workspace card now shows when its subscription or one-shot plan expires.
+- **Marketplace: last-30-days skill filter.** The marketplace now supports listing skills published in the last 30 days.
+
+### Fixed
+- **Model catalogue: a guessed context window no longer freezes permanently.** A one-time guess from a failed provider probe no longer hard-locks the catalogue entry. [#190](https://github.com/thClaws/thClaws/issues/190)
+- **Sensitive-data masking: false positives reduced and arming corrected.** The Thai PII rules were refined for production use and masking now arms at the correct invocation boundaries.
+- **File rendering: YAML `---` blocks detected anywhere, not just frontmatter.** Frontmatter-style `---` fences inside arbitrary files are now treated as YAML separators instead of being missed.
+- **File rendering: `---` rendered as a horizontal rule, not a setext heading.** A lone `---` line no longer turns the preceding text into an `<h2>`.
+- **Billing: lapsed one-shot plans can be renewed.** A plan that expired while still in the one-shot window is now renewable.
+- **Plugins: conventional directory layouts counted in contribution stats.** Plugin directories following conventional layouts are now tallied correctly.
+
+### Changed
+- **The retired thCompany/Paperclip product line is gone.** The `paperclip-adapter` package source, its technical-manual page, and its public-mirror sync wiring were all removed; references to it were stripped from engine comments and the rest of the manual. The `POST /agent/run` and `GET /v1/agent/info` endpoints it used are unaffected — they stay as generic orchestrator surfaces.
+
 ## [0.109.0] — 2026-08-03
 
 Spark Guru lands as a Thai-language DGX assistant that diagnoses and tunes local inference engines, vLLM and llama.cpp get first-class provider support, and the managed browser is now off by default for new workspaces.

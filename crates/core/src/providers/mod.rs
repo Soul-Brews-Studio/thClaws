@@ -495,6 +495,21 @@ impl ProviderKind {
         }
     }
 
+    /// True when this provider runs on the user's own machine, so text sent
+    /// to it never leaves the host. Drives dev-plan/55 masking: PII is worth
+    /// hiding from a cloud endpoint, but masking a local model only degrades
+    /// the answer for no privacy gain.
+    ///
+    /// `OpenAICompat` is deliberately NOT listed even though it's usually a
+    /// local runtime — its base URL is user-supplied and can point anywhere,
+    /// and the safe default for a privacy gate is to treat unknown as remote.
+    pub fn is_local(&self) -> bool {
+        matches!(
+            self,
+            Self::Ollama | Self::OllamaAnthropic | Self::LMStudio | Self::VLlm | Self::LlamaCpp
+        )
+    }
+
     /// True when the user has a usable API key for this provider —
     /// either via the OS keychain (`secrets::get`) or the relevant
     /// env var (set directly or loaded from `.env`). Providers with

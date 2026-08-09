@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "source": "baseline 2026-05-02",
-  "fetched_at": "2026-05-02T00:00:00Z",
+  "source": "baseline 2026-08-04",
+  "fetched_at": "2026-08-04T00:00:00Z",
   "skills": [
     {
       "name": "skill-creator",
@@ -26,6 +26,18 @@
       "source_path": "skills/frontend-design",
       "install_url": "https://github.com/thClaws/marketplace.git#main:skills/frontend-design",
       "homepage": "https://github.com/thClaws/marketplace/tree/main/skills/frontend-design"
+    },
+    {
+      "name": "last30days",
+      "short_description": "Research a topic from what people posted this month",
+      "description": "Research what people actually said about any topic in the last 30 days, ranked by upvotes, likes, and prediction-market money instead of SEO. Sweeps Reddit, Hacker News, Polymarket, GitHub, X, YouTube, TikTok, arXiv, and Techmeme in parallel, then synthesizes one cited brief. Use when the user asks what's trending, wants recent community sentiment on a product or person, or needs research newer than any training cutoff. Requires Python 3.12+ on PATH. Reddit, Hacker News, Polymarket, and GitHub work with no keys; other sources need API keys or an opt-in browser-cookie read during setup.",
+      "category": "research",
+      "license": "MIT",
+      "license_tier": "open",
+      "source_repo": "mvanhorn/last30days-skill",
+      "source_path": "skills/last30days",
+      "install_url": "https://github.com/mvanhorn/last30days-skill.git#main:skills/last30days",
+      "homepage": "https://github.com/mvanhorn/last30days-skill"
     }
   ],
   "mcp_servers": [

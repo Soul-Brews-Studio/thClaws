@@ -255,6 +255,30 @@ pub fn build_full_system_prompt(
     // guide AND opens the `gui-shell` tool gate (GuiShellCreate etc.), so
     // the ~3KB manual no longer rides every GUI turn's system prompt.
 
+    // dev-plan/55: when masking is armed the model receives `[PHONE_1]`
+    // where the user typed a phone number. Without this note it reads the
+    // placeholder as an unfilled template and derails — asking the user to
+    // "send the real number", which then gets un-masked on the way out into
+    // a nonsense sentence about the number being a placeholder.
+    if crate::sensitive::active().is_some() {
+        system.push_str(
+            "\n\n# Redacted values\n\
+             Placeholders like `[PHONE_1]`, `[ID_2]`, `[NAME_1]`, `[PLATE_1]` \
+             stand for real personal data the user DID provide. It was hidden \
+             from you on purpose and is restored automatically before the user \
+             sees your reply, so:\n\
+             - Treat a placeholder as the value itself — it is not missing, \
+             not a template, not an error. Never ask the user to \"send the \
+             real one\".\n\
+             - Reuse it verbatim in your reply and in tool arguments (the same \
+             placeholder always means the same value); the real value is \
+             substituted back before any tool runs.\n\
+             - Don't reason about the placeholder's format — you cannot see \
+             the underlying digits or spelling, so don't validate, reformat, \
+             or comment on them.\n",
+        );
+    }
+
     // (7) Skill catalog + (8) Repl-only priming
     if let Some(store) = skill_store {
         if !store.skills.is_empty() {
@@ -752,6 +776,34 @@ pub(crate) fn team_grounding_prompt(model: &str, team_enabled: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// dev-plan/55: with masking armed the model sees `[PHONE_1]` where the
+    /// user typed a number. Live-testing v1 showed what happens without the
+    /// briefing — the model treats the placeholder as an unfilled template
+    /// and asks the user to "send the real number", which the un-masker then
+    /// rewrites into a sentence claiming the real number is a placeholder.
+    #[test]
+    fn masking_briefs_the_model_only_while_armed() {
+        let _guard = crate::kms::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let config = crate::config::AppConfig::default();
+
+        crate::sensitive::configure(false, Vec::new());
+        let off = build_full_system_prompt(&config, tmp.path(), None, &[], SurfaceHints::Gui);
+        crate::sensitive::configure(true, Vec::new());
+        let on = build_full_system_prompt(&config, tmp.path(), None, &[], SurfaceHints::Gui);
+        crate::sensitive::configure(false, Vec::new());
+
+        assert!(on.contains("# Redacted values"), "no briefing while armed");
+        assert!(
+            on.contains("[PHONE_1]") && on.contains("not a template"),
+            "briefing must name the shape and kill the template reading"
+        );
+        assert!(
+            !off.contains("# Redacted values"),
+            "briefing leaked into a prompt with masking off"
+        );
+    }
 
     /// Tier-2 followup test: the Repl surface adds the slash-command
     /// shortcut priming after the skill catalog; Gui / Headless do

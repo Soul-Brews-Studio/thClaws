@@ -142,7 +142,11 @@ pub fn pack(folder: &Path, manifest_override: Option<&[u8]>) -> Result<PackResul
             std::fs::File::open(path).map_err(|e| format!("open {}: {}", path.display(), e))?;
         let mut header = tar::Header::new_gnu();
         header.set_size(metadata.len());
-        header.set_mode(0o644);
+        // Normalised to 0644/0755 rather than copied verbatim: an agent's
+        // hooks / scripts / helper binaries are useless without the executable
+        // bit, but a published bundle has no business carrying setuid or
+        // group/world-writable modes from the publisher's machine.
+        header.set_mode(exec_normalised_mode(&metadata));
         header.set_mtime(
             metadata
                 .modified()
@@ -198,6 +202,34 @@ fn strip_publisher_fields(raw: &[u8]) -> Result<Vec<u8>, String> {
     }
     serde_json::to_vec_pretty(&v).map_err(|e| format!("re-serialize settings.json: {e}"))
 }
+
+/// 0755 when the source file is executable, 0644 otherwise. See the call site
+/// for why the mode is normalised instead of copied.
+fn exec_normalised_mode(metadata: &std::fs::Metadata) -> u32 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o111 != 0 {
+            return 0o755;
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = metadata;
+    0o644
+}
+
+/// Apply an archived mode on extract, with the same 0755/0644 normalisation
+/// `pack` applies — so a tarball can't land setuid or world-writable files.
+#[cfg(unix)]
+fn apply_mode(path: &Path, mode: Option<u32>) {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(mode) = mode else { return };
+    let perms = if mode & 0o111 != 0 { 0o755 } else { 0o644 };
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(perms));
+}
+
+#[cfg(not(unix))]
+fn apply_mode(_path: &Path, _mode: Option<u32>) {}
 
 fn hex_encode(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
@@ -298,9 +330,12 @@ pub fn unpack(bytes: &[u8], target: &Path, force: bool) -> Result<Vec<PathBuf>, 
                 out.display()
             ));
         }
+        let mode = entry.header().mode().ok();
         let mut f =
             std::fs::File::create(&out).map_err(|e| format!("create {}: {}", out.display(), e))?;
         std::io::copy(&mut entry, &mut f).map_err(|e| format!("write {}: {}", out.display(), e))?;
+        drop(f);
+        apply_mode(&out, mode);
         extracted.push(out);
     }
     Ok(extracted)
@@ -347,5 +382,52 @@ mod strip_tests {
         ] {
             assert!(!is_strippable(Path::new(p)), "should keep {p}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pack_unpack_preserves_the_executable_bit() {
+        // An agent's hooks / scripts are useless without +x, and a bundle has
+        // no business carrying setuid or world-writable modes across.
+        use std::os::unix::fs::PermissionsExt;
+        let src = std::env::temp_dir().join(format!(
+            "packmode-src-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("AGENTS.md"), "# agent").unwrap();
+        std::fs::write(src.join("manifest.json"), "{}").unwrap();
+        std::fs::write(src.join("run.sh"), "#!/bin/sh\necho hi\n").unwrap();
+        std::fs::write(src.join("notes.md"), "plain").unwrap();
+        // Executable, and deliberately setuid + world-writable to prove those
+        // are dropped rather than carried.
+        std::fs::set_permissions(src.join("run.sh"), std::fs::Permissions::from_mode(0o4777))
+            .unwrap();
+
+        let packed = super::pack(&src, None).unwrap();
+        let dst = src.with_extension("dst");
+        super::unpack(&packed.bytes, &dst, true).unwrap();
+
+        let sh = std::fs::metadata(dst.join("run.sh"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777;
+        let md = std::fs::metadata(dst.join("notes.md"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777;
+        assert_eq!(
+            sh, 0o755,
+            "executable bit survives, setuid/world-write do not"
+        );
+        assert_eq!(md, 0o644, "plain files stay 0644");
+
+        let _ = std::fs::remove_dir_all(&src);
+        let _ = std::fs::remove_dir_all(&dst);
     }
 }

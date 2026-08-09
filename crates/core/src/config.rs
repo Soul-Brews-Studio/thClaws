@@ -262,6 +262,15 @@ pub struct AppConfig {
     #[serde(default, alias = "halEnabled")]
     pub hal_enabled: bool,
 
+    /// dev-plan/55: detect Thai PII (national ID, phone, plate, titled
+    /// names, user dictionary) and swap it for `[ID_1]`-style placeholders
+    /// before text leaves the machine, restoring the real values in the
+    /// reply. Off by default — the detector (`crate::sensitive`) is tuned
+    /// for precision over recall, but masking rewrites the prompt, so it
+    /// stays opt-in. settings.json `sensitive.enabled`.
+    #[serde(default)]
+    pub sensitive_enabled: bool,
+
     /// Engine-managed browser automation (docs/browser, Phase 0+1).
     /// When `true`, `AppConfig::load()` injects the official Playwright
     /// MCP server as a synthetic engine-managed stdio config named
@@ -598,6 +607,7 @@ impl Default for AppConfig {
             openrouter_free_only: false,
             image_tools_enabled: false,
             hal_enabled: false,
+            sensitive_enabled: false,
             browser_enabled: default_browser_enabled(),
             browser_headless: None,
             gateway_use_for: Vec::new(),
@@ -800,6 +810,10 @@ pub struct ProjectConfig {
     /// `WebScrape`). See [`AppConfig::hal_enabled`].
     #[serde(rename = "halEnabled")]
     pub hal_enabled: Option<bool>,
+    /// Sensitive-data masking — `{ "enabled": true }`. Nested (not a bare
+    /// flag) because dev-plan/55 §6 adds mode routing here later:
+    /// tokenize (mask + restore) vs gate (refuse to send).
+    pub sensitive: Option<SensitiveSettings>,
     /// Engine-managed Playwright browser automation. See
     /// [`AppConfig::browser_enabled`].
     #[serde(rename = "browserEnabled")]
@@ -963,6 +977,7 @@ impl Default for ProjectConfig {
             shell_tab_enabled: Some(false),
             image_tools_enabled: Some(false),
             hal_enabled: Some(false),
+            sensitive: None,
             browser_enabled: None,
             browser_headless: None,
             sso_sign_in_enabled: None,
@@ -994,6 +1009,33 @@ pub struct KmsSettings {
     /// every name in the list gets its `index.md` spliced into the
     /// system prompt.
     pub active: Vec<String>,
+}
+
+impl AppConfig {
+    /// Push the settings that live in process-wide state, rather than being
+    /// read from an `AppConfig` at use time. Call once per surface right
+    /// after loading (REPL, `-p`, GUI/serve worker) and again whenever the
+    /// settings file is re-read.
+    ///
+    /// One function on purpose: these hooks used to be pasted per entry
+    /// point, and both had already drifted — `-p` calls
+    /// `run_print_mode_with` directly, so a hook on the `run_print_mode`
+    /// wrapper armed nothing (dev-plan/55 masking shipped off in print mode,
+    /// and `stream_chunk_timeout_secs` was never applied there at all).
+    pub fn apply_process_globals(&self) {
+        crate::providers::set_stream_chunk_timeout_secs(self.stream_chunk_timeout_secs);
+        // dev-plan/55 PII masking. The custom-dictionary term list has no
+        // settings field yet (plan step 1's CSV) — empty until it does.
+        crate::sensitive::configure(self.sensitive_enabled, Vec::new());
+    }
+}
+
+/// dev-plan/55: `sensitive` block in settings.json — PII masking before
+/// text leaves the machine. See [`AppConfig::sensitive_enabled`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SensitiveSettings {
+    pub enabled: Option<bool>,
 }
 
 /// dev-plan/49: `bash` block in settings.json — OS-level Bash confinement.
@@ -1552,6 +1594,11 @@ impl ProjectConfig {
         }
         if let Some(b) = self.hal_enabled {
             config.hal_enabled = b;
+        }
+        if let Some(ref sensitive) = self.sensitive {
+            if let Some(b) = sensitive.enabled {
+                config.sensitive_enabled = b;
+            }
         }
         if let Some(b) = self.browser_enabled {
             config.browser_enabled = b;
@@ -3288,5 +3335,44 @@ mod tests {
             std::fs::read_to_string(tc.join("state/workflows/run.js")).unwrap(),
             "// v2"
         );
+    }
+
+    /// The masking toggle only bites if something actually pushes it into
+    /// the process global. It shipped broken in `-p` once because the hook
+    /// sat on a wrapper both binaries skip, so pin the single hook here —
+    /// every surface calls this one function.
+    #[test]
+    fn apply_process_globals_arms_and_disarms_masking() {
+        let _guard = crate::kms::test_env_lock();
+        let mut cfg = AppConfig::default();
+
+        cfg.sensitive_enabled = true;
+        cfg.apply_process_globals();
+        let armed = crate::sensitive::active().is_some();
+
+        cfg.sensitive_enabled = false;
+        cfg.apply_process_globals();
+        let disarmed = crate::sensitive::active().is_none();
+
+        assert!(armed, "enabled setting did not arm the masker");
+        assert!(disarmed, "disabled setting left the masker armed");
+    }
+
+    /// dev-plan/55 masking toggle: the nested `sensitive` block reaches
+    /// `AppConfig`, and its absence leaves masking OFF. A settings file that
+    /// fails to parse silently defaults every flag off (see
+    /// `ProjectConfig::load`), so pin the wiring rather than the UI.
+    #[test]
+    fn sensitive_block_drives_the_masking_flag() {
+        let parse = |json: &str| {
+            let pc: ProjectConfig = serde_json::from_str(json).unwrap();
+            let mut cfg = AppConfig::default();
+            pc.apply_to(&mut cfg);
+            cfg.sensitive_enabled
+        };
+        assert!(parse(r#"{"sensitive":{"enabled":true}}"#));
+        assert!(!parse(r#"{"sensitive":{"enabled":false}}"#));
+        assert!(!parse(r#"{"sensitive":{}}"#), "empty block must not enable");
+        assert!(!parse("{}"), "absent block must not enable");
     }
 }

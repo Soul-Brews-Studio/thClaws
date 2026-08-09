@@ -441,6 +441,49 @@ impl Client {
         res.json().await.map_err(|e| format!("decode trash: {}", e))
     }
 
+    /// Record the agreed sync revision on the runner so both ends name the
+    /// same number. One endpoint for both directions (push and pull alike
+    /// end by agreeing on a revision), called once a sync has actually
+    /// landed. `Ok(None)` when the runner predates revisions (404) — the
+    /// client keeps its own count and the next sync re-converges.
+    pub async fn ws_sync_set_revision(
+        &self,
+        ws_url: &str,
+        jwt: &str,
+        revision: u64,
+        workspace_id: &str,
+    ) -> Result<Option<u64>, String> {
+        let res = self
+            .http
+            .post(format!(
+                "{}/workspace/sync/revision",
+                ws_url.trim_end_matches('/')
+            ))
+            .header("Authorization", format!("Bearer {}", jwt))
+            .json(&serde_json::json!({
+                "revision": revision,
+                "workspace_id": workspace_id,
+            }))
+            .send()
+            .await
+            .map_err(|e| format!("network: {}", e))?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !res.status().is_success() {
+            return Err(format!(
+                "sync/revision status {}: {}",
+                res.status(),
+                res.text().await.unwrap_or_default()
+            ));
+        }
+        let r: SyncRevisionResp = res
+            .json()
+            .await
+            .map_err(|e| format!("decode revision: {}", e))?;
+        Ok(Some(r.revision))
+    }
+
     /// Wake (resume) a paused workspace pod (dev-plan/51 P3a auto-resume).
     pub async fn wake_workspace(&self, id: &str) -> Result<(), String> {
         let auth = self.auth_header()?;
@@ -497,6 +540,16 @@ pub struct SyncStatResp {
     pub busy: bool,
     #[serde(default)]
     pub workspace_id: Option<String>,
+    /// The runner's recorded sync revision. `None` from an engine that
+    /// predates revisions — the client then counts from its own binding.
+    #[serde(default)]
+    pub revision: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SyncRevisionResp {
+    #[serde(default)]
+    pub revision: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
