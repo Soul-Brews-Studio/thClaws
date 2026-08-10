@@ -28,7 +28,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use thclaws_core::model_catalogue::{Catalogue, ModelEntry, ProviderCatalogue, CURRENT_SCHEMA};
+use thclaws_core::model_catalogue::{
+    Catalogue, ModelEntry, ProviderCatalogue, CONTEXT_UNVERIFIED_MARK, CURRENT_SCHEMA,
+};
 
 const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1/models";
 const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/models";
@@ -758,13 +760,10 @@ pub struct MergeStats {
 const MAX_LIST_IDS: usize = 30;
 
 /// Does this row's context come from the blanket provider default rather
-/// than a published number? `merge_discovered` stamps exactly this marker
-/// when it has to guess, so the marker is the only reliable signal — the
-/// value itself can coincide with a real one.
+/// than a published number? Delegates so the marker string has one
+/// definition — the pickers read the same signal to render `200k?`.
 fn is_unverified_context(e: &ModelEntry) -> bool {
-    e.source
-        .as_deref()
-        .is_some_and(|s| s.contains("(context unverified)"))
+    e.context_unverified()
 }
 
 fn push_provider_stats(
@@ -927,7 +926,7 @@ fn merge_discovered(
         let (ctx, source) = match openrouter_ctx_by_bare.get(&id).copied() {
             Some(n) => (n, format!("{OPENROUTER_URL} via bare id")),
             None => match default_ctx {
-                Some(n) => (n, format!("{list_url} (context unverified)")),
+                Some(n) => (n, format!("{list_url} {CONTEXT_UNVERIFIED_MARK}")),
                 None => {
                     stats.skipped_no_context += 1;
                     continue;
@@ -1395,7 +1394,7 @@ mod tests {
             "deepseek-v4-flash".into(),
             ModelEntry {
                 context: Some(131_072),
-                source: Some("https://opencode.ai/zen/go/v1/models (context unverified)".into()),
+                source: Some(format!("{OPENCODE_GO_URL} {CONTEXT_UNVERIFIED_MARK}")),
                 verified_at: Some("2026-06-22".into()),
                 ..Default::default()
             },

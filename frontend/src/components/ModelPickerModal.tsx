@@ -6,6 +6,10 @@ import { FusionConfigModal } from "./FusionConfigModal";
 export type PickerModel = {
   id: string;
   context?: number | null;
+  /// `true` when `context` is the provider's blanket default rather than
+  /// a figure they published. Rendered as `200k?` — a floor shown as a
+  /// specification is what made a 1M model advertise 131k (#190).
+  context_unverified?: boolean | null;
   max_output?: number | null;
   /// `true` when the upstream provider lists this model as free
   /// (both prompt + completion token prices = 0). Only populated
@@ -289,8 +293,14 @@ export function ModelPickerModal({ provider, current, models, onClose }: Props) 
                       <span
                         className="text-xs"
                         style={{ color: "var(--text-secondary)" }}
+                        title={
+                          m.context_unverified
+                            ? `${ctx} is this provider's default, not a published figure — treat it as a lower bound.`
+                            : undefined
+                        }
                       >
-                        {ctx} ctx
+                        {ctx}
+                        {m.context_unverified ? "?" : ""} ctx
                       </span>
                     )}
                   </span>

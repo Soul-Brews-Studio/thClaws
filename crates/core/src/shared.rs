@@ -25,20 +25,22 @@ const MODEL_LOCKED_ENV: &str = "THCLAWS_SHARED_MODEL_LOCKED";
 /// listed (ollama, lmstudio, …) has no gateway route and is simply
 /// unavailable to a shared agent — by design, shared agents are
 /// gateway-billed only.
+///
+/// These are exactly the ten `ProviderTier::Featured` providers: what the
+/// gateway sells is what it proxies. qwen-cloud / thaillm / groq were
+/// dropped 2026-08-10 — see `thclaws_gateway::provider_segment` for why.
+/// They remain fully usable with the user's own key.
 pub const GATEWAY_ALL_PROVIDERS: &[&str] = &[
     "openai",
     "anthropic",
     "google",
     "openrouter",
     "dashscope",
-    "qwen-cloud",
     "zai",
     "deepseek",
     "minimax",
-    "thaillm",
     "xai",
     "moonshot",
-    "groq",
 ];
 
 /// The shared-brain directory when shared mode is active, else `None`.

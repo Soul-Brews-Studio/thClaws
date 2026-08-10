@@ -304,7 +304,11 @@ fn handle_incoming(msg: Value, pending: &Pending) {
 }
 ```
 
-`request()` waits on the `oneshot::Receiver` with `timeout(Duration::from_secs(30), rx)`. On timeout it removes its own pending entry to avoid leaking the slot.
+`request()` waits on the `oneshot::Receiver` with a timeout, removing its own pending entry when that fires so the slot doesn't leak.
+
+**Two budgets, not one.** `request()` uses `request_timeout_secs()` (30 s); `initialize()` goes through `request_within()` with `init_timeout_secs()` (300 s). A stdio server launched via `uvx`/`npx` resolves and downloads its whole dependency tree before it can answer anything — the Qwen `qwen-mm-plugins-core` capability pulls 93 packages and takes ~38 s on a cold cache, then 0.5 s once warm. Under a single 30 s constant that first launch failed with `mcp request timed out: initialize`, and raising the shared constant to cover it would have blunted stall detection on every tool call for the rest of the session. Both are overridable — `THCLAWS_MCP_TIMEOUT_SECS` and `THCLAWS_MCP_INIT_TIMEOUT_SECS` — and a zero or unparseable value falls back to the default rather than disabling the deadline, since an unbounded wait is what these exist to prevent.
+
+The timeout error names the budget that expired (`mcp request timed out after 300s: initialize`); the earlier message said only which method, which read as a hang when it was really a cold install.
 
 ### 6.3 Transport-closed flag (M6.15 BUG 4 — `dev-log/133`)
 

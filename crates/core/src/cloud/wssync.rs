@@ -14,7 +14,12 @@
 //!   - a 10 GiB payload cap (`MAX_SYNC_BYTES`, the PVC quota),
 //!   - `--delete` mirroring that moves removed files to `.sync-trash/<ts>/`
 //!     (recoverable, not a hard delete),
-//!   - traversal-safe extraction (rejects `..` / absolute, skips symlinks),
+//!   - traversal-safe extraction: rejects `..` / absolute entry paths,
+//!     skips symlinks when collecting, resolves each destination and
+//!     refuses one that lands outside the root (a symlink already in the
+//!     workspace would otherwise redirect a write), and caps the
+//!     DECOMPRESSED stream — the transport cap bounds what arrives, not
+//!     what a gzip expands to,
 //!   - the UUID binding file `.thclaws/cloud-sync.json` that ties a local folder
 //!     to exactly one hosted workspace.
 //!
@@ -425,10 +430,44 @@ fn canonical_root(root: &Path) -> Result<PathBuf, String> {
         .map_err(|e| format!("canonicalize {}: {}", root.display(), e))
 }
 
+/// Reject a destination whose *resolved* parent escapes `root`.
+///
+/// [`is_unsafe_entry`] only sees the path string in the archive, so it stops
+/// `../` and absolute entries but not a symlink already sitting in the
+/// workspace: with `logs -> /var/log` on disk, the innocuous-looking entry
+/// `logs/app.txt` writes outside the root. Sync never *transports* symlinks
+/// (they are skipped when collecting), so one has to arrive some other way —
+/// a user, or an agent, creating it. Cheap to close, and the caller can't
+/// know it happened.
+/// `dir` must exist; the file it will hold does not have to.
+fn guard_within_root(root: &Path, dir: &Path, what: &Path) -> Result<(), String> {
+    let real = dir
+        .canonicalize()
+        .map_err(|e| format!("resolve {}: {}", dir.display(), e))?;
+    if !real.starts_with(root) {
+        return Err(format!(
+            "refused entry escaping the workspace: {} resolves under {}",
+            what.display(),
+            real.display()
+        ));
+    }
+    Ok(())
+}
+
 /// Extract a `.tar.gz` into the (canonical) `root`, overwriting in place.
 /// Traversal-safe. Returns (files written, set of incoming relative paths).
-fn extract_tarball<R: Read>(reader: R, root: &Path) -> Result<(usize, BTreeSet<PathBuf>), String> {
+///
+/// Both limits below are on the *decompressed* stream. The transport caps
+/// what arrives (`MAX_SYNC_BYTES` as the HTTP body limit) and the sender caps
+/// what it collects, but neither bounds what a gzip expands to — a modest
+/// upload can inflate without limit and fill the volume.
+fn extract_tarball<R: Read>(
+    reader: R,
+    root: &Path,
+    max_bytes: u64,
+) -> Result<(usize, BTreeSet<PathBuf>), String> {
     let mut written = 0usize;
+    let mut total: u64 = 0;
     let mut incoming: BTreeSet<PathBuf> = BTreeSet::new();
     let mut archive = tar::Archive::new(GzDecoder::new(reader));
     for entry in archive
@@ -446,20 +485,35 @@ fn extract_tarball<R: Read>(reader: R, root: &Path) -> Result<(usize, BTreeSet<P
         if entry.header().entry_type().is_dir() {
             // Empty-dir preservation: materialize directory entries so
             // scaffold folders (media/screenshots/, output/, …) survive.
-            std::fs::create_dir_all(root.join(&path))
+            let dir = root.join(&path);
+            std::fs::create_dir_all(&dir)
                 .map_err(|e| format!("mkdir {}: {}", path.display(), e))?;
+            guard_within_root(root, &dir, &path)?;
             continue;
         }
         let out = root.join(&path);
         if let Some(parent) = out.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("mkdir {}: {}", parent.display(), e))?;
+            guard_within_root(root, parent, &path)?;
         }
         let mode = entry.header().mode().ok();
         let mut f =
             std::fs::File::create(&out).map_err(|e| format!("create {}: {}", out.display(), e))?;
-        std::io::copy(&mut entry, &mut f).map_err(|e| format!("write {}: {}", out.display(), e))?;
+        // Read one byte past what the budget allows: if the entry supplies it,
+        // the archive is over the cap and we stop rather than fill the disk.
+        let budget = max_bytes.saturating_sub(total);
+        let n = std::io::copy(&mut entry.by_ref().take(budget + 1), &mut f)
+            .map_err(|e| format!("write {}: {}", out.display(), e))?;
         drop(f);
+        total = total.saturating_add(n);
+        if total > max_bytes {
+            let _ = std::fs::remove_file(&out);
+            return Err(format!(
+                "archive expands past the {} MiB limit — refusing to continue",
+                max_bytes / 1_048_576
+            ));
+        }
         apply_mode(&out, mode);
         incoming.insert(path);
         written += 1;
@@ -476,7 +530,7 @@ pub fn untar_workspace_from<R: Read>(
     delete: bool,
 ) -> Result<UntarResult, String> {
     let root = canonical_root(root)?;
-    let (written, incoming) = extract_tarball(reader, &root)?;
+    let (written, incoming) = extract_tarball(reader, &root, MAX_SYNC_BYTES)?;
     let trash = root.join(TRASH_PREFIX).join(unix_secs().to_string());
     let mut trash_used = false;
     let mut deleted = 0usize;
@@ -1436,6 +1490,138 @@ mod tests {
         assert!(!m.iter().any(|e| e.path.starts_with("skipme")));
         let s = stat_workspace(&root).unwrap();
         assert_eq!(s.file_count, m.len());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Build a `.tar.gz` from `(path, kind, body)` triples. `kind` is "f" for a
+    /// regular file, "d" for a directory entry.
+    fn tar_gz(entries: &[(&str, &str, &[u8])]) -> Vec<u8> {
+        let mut b = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::fast()));
+        for (name, kind, body) in entries {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(body.len() as u64);
+            h.set_mode(0o644);
+            h.set_entry_type(if *kind == "d" {
+                tar::EntryType::Directory
+            } else {
+                tar::EntryType::Regular
+            });
+            h.set_cksum();
+            b.append_data(&mut h, name, *body).unwrap();
+        }
+        b.into_inner().unwrap().finish().unwrap()
+    }
+
+    /// `is_unsafe_entry` only inspects the archive's path string, so an entry
+    /// whose parent is a symlink already on disk passes it and then writes
+    /// wherever the link points. Sync never carries symlinks, so one has to be
+    /// created locally — the point is that the extractor cannot assume it wasn't.
+    #[cfg(unix)]
+    #[test]
+    fn extraction_refuses_to_write_through_a_preexisting_symlink() {
+        let root = tmp("symlink-escape");
+        let root = canonical_root(&root).unwrap();
+        let outside = tmp("symlink-escape-outside");
+        let outside = canonical_root(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("logs")).unwrap();
+
+        let bytes = tar_gz(&[("logs/pwned.txt", "f", b"escaped")]);
+        let err = extract_tarball(&bytes[..], &root, MAX_SYNC_BYTES).unwrap_err();
+
+        assert!(err.contains("escaping the workspace"), "{err}");
+        assert!(
+            !outside.join("pwned.txt").exists(),
+            "write escaped the root into {}",
+            outside.display()
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// A path that stays inside must still extract — the guard has to reject
+    /// escapes without rejecting ordinary nesting.
+    #[test]
+    fn extraction_still_accepts_ordinary_nested_paths() {
+        let root = tmp("nested-ok");
+        let root = canonical_root(&root).unwrap();
+        let bytes = tar_gz(&[("a/b/c.txt", "f", b"fine"), ("a/empty", "d", b"")]);
+        let (written, incoming) = extract_tarball(&bytes[..], &root, MAX_SYNC_BYTES).unwrap();
+        assert_eq!(written, 1);
+        assert!(incoming.contains(Path::new("a/b/c.txt")));
+        assert_eq!(std::fs::read(root.join("a/b/c.txt")).unwrap(), b"fine");
+        assert!(root.join("a/empty").is_dir());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Reads through, counting what the extractor actually consumed.
+    struct Counted<'a> {
+        inner: &'a [u8],
+        read: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+    impl Read for Counted<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.inner.read(buf)?;
+            self.read.set(self.read.get() + n);
+            Ok(n)
+        }
+    }
+
+    /// The transport caps the COMPRESSED upload; nothing bounded the expansion,
+    /// so a small archive could write without limit and fill the volume.
+    ///
+    /// Reporting the overrun is the easy half. The half that matters is
+    /// *stopping* — an extractor that writes the whole bomb and only then
+    /// complains has already done the damage. So this asserts on how much the
+    /// extractor consumed, not just on the error: with an incompressible
+    /// payload, bytes read off the wire track bytes written to disk.
+    #[test]
+    fn extraction_stops_reading_once_the_decompressed_stream_passes_the_cap() {
+        let root = tmp("bomb");
+        let root = canonical_root(&root).unwrap();
+
+        // Incompressible, so gzip can't hide the size and "consumed" is
+        // meaningful. Cheap LCG rather than a dev-dependency.
+        let mut payload = vec![0u8; 4 * 1024 * 1024];
+        let mut x: u32 = 0x1234_5678;
+        for b in payload.iter_mut() {
+            x = x.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            *b = (x >> 16) as u8;
+        }
+        let bytes = tar_gz(&[("big.bin", "f", &payload)]);
+        assert!(
+            bytes.len() > 3 * 1024 * 1024,
+            "payload compressed unexpectedly"
+        );
+
+        let cap = 64 * 1024;
+        let read = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let src = Counted {
+            inner: &bytes[..],
+            read: read.clone(),
+        };
+        let err = extract_tarball(src, &root, cap).unwrap_err();
+
+        assert!(err.contains("expands past"), "{err}");
+        assert!(
+            !root.join("big.bin").exists(),
+            "the partial write was left behind"
+        );
+        // The budget must stop the copy near the cap. Without it the extractor
+        // drains all 4 MiB before noticing.
+        assert!(
+            (read.get() as u64) < cap * 8,
+            "read {} bytes for a {} byte cap — the copy was not bounded",
+            read.get(),
+            cap
+        );
+
+        // Same archive under a cap it fits: extraction proceeds normally.
+        let (written, _) = extract_tarball(&bytes[..], &root, MAX_SYNC_BYTES).unwrap();
+        assert_eq!(written, 1);
+        assert_eq!(
+            std::fs::metadata(root.join("big.bin")).unwrap().len(),
+            payload.len() as u64
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

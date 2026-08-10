@@ -55,6 +55,46 @@ macro_rules! mcp_debug {
 
 pub const PROTOCOL_VERSION: &str = "2024-11-05";
 pub const REQUEST_TIMEOUT_SECS: u64 = 30;
+
+/// Budget for the `initialize` handshake alone.
+///
+/// A server launched through `uvx`/`npx` resolves and downloads its whole
+/// dependency tree on first run before it can answer anything — the Qwen
+/// `core` capability pulls 93 packages and takes ~38 s cold, then 0.5 s once
+/// the cache is warm. Sharing [`REQUEST_TIMEOUT_SECS`] with tool calls forces
+/// a choice between tolerating that and noticing a stalled server quickly;
+/// splitting them gets both. Only the first launch is slow, so a generous
+/// value here costs nothing in the steady state.
+pub const INIT_TIMEOUT_SECS: u64 = 300;
+
+/// Env overrides for the two budgets above, for a server slower than either
+/// default.
+fn timeout_secs(var: &str, default: u64) -> u64 {
+    parse_timeout(std::env::var(var).ok().as_deref(), default)
+}
+
+/// Core of [`timeout_secs`], parametrized on the raw value so it's testable
+/// without mutating process env. `set_var` races with the `posix_spawn` in
+/// `hooks::tests::fire_passes_env_vars_to_command` under the parallel runner —
+/// the child read an empty environment and the test failed on Linux CI while
+/// passing on macOS. Same hazard `interpolate_with` is split out for.
+///
+/// Invalid or zero values fall back rather than disabling the timeout: an
+/// unbounded wait is the failure mode these guard against, so `0` must not be
+/// a way to ask for one.
+fn parse_timeout(raw: Option<&str>, default: u64) -> u64 {
+    raw.and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default)
+}
+
+pub fn request_timeout_secs() -> u64 {
+    timeout_secs("THCLAWS_MCP_TIMEOUT_SECS", REQUEST_TIMEOUT_SECS)
+}
+
+pub fn init_timeout_secs() -> u64 {
+    timeout_secs("THCLAWS_MCP_INIT_TIMEOUT_SECS", INIT_TIMEOUT_SECS)
+}
 pub const CLIENT_NAME: &str = "thclaws-core";
 pub const CLIENT_VERSION: &str = "0.1.0";
 
@@ -850,6 +890,13 @@ pub fn collect_mcp_instructions(clients: &[Arc<McpClient>]) -> Vec<(String, Stri
 impl McpClient {
     /// Send a JSON-RPC request and wait for the matching response.
     pub async fn request(&self, method: &str, params: Value) -> Result<Value> {
+        self.request_within(method, params, request_timeout_secs())
+            .await
+    }
+
+    /// [`request`](Self::request) with an explicit deadline, for the one
+    /// caller whose wait is legitimately much longer than a tool call's.
+    async fn request_within(&self, method: &str, params: Value, secs: u64) -> Result<Value> {
         // M6.15 BUG 4: fast-fail when the transport is already known
         // dead (reader task hit EOF). Without this, callers wait 30 s
         // for the timeout to fire before learning the connection is
@@ -871,12 +918,17 @@ impl McpClient {
         });
         self.write_line(&msg).await?;
 
-        match timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS), rx).await {
+        match timeout(Duration::from_secs(secs), rx).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(Error::Provider("mcp response channel dropped".into())),
             Err(_) => {
                 self.pending.lock().unwrap().remove(&id);
-                Err(Error::Provider(format!("mcp request timed out: {method}")))
+                // Name the budget that expired: "timed out: initialize" alone
+                // sent the last reader hunting for a hang that was really a
+                // cold dependency install.
+                Err(Error::Provider(format!(
+                    "mcp request timed out after {secs}s: {method}"
+                )))
             }
         }
     }
@@ -904,13 +956,14 @@ impl McpClient {
 
     pub async fn initialize(&self) -> Result<()> {
         let result = self
-            .request(
+            .request_within(
                 "initialize",
                 json!({
                     "protocolVersion": PROTOCOL_VERSION,
                     "capabilities": {},
                     "clientInfo": {"name": CLIENT_NAME, "version": CLIENT_VERSION}
                 }),
+                init_timeout_secs(),
             )
             .await?;
         // Capture the optional `instructions` field per MCP spec
@@ -1871,6 +1924,36 @@ pub async fn reauth_server(
 mod tests {
     use super::*;
     use tokio::io::duplex;
+
+    /// The handshake gets a far longer budget than a tool call, because a
+    /// cold `uvx`/`npx` server installs its dependencies before it can answer
+    /// `initialize` at all. Collapsing the two back into one constant is the
+    /// regression this guards: it either resurrects the 30 s cold-start
+    /// failure or blunts stall detection on every subsequent call.
+    #[test]
+    fn initialize_gets_a_longer_budget_than_a_tool_call() {
+        assert!(
+            INIT_TIMEOUT_SECS > REQUEST_TIMEOUT_SECS,
+            "the initialize budget must exceed the per-request one"
+        );
+    }
+
+    #[test]
+    fn timeout_overrides_parse_or_fall_back() {
+        assert_eq!(parse_timeout(None, 30), 30, "unset → default");
+        assert_eq!(parse_timeout(Some("120"), 30), 120);
+        assert_eq!(
+            parse_timeout(Some(" 45 "), 30),
+            45,
+            "surrounding space tolerated"
+        );
+
+        // Zero would mean "expire immediately", and a non-number means the
+        // operator mistyped. Neither should silently reshape the deadline.
+        for bad in ["0", "abc", "-5", "", "   "] {
+            assert_eq!(parse_timeout(Some(bad), 30), 30, "{bad:?} should fall back");
+        }
+    }
 
     #[test]
     fn mcp_content_to_blocks_preserves_images() {

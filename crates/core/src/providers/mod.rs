@@ -1331,9 +1331,13 @@ pub async fn build_all_models_payload() -> String {
             continue;
         }
         let provider_featured = kind.tier() == ProviderTier::Featured;
-        // (id) -> (context, featured). `featured` = gateway-servable: a
-        // Featured-tier provider with a priced catalogue entry.
-        let mut model_ids: std::collections::BTreeMap<String, (Option<u32>, bool)> =
+        // (id) -> (context, featured, context_unverified). `featured` =
+        // gateway-servable: a Featured-tier provider with a priced catalogue
+        // entry. `context_unverified` marks a window that is the provider's
+        // blanket default rather than a published figure (dev-plan/57) — the
+        // live rows appended below have no catalogue entry at all, so they
+        // carry no window and nothing to qualify.
+        let mut model_ids: std::collections::BTreeMap<String, (Option<u32>, bool, bool)> =
             std::collections::BTreeMap::new();
         let is_openrouter = matches!(kind, ProviderKind::OpenRouter);
         for (id, entry) in cat.list_models_for_provider(name) {
@@ -1349,16 +1353,23 @@ pub async fn build_all_models_payload() -> String {
                 continue;
             }
             let canonical = crate::model_catalogue::canonical_model_id(name, &id);
-            model_ids.insert(canonical, (entry.context, provider_featured && priced));
+            model_ids.insert(
+                canonical,
+                (
+                    entry.context,
+                    provider_featured && priced,
+                    entry.context_unverified(),
+                ),
+            );
         }
         if matches!(kind, ProviderKind::Ollama) {
             for id in &ollama_live {
-                model_ids.entry(id.clone()).or_insert((None, false));
+                model_ids.entry(id.clone()).or_insert((None, false, false));
             }
         }
         if matches!(kind, ProviderKind::OpenCodeGo) {
             for id in &opencodego_live {
-                model_ids.entry(id.clone()).or_insert((None, false));
+                model_ids.entry(id.clone()).or_insert((None, false, false));
             }
         }
         if model_ids.is_empty() {
@@ -1366,8 +1377,13 @@ pub async fn build_all_models_payload() -> String {
         }
         let model_rows: Vec<serde_json::Value> = model_ids
             .into_iter()
-            .map(|(id, (ctx, featured))| {
-                serde_json::json!({ "id": id, "context": ctx, "featured": featured })
+            .map(|(id, (ctx, featured, ctx_unverified))| {
+                serde_json::json!({
+                    "id": id,
+                    "context": ctx,
+                    "context_unverified": ctx_unverified,
+                    "featured": featured,
+                })
             })
             .collect();
         let tier = kind.tier();

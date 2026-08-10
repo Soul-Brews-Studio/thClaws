@@ -165,7 +165,27 @@ impl ModelEntry {
         }
         self.input_per_mtok.is_some() || self.output_per_mtok.is_some()
     }
+
+    /// True when this row's `context` is the provider block's blanket
+    /// default rather than a figure anyone published.
+    ///
+    /// Both catalogue writers stamp [`CONTEXT_UNVERIFIED_MARK`] when they
+    /// have to guess, and the marker is the only reliable signal — a guess
+    /// can coincide with a real window, so the number can't tell you. Model
+    /// pickers use this to render `200k?` instead of presenting a floor as
+    /// a specification (dev-plan/57).
+    pub fn context_unverified(&self) -> bool {
+        self.source
+            .as_deref()
+            .is_some_and(|s| s.contains(CONTEXT_UNVERIFIED_MARK))
+    }
 }
+
+/// Stamped into a row's `source` by both catalogue writers
+/// (`scripts/refresh-model-catalogue.py` and `bin/catalogue_seed.rs`)
+/// whenever the context window falls back to the provider default.
+/// Changing this string means changing it in all three places.
+pub const CONTEXT_UNVERIFIED_MARK: &str = "(context unverified)";
 
 /// Per-token-type usage counts for one agent run. Fed into
 /// [`Catalogue::compute_cost_usd`]. All fields default to 0 so callers
@@ -1258,6 +1278,55 @@ mod canonical_id_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    /// The marker is the only signal that separates a guessed window from a
+    /// sourced one — the number can't, since a guess can coincide with a real
+    /// value. Asserted against the shipped catalogue rather than a fixture so
+    /// it fails if a writer stops stamping, which is the failure that lets a
+    /// guess ossify into an apparent fact.
+    #[test]
+    fn unverified_context_is_distinguishable_in_the_shipped_catalogue() {
+        let c = Catalogue::from_json_str(BASELINE_JSON).unwrap();
+        let mut marked = 0usize;
+        let mut sourced = 0usize;
+        for pc in c.providers.values() {
+            for e in pc.models.values() {
+                if e.context.is_none() {
+                    continue;
+                }
+                if e.context_unverified() {
+                    marked += 1;
+                } else {
+                    sourced += 1;
+                }
+            }
+        }
+        assert!(marked > 0, "no row carries {CONTEXT_UNVERIFIED_MARK}");
+        assert!(
+            sourced > 0,
+            "every row reads as a guess — marker over-applied"
+        );
+
+        // A row's own source decides it; nothing infers from the value.
+        let anth = c.providers.get("anthropic").unwrap();
+        let opus = anth.models.get("claude-opus-4-8").unwrap();
+        assert!(!opus.context_unverified(), "{:?}", opus.source);
+
+        let mut guess = ModelEntry::default();
+        guess.source = Some(format!(
+            "https://example/v1/models {CONTEXT_UNVERIFIED_MARK}"
+        ));
+        assert!(guess.context_unverified());
+        // The marker survives a pricing tag being appended after it.
+        guess.source = Some(format!(
+            "https://example/v1/models {CONTEXT_UNVERIFIED_MARK} + litellm:x"
+        ));
+        assert!(guess.context_unverified());
+        // No source at all is not a claim of verification either way, but it
+        // must not read as marked.
+        assert!(!ModelEntry::default().context_unverified());
+    }
 
     #[test]
     fn baseline_parses() {

@@ -37,7 +37,7 @@ DB เก็บเป็น microcent ต่อ 1k token (`µ¢/kt`) สูต�
 
 context ที่มี **`?`** คือค่าที่ provider ไม่เคยประกาศ — เป็นค่า default ของ provider นั้นที่ใส่ไว้เพราะถ้าเว้นว่างจะทำให้ตัวเลือกโมเดลพัง ให้ถือเป็นขอบล่าง ไม่ใช่สเปกจริง
 
-652 โมเดล จาก 16 provider
+566 โมเดล จาก 14 provider
 
 ### Anthropic
 
@@ -165,6 +165,8 @@ context ที่มี **`?`** คือค่าที่ provider ไม่�
 | `gemini-2.5-flash` | 1.04858M | $0.38 | $0.04 | $3.12 |
 | `gemini-2.5-flash-lite` | 1.04858M | $0.12 | $0.01 | $0.50 |
 | `gemini-2.5-flash-native-audio-latest` | 1.04858M | $0.38 | — | $3.12 |
+| `gemini-2.5-flash-native-audio-preview-09-2025` | 1.04858M | $0.38 | — | $3.12 |
+| `gemini-2.5-flash-native-audio-preview-12-2025` | 1.04858M | $0.38 | — | $3.12 |
 | `gemini-2.5-pro` | 2M | $1.56 | $0.16 | $12.50 |
 | `gemini-3-flash-preview` | 1.04858M | $0.62 | $0.06 | $3.75 |
 | `gemini-3-pro-preview` | 1.04858M | $2.50 | $0.25 | $15.00 |
@@ -295,7 +297,7 @@ context ที่มี **`?`** คือค่าที่ provider ไม่�
 | `mistralai/mistral-small-24b-instruct-2501` | 33k | $0.06 | — | $0.10 |
 | `mistralai/mistral-small-2603` | 262k | $0.19 | — | $0.75 |
 | `mistralai/mistral-small-3.1-24b-instruct` | 128k | $0.44 | — | $0.69 |
-| `mistralai/mistral-small-3.2-24b-instruct` | 128k | $0.09 | — | $0.25 |
+| `mistralai/mistral-small-3.2-24b-instruct` | 256k | $0.09 | — | $0.25 |
 | `mistralai/mixtral-8x22b-instruct` | 66k | $2.50 | — | $7.50 |
 | `mistralai/voxtral-small-24b-2507` | 32k | $0.12 | — | $0.38 |
 | `moonshotai/kimi-k2` | 131k | $0.71 | — | $2.88 |
@@ -347,7 +349,6 @@ context ที่มี **`?`** คือค่าที่ provider ไม่�
 | `openai/gpt-5.2-chat` | 128k | $2.19 | $0.22 | $17.50 |
 | `openai/gpt-5.2-codex` | 400k | $2.19 | $0.22 | $17.50 |
 | `openai/gpt-5.2-pro` | 400k | $26.25 | — | $210.00 |
-| `openai/gpt-5.3-chat` | 128k | $2.19 | — | $17.50 |
 | `openai/gpt-5.3-codex` | 400k | $2.19 | $0.22 | $17.50 |
 | `openai/gpt-5.4` | 1.05M | $3.12 | $0.31 | $18.75 |
 | `openai/gpt-5.4-mini` | 400k | $0.94 | $0.09 | $5.62 |
@@ -440,7 +441,7 @@ context ที่มี **`?`** คือค่าที่ provider ไม่�
 | `thedrummer/skyfall-36b-v2` | 33k | $0.69 | — | $1.00 |
 | `thedrummer/unslopnemo-12b` | 33k | $0.50 | — | $0.50 |
 | `undi95/remm-slerp-l2-13b` | 6k | $0.56 | — | $0.81 |
-| `upstage/solar-pro-3` | 128k | $0.19 | — | $0.75 |
+| `upstage/solar-pro-3` | 131k | $0.19 | — | $0.75 |
 | `writer/palmyra-x5` | 1.04M | $0.75 | — | $7.50 |
 | `x-ai/grok-4.20` | 2M | $1.56 | — | $3.12 |
 | `x-ai/grok-4.20-multi-agent` | 2M | $2.50 | — | $7.50 |
@@ -483,89 +484,89 @@ context ที่มี **`?`** คือค่าที่ provider ไม่�
 | `dashscope/qvq-max` | 131k | $1.50 | $6.00 |
 | `dashscope/qwen-coder-plus` | 131k? | $7.50 | $75.00 |
 | `dashscope/qwen-flash` | 998k | $0.31 | $2.50 |
-| `dashscope/qwen-flash-character` | 131k? | $0.31 | $2.50 |
+| `dashscope/qwen-flash-character` | 8k | $0.31 | $2.50 |
 | `dashscope/qwen-max` | 31k | $2.00 | $8.00 |
 | `dashscope/qwen-mt-flash` | 131k | $0.20 | $0.61 |
 | `dashscope/qwen-mt-lite` | 131k | $0.15 | $0.45 |
 | `dashscope/qwen-mt-plus` | 131k | $3.08 | $9.21 |
 | `dashscope/qwen-mt-turbo` | 131k | $0.20 | $0.61 |
-| `dashscope/qwen-omni-turbo` | 131k? | $0.09 | $0.34 |
+| `dashscope/qwen-omni-turbo` | 33k | $0.09 | $0.34 |
 | `dashscope/qwen-plus` | 129k | $0.50 | $1.50 |
 | `dashscope/qwen-plus-2025-01-25` | 129k | $0.50 | $1.50 |
 | `dashscope/qwen-plus-2025-04-28` | 129k | $0.50 | $1.50 |
 | `dashscope/qwen-plus-2025-07-14` | 129k | $0.50 | $1.50 |
 | `dashscope/qwen-plus-2025-09-11` | 998k | $1.50 | $4.50 |
-| `dashscope/qwen-plus-2025-12-01` | 131k? | $1.50 | $4.50 |
-| `dashscope/qwen-plus-character` | 131k? | $1.50 | $4.50 |
+| `dashscope/qwen-plus-2025-12-01` | 1M | $1.50 | $4.50 |
+| `dashscope/qwen-plus-character` | 33k | $1.50 | $4.50 |
 | `dashscope/qwen-plus-latest` | 998k | $1.50 | $4.50 |
 | `dashscope/qwen-turbo` | 129k | $0.06 | $0.25 |
-| `dashscope/qwen-vl-max` | 131k? | $1.00 | $4.00 |
-| `dashscope/qwen-vl-ocr-2025-11-20` | 131k? | $0.09 | $0.20 |
+| `dashscope/qwen-vl-max` | 131k | $1.00 | $4.00 |
+| `dashscope/qwen-vl-ocr-2025-11-20` | 31k | $0.09 | $0.20 |
 | `dashscope/qwen-vl-plus` | 8k | $0.26 | $0.79 |
 | `dashscope/qwen3-14b` | 131k | $0.44 | $1.75 |
 | `dashscope/qwen3-235b-a22b` | 131k | $0.88 | $3.50 |
-| `dashscope/qwen3-235b-a22b-instruct-2507` | 131k? | $0.88 | $3.50 |
+| `dashscope/qwen3-235b-a22b-instruct-2507` | 129k | $0.88 | $3.50 |
 | `dashscope/qwen3-235b-a22b-thinking-2507` | 262k | $0.88 | $10.50 |
 | `dashscope/qwen3-30b-a3b` | 129k | $0.25 | $1.00 |
 | `dashscope/qwen3-30b-a3b-instruct-2507` | 262k | $0.25 | $1.00 |
 | `dashscope/qwen3-30b-a3b-thinking-2507` | 82k | $0.25 | $1.00 |
 | `dashscope/qwen3-32b` | 131k | $0.20 | $0.80 |
 | `dashscope/qwen3-8b` | 131k | $0.22 | $0.88 |
-| `dashscope/qwen3-coder-480b-a35b-instruct` | 131k? | $7.50 | $75.00 |
+| `dashscope/qwen3-coder-480b-a35b-instruct` | 262k | $7.50 | $75.00 |
 | `dashscope/qwen3-coder-flash` | 998k | $2.00 | $12.00 |
 | `dashscope/qwen3-coder-next` | 262k | $7.50 | $75.00 |
 | `dashscope/qwen3-coder-plus` | 998k | $7.50 | $75.00 |
 | `dashscope/qwen3-coder-plus-2025-07-22` | 998k | $7.50 | $75.00 |
-| `dashscope/qwen3-coder-plus-2025-09-23` | 131k? | $7.50 | $75.00 |
-| `dashscope/qwen3-livetranslate-flash-realtime` | 131k? | $12.50 | $47.50 |
-| `dashscope/qwen3-livetranslate-flash-realtime-2025-09-22` | 131k? | $12.50 | $47.50 |
+| `dashscope/qwen3-coder-plus-2025-09-23` | 1M | $7.50 | $75.00 |
+| `dashscope/qwen3-livetranslate-flash-realtime` | 53k | $12.50 | $47.50 |
+| `dashscope/qwen3-livetranslate-flash-realtime-2025-09-22` | 49k | $12.50 | $47.50 |
 | `dashscope/qwen3-max` | 258k | $3.75 | $18.75 |
-| `dashscope/qwen3-max-2025-09-23` | 131k? | $3.75 | $18.75 |
+| `dashscope/qwen3-max-2025-09-23` | 256k | $3.75 | $18.75 |
 | `dashscope/qwen3-max-2026-01-23` | 258k | $3.75 | $18.75 |
 | `dashscope/qwen3-max-preview` | 258k | $3.75 | $18.75 |
 | `dashscope/qwen3-next-80b-a3b-instruct` | 262k | $0.19 | $1.50 |
 | `dashscope/qwen3-next-80b-a3b-thinking` | 262k | $0.19 | $1.50 |
-| `dashscope/qwen3-omni-30b-a3b-captioner` | 131k? | $4.76 | $3.83 |
-| `dashscope/qwen3-omni-flash` | 131k? | $0.54 | $2.07 |
+| `dashscope/qwen3-omni-30b-a3b-captioner` | 31k | $4.76 | $3.83 |
+| `dashscope/qwen3-omni-flash` | 66k | $0.54 | $2.07 |
 | `dashscope/qwen3-omni-flash-2025-09-15` | 131k? | $0.54 | $2.07 |
-| `dashscope/qwen3-omni-flash-2025-12-01` | 131k? | $0.54 | $2.07 |
-| `dashscope/qwen3-omni-flash-realtime` | 131k? | $0.65 | $2.49 |
-| `dashscope/qwen3-omni-flash-realtime-2025-09-15` | 131k? | $0.65 | $2.49 |
-| `dashscope/qwen3-omni-flash-realtime-2025-12-01` | 131k? | $0.65 | $2.49 |
+| `dashscope/qwen3-omni-flash-2025-12-01` | 16k | $0.54 | $2.07 |
+| `dashscope/qwen3-omni-flash-realtime` | 66k | $0.65 | $2.49 |
+| `dashscope/qwen3-omni-flash-realtime-2025-09-15` | 57k | $0.65 | $2.49 |
+| `dashscope/qwen3-omni-flash-realtime-2025-12-01` | 57k | $0.65 | $2.49 |
 | `dashscope/qwen3-vl-235b-a22b-instruct` | 131k | $0.50 | $2.00 |
 | `dashscope/qwen3-vl-235b-a22b-thinking` | 131k | $0.50 | $5.00 |
-| `dashscope/qwen3-vl-flash` | 131k? | $0.31 | $2.50 |
-| `dashscope/qwen3-vl-flash-2025-10-15` | 131k? | $0.31 | $2.50 |
-| `dashscope/qwen3-vl-flash-2026-01-22` | 131k? | $0.31 | $2.50 |
+| `dashscope/qwen3-vl-flash` | 256k | $0.31 | $2.50 |
+| `dashscope/qwen3-vl-flash-2025-10-15` | 256k | $0.31 | $2.50 |
+| `dashscope/qwen3-vl-flash-2026-01-22` | 256k | $0.31 | $2.50 |
 | `dashscope/qwen3-vl-plus` | 260k | $0.25 | $2.00 |
-| `dashscope/qwen3-vl-plus-2025-09-23` | 131k? | $0.25 | $2.00 |
-| `dashscope/qwen3-vl-plus-2025-12-19` | 131k? | $0.25 | $2.00 |
+| `dashscope/qwen3-vl-plus-2025-09-23` | 256k | $0.25 | $2.00 |
+| `dashscope/qwen3-vl-plus-2025-12-19` | 256k | $0.25 | $2.00 |
 | `dashscope/qwen3.5-122b-a10b` | 262k | $0.50 | $4.00 |
 | `dashscope/qwen3.5-27b` | 262k | $0.38 | $3.00 |
 | `dashscope/qwen3.5-35b-a3b` | 262k | $0.31 | $2.50 |
 | `dashscope/qwen3.5-397b-a17b` | 262k | $0.75 | $4.50 |
-| `dashscope/qwen3.5-flash` | 131k? | $0.12 | $0.50 |
-| `dashscope/qwen3.5-flash-2026-02-23` | 131k? | $0.12 | $0.50 |
+| `dashscope/qwen3.5-flash` | 1M | $0.12 | $0.50 |
+| `dashscope/qwen3.5-flash-2026-02-23` | 1M | $0.12 | $0.50 |
 | `dashscope/qwen3.5-livetranslate-flash-realtime` | 131k | $9.38 | $37.50 |
 | `dashscope/qwen3.5-livetranslate-flash-realtime-2026-05-19` | 131k | $9.38 | $37.50 |
-| `dashscope/qwen3.5-omni-flash` | 131k? | $0.50 | $2.75 |
-| `dashscope/qwen3.5-omni-flash-2026-03-15` | 131k? | $0.50 | $2.75 |
-| `dashscope/qwen3.5-omni-flash-realtime` | 131k? | $0.69 | $4.12 |
-| `dashscope/qwen3.5-omni-flash-realtime-2026-03-15` | 131k? | $0.69 | $4.12 |
-| `dashscope/qwen3.5-omni-plus` | 131k? | $1.75 | $10.38 |
-| `dashscope/qwen3.5-omni-plus-2026-03-15` | 131k? | $1.75 | $10.38 |
-| `dashscope/qwen3.5-omni-plus-realtime` | 131k? | $2.62 | $15.50 |
-| `dashscope/qwen3.5-omni-plus-realtime-2026-03-15` | 131k? | $2.62 | $15.50 |
+| `dashscope/qwen3.5-omni-flash` | 197k | $0.50 | $2.75 |
+| `dashscope/qwen3.5-omni-flash-2026-03-15` | 197k | $0.50 | $2.75 |
+| `dashscope/qwen3.5-omni-flash-realtime` | 197k | $0.69 | $4.12 |
+| `dashscope/qwen3.5-omni-flash-realtime-2026-03-15` | 197k | $0.69 | $4.12 |
+| `dashscope/qwen3.5-omni-plus` | 197k | $1.75 | $10.38 |
+| `dashscope/qwen3.5-omni-plus-2026-03-15` | 197k | $1.75 | $10.38 |
+| `dashscope/qwen3.5-omni-plus-realtime` | 197k | $2.62 | $15.50 |
+| `dashscope/qwen3.5-omni-plus-realtime-2026-03-15` | 197k | $2.62 | $15.50 |
 | `dashscope/qwen3.5-plus` | 992k | $0.62 | $3.75 |
-| `dashscope/qwen3.5-plus-2026-02-15` | 131k? | $0.62 | $3.75 |
-| `dashscope/qwen3.5-plus-2026-04-20` | 131k? | $0.62 | $3.75 |
+| `dashscope/qwen3.5-plus-2026-02-15` | 1M | $0.62 | $3.75 |
+| `dashscope/qwen3.5-plus-2026-04-20` | 1M | $0.62 | $3.75 |
 | `dashscope/qwen3.6-27b` | 262k | $0.75 | $4.50 |
 | `dashscope/qwen3.6-35b-a3b` | 262k | $0.47 | $2.81 |
 | `dashscope/qwen3.6-flash` | 1M | $1.25 | $5.00 |
-| `dashscope/qwen3.6-flash-2026-04-16` | 131k? | $1.25 | $5.00 |
+| `dashscope/qwen3.6-flash-2026-04-16` | 1M | $1.25 | $5.00 |
 | `dashscope/qwen3.6-max-preview` | 262k | $2.50 | $15.00 |
 | `dashscope/qwen3.6-plus` | 1M | $2.50 | $7.50 |
-| `dashscope/qwen3.6-plus-2026-04-02` | 131k? | $2.50 | $7.50 |
+| `dashscope/qwen3.6-plus-2026-04-02` | 1M | $2.50 | $7.50 |
 | `dashscope/qwen3.7-flash` | 1M | $0.25 | $1.00 |
 | `dashscope/qwen3.7-flash-2026-07-15` | 131k | $0.25 | $1.00 |
 | `dashscope/qwen3.7-max` | 992k | $3.12 | $9.38 |
@@ -578,92 +579,6 @@ context ที่มี **`?`** คือค่าที่ provider ไม่�
 | `dashscope/qwen3.8-max` | 1M | $2.50 | $7.50 |
 | `dashscope/qwq-plus` | 98k | $1.00 | $3.00 |
 | `dashscope/qwq-plus-2025-03-05` | 131k | $1.00 | $3.00 |
-
-### Qwen Cloud
-
-| Model | Context | Input ($/M) | Output ($/M) |
-|---|---:|---:|---:|
-| `qc/deepseek-v4-flash` | 1M | $0.18 | $0.35 |
-| `qc/deepseek-v4-pro` | 1M | $0.54 | $1.09 |
-| `qc/qwen-coder-plus` | 33k? | $7.50 | $75.00 |
-| `qc/qwen-flash` | 33k? | $0.31 | $2.50 |
-| `qc/qwen-flash-character` | 33k? | $0.31 | $2.50 |
-| `qc/qwen-max` | 33k? | $2.00 | $8.00 |
-| `qc/qwen-omni-turbo` | 33k? | $0.09 | $0.34 |
-| `qc/qwen-plus` | 33k? | $0.50 | $1.50 |
-| `qc/qwen-plus-2025-01-25` | 33k? | $0.50 | $1.50 |
-| `qc/qwen-plus-2025-04-28` | 33k? | $0.50 | $1.50 |
-| `qc/qwen-plus-2025-07-14` | 33k? | $0.50 | $1.50 |
-| `qc/qwen-plus-2025-09-11` | 33k? | $1.50 | $4.50 |
-| `qc/qwen-plus-2025-12-01` | 33k? | $1.50 | $4.50 |
-| `qc/qwen-plus-character` | 33k? | $1.50 | $4.50 |
-| `qc/qwen-plus-latest` | 33k? | $1.50 | $4.50 |
-| `qc/qwen-turbo` | 33k? | $0.06 | $0.25 |
-| `qc/qwen-vl-max` | 33k? | $1.00 | $4.00 |
-| `qc/qwen-vl-ocr-2025-11-20` | 33k? | $0.09 | $0.20 |
-| `qc/qwen-vl-plus` | 33k? | $0.26 | $0.79 |
-| `qc/qwen3-14b` | 33k? | $0.44 | $1.75 |
-| `qc/qwen3-235b-a22b` | 33k? | $0.88 | $3.50 |
-| `qc/qwen3-235b-a22b-instruct-2507` | 33k? | $0.88 | $3.50 |
-| `qc/qwen3-235b-a22b-thinking-2507` | 33k? | $0.88 | $10.50 |
-| `qc/qwen3-30b-a3b` | 33k? | $0.25 | $1.00 |
-| `qc/qwen3-30b-a3b-instruct-2507` | 33k? | $0.25 | $1.00 |
-| `qc/qwen3-30b-a3b-thinking-2507` | 33k? | $0.25 | $1.00 |
-| `qc/qwen3-32b` | 33k? | $0.20 | $0.80 |
-| `qc/qwen3-8b` | 33k? | $0.22 | $0.88 |
-| `qc/qwen3-coder-480b-a35b-instruct` | 33k? | $7.50 | $75.00 |
-| `qc/qwen3-coder-flash` | 33k? | $2.00 | $12.00 |
-| `qc/qwen3-coder-next` | 33k? | $7.50 | $75.00 |
-| `qc/qwen3-coder-plus` | 33k? | $7.50 | $75.00 |
-| `qc/qwen3-coder-plus-2025-07-22` | 33k? | $7.50 | $75.00 |
-| `qc/qwen3-coder-plus-2025-09-23` | 33k? | $7.50 | $75.00 |
-| `qc/qwen3-livetranslate-flash-realtime` | 33k? | $12.50 | $47.50 |
-| `qc/qwen3-livetranslate-flash-realtime-2025-09-22` | 33k? | $12.50 | $47.50 |
-| `qc/qwen3-max` | 33k? | $3.75 | $18.75 |
-| `qc/qwen3-max-2025-09-23` | 33k? | $3.75 | $18.75 |
-| `qc/qwen3-max-2026-01-23` | 33k? | $3.75 | $18.75 |
-| `qc/qwen3-max-preview` | 33k? | $3.75 | $18.75 |
-| `qc/qwen3-next-80b-a3b-instruct` | 33k? | $0.19 | $1.50 |
-| `qc/qwen3-next-80b-a3b-thinking` | 33k? | $0.19 | $1.50 |
-| `qc/qwen3-omni-30b-a3b-captioner` | 33k? | $4.76 | $3.83 |
-| `qc/qwen3-omni-flash` | 33k? | $0.54 | $2.07 |
-| `qc/qwen3-omni-flash-2025-09-15` | 33k? | $0.54 | $2.07 |
-| `qc/qwen3-omni-flash-2025-12-01` | 33k? | $0.54 | $2.07 |
-| `qc/qwen3-omni-flash-realtime` | 33k? | $0.54 | $2.07 |
-| `qc/qwen3-omni-flash-realtime-2025-09-15` | 33k? | $0.54 | $2.07 |
-| `qc/qwen3-omni-flash-realtime-2025-12-01` | 33k? | $0.54 | $2.07 |
-| `qc/qwen3-vl-235b-a22b-instruct` | 33k? | $0.50 | $2.00 |
-| `qc/qwen3-vl-235b-a22b-thinking` | 33k? | $0.50 | $5.00 |
-| `qc/qwen3-vl-flash` | 33k? | $0.31 | $2.50 |
-| `qc/qwen3-vl-flash-2025-10-15` | 33k? | $0.31 | $2.50 |
-| `qc/qwen3-vl-flash-2026-01-22` | 33k? | $0.31 | $2.50 |
-| `qc/qwen3-vl-plus` | 33k? | $0.25 | $2.00 |
-| `qc/qwen3-vl-plus-2025-09-23` | 33k? | $0.25 | $2.00 |
-| `qc/qwen3-vl-plus-2025-12-19` | 33k? | $0.25 | $2.00 |
-| `qc/qwen3.5-122b-a10b` | 33k? | $0.50 | $4.00 |
-| `qc/qwen3.5-27b` | 33k? | $0.38 | $3.00 |
-| `qc/qwen3.5-35b-a3b` | 33k? | $0.31 | $2.50 |
-| `qc/qwen3.5-397b-a17b` | 33k? | $0.75 | $4.50 |
-| `qc/qwen3.5-flash` | 33k? | $0.12 | $0.50 |
-| `qc/qwen3.5-flash-2026-02-23` | 33k? | $0.12 | $0.50 |
-| `qc/qwen3.5-omni-flash` | 33k? | $0.50 | $2.75 |
-| `qc/qwen3.5-omni-flash-2026-03-15` | 33k? | $0.50 | $2.75 |
-| `qc/qwen3.5-omni-flash-realtime` | 33k? | $0.69 | $4.12 |
-| `qc/qwen3.5-omni-flash-realtime-2026-03-15` | 33k? | $0.69 | $4.12 |
-| `qc/qwen3.5-omni-plus` | 33k? | $1.75 | $10.38 |
-| `qc/qwen3.5-omni-plus-2026-03-15` | 33k? | $1.75 | $10.38 |
-| `qc/qwen3.5-omni-plus-realtime` | 33k? | $2.62 | $15.50 |
-| `qc/qwen3.5-omni-plus-realtime-2026-03-15` | 33k? | $2.62 | $15.50 |
-| `qc/qwen3.5-plus` | 33k? | $0.62 | $3.75 |
-| `qc/qwen3.5-plus-2026-02-15` | 33k? | $0.62 | $3.75 |
-| `qc/qwen3.5-plus-2026-04-20` | 33k? | $0.62 | $3.75 |
-| `qc/qwen3.6-27b` | 33k? | $0.75 | $4.50 |
-| `qc/qwen3.6-35b-a3b` | 33k? | $0.47 | $2.81 |
-| `qc/qwen3.6-flash` | 33k? | $1.25 | $5.00 |
-| `qc/qwen3.6-flash-2026-04-16` | 33k? | $1.25 | $5.00 |
-| `qc/qwen3.6-max-preview` | 33k? | $2.50 | $15.00 |
-| `qc/qwen3.6-plus` | 33k? | $2.50 | $7.50 |
-| `qc/qwen3.6-plus-2026-04-02` | 33k? | $2.50 | $7.50 |
 
 ### Z.ai
 
@@ -693,9 +608,9 @@ context ที่มี **`?`** คือค่าที่ provider ไม่�
 | `minimax/MiniMax-M2.1` | 1M | $0.38 | $0.04 | $1.50 |
 | `minimax/MiniMax-M2.1-highspeed` | 200k? | $0.75 | — | $3.00 |
 | `minimax/MiniMax-M2.5` | 205k | $0.38 | $0.04 | $1.50 |
-| `minimax/MiniMax-M2.5-highspeed` | 200k? | $0.75 | — | $3.00 |
+| `minimax/MiniMax-M2.5-highspeed` | 205k | $0.75 | — | $3.00 |
 | `minimax/MiniMax-M2.7` | 205k | $0.38 | — | $1.50 |
-| `minimax/MiniMax-M2.7-highspeed` | 200k? | $0.75 | — | $3.00 |
+| `minimax/MiniMax-M2.7-highspeed` | 205k | $0.75 | — | $3.00 |
 | `minimax/MiniMax-M3` | 1M | $0.38 | $0.15 | $1.50 |
 
 *คิดเงินตามหน่วยผลลัพธ์ ไม่ใช่ตาม token*
@@ -703,17 +618,6 @@ context ที่มี **`?`** คือค่าที่ provider ไม่�
 | Model | $/1k ตัวอักษร |
 |---|---:|
 | `minimax/speech-02-hd` | $0.19 |
-
-### ThaiLLM
-
-| Model | Context | Input ($/M) | Output ($/M) |
-|---|---:|---:|---:|
-| `thaillm/OpenThaiGPT-ThaiLLM-8B-Instruct-v7.2` | 131k? | free | free |
-| `thaillm/Pathumma-ThaiLLM-qwen3-8b-think-3.0.0` | 131k? | free | free |
-| `thaillm/THaLLE-0.2-ThaiLLM-8B-fa` | 131k? | free | free |
-| `thaillm/Typhoon-S-ThaiLLM-8B-Instruct` | 131k? | free | free |
-| `thaillm/qwen3.5-9b` | 131k | free | free |
-| `thaillm/qwen3.6-35b-a3b` | 131k | free | free |
 
 ### xAI
 

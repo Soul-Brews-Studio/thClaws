@@ -371,6 +371,11 @@ fn announce_key_stored(provider: &str, ok: bool, error: &str, storage: &str, ctx
                         serde_json::json!({
                             "id": canonical,
                             "context": e.context,
+                            // dev-plan/57: the window may be the provider's
+                            // blanket default rather than a published figure.
+                            // The picker renders those as `200k?` — printing
+                            // a floor as a specification is what #190 was.
+                            "context_unverified": e.context_unverified(),
                             "max_output": e.max_output,
                             // Plan-10: surfaced for the
                             // OpenRouter "Free only" toggle

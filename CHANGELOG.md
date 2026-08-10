@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.112.0] — 2026-08-11
+
+Context windows across the catalogue are now sourced rather than guessed — including 112 rows that had been advertising eight times the space they actually have — the gateway proxies only the providers it sells, and an MCP server that installs its dependencies on first launch no longer times out doing so.
+
+### Changed
+- **The gateway proxies only the ten Featured providers.** `qwen-cloud`, `thaillm` and the Groq **LLM** segment have been withdrawn from the routed set. What the gateway sells and what it proxies had drifted apart — thirteen against ten — which meant a provider outside the sold tier was being proxied, metered and marked up without ever having been offered. **If you use these models on a hosted workspace they will stop working**; on the desktop with your own key nothing changes, since what was withdrawn is the proxy, not the provider. Groq's `/groq/audio` (Whisper) route is unaffected and still billed as before.
+- **Model pickers: a guessed context window is shown with a question mark.** Any model whose window the catalogue could not source from the provider's own documentation now renders as e.g. `200k?` rather than passing as a citation.
+
+### Fixed
+- **Catalogue: context windows are sourced at scale, and several were badly wrong.** Every remaining guess was checked against the provider's own `/v1/models`, models.dev, and — for DashScope — the published pricing tiers and console model cards. Guesses among the Featured providers fell from 70 to 3, and 340 rows across the whole catalogue gained a real source. The most consequential correction: all 112 `atlascloud` rows claimed a 1M window because that was the provider block's default, while the endpoint serves 131k for Qwen3-235B and 200k for the Claude 4 family. Overstating a window is the direction that breaks requests outright — the engine packs a prompt the endpoint then rejects — so those rows were failing rather than merely compacting early. Two models that no longer exist upstream (`openrouter/openai/gpt-5.3-chat`, `minimax/MiniMax-M2.1-highspeed`) were removed.
+- **Catalogue: the writer's context-window guesses are marked instead of hidden.** When the writer filled in a number because no source answered, that value was silently absorbed into the catalogue. It is now tagged as a guess, so the pickers and the appendix can surface the uncertainty instead of a fresh `make catalogue` quietly rebuilding the debt.
+- **MCP: the initialize handshake gets its own timeout.** A server launched through `uvx`/`npx` downloads its whole dependency tree before it can answer anything — one such server needs ~38 s on a cold cache and half a second afterwards. The handshake shared the 30-second budget used for tool calls, so that first launch always failed. It now has its own, longer budget (overridable via `THCLAWS_MCP_INIT_TIMEOUT_SECS`), while tool calls keep the short one — a handshake that takes minutes on first run is normal, a tool call that does is a hung server.
+- **Cloud sync: archive extraction is bounded in where it writes and how much.** Extraction now refuses entries that would escape the workspace root and stops reading once the decompressed stream passes its size cap, rather than after writing it.
+
 ## [0.111.0] — 2026-08-10
 
 Featured-provider context windows are now sourced from real data instead of guesses, high-severity frontend vulnerabilities are patched, and the built-in manual learns to generate its own appendix from the catalogue.

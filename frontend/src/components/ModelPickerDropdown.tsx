@@ -6,6 +6,10 @@ import { FusionConfigModal } from "./FusionConfigModal";
 type ModelRow = {
   id: string;
   context?: number | null;
+  /// `true` when `context` is the provider's blanket default rather than
+  /// a figure they published. Rendered as `200k?` — a floor shown as a
+  /// specification is what made a 1M model advertise 131k (#190).
+  context_unverified?: boolean | null;
 };
 
 /// One provider group as the backend ships it. `provider` is the
@@ -279,8 +283,14 @@ export function ModelPickerDropdown({ current, onClose }: Props) {
                           color: "var(--text-secondary)",
                           fontSize: "10px",
                         }}
+                        title={
+                          m.context_unverified
+                            ? `${ctx} is this provider's default, not a published figure — treat it as a lower bound.`
+                            : undefined
+                        }
                       >
                         {ctx}
+                        {m.context_unverified ? "?" : ""}
                       </span>
                     )}
                   </button>

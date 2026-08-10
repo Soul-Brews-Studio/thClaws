@@ -52,7 +52,7 @@ pub fn provider_segment(kind: ProviderKind) -> Option<&'static str> {
 }
 ```
 
-**13 LLM segments** are wired (`shared::GATEWAY_ALL_PROVIDERS`); the ones with an OpenAI-compatible upstream share the `compat` proxy:
+**10 LLM segments** are wired (`shared::GATEWAY_ALL_PROVIDERS`) — exactly the `ProviderTier::Featured` providers, an equality a unit test enforces. The ones with an OpenAI-compatible upstream share the `compat` proxy:
 
 | ProviderKind | Segment | Example URL |
 |---|---|---|
@@ -60,9 +60,11 @@ pub fn provider_segment(kind: ProviderKind) -> Option<&'static str> {
 | `Anthropic` | `anthropic` | `https://gateway.thclaws.cloud/anthropic/v1/messages` |
 | `Gemini` | `google` | `https://gateway.thclaws.cloud/google/v1/...` |
 | `OpenRouter` | `openrouter` | `https://gateway.thclaws.cloud/openrouter/...` |
-| `DashScope` `QwenCloud` `ZAi` `DeepSeek` `Minimax` `ThaiLLM` `XAi` `Moonshot` `Groq` | `dashscope` / `qwen-cloud` / `zai` / `deepseek` / `minimax` / `thaillm` / `xai` / `moonshot` / `groq` | `…/<segment>/v1/chat/completions` (compat proxy) |
+| `DashScope` `ZAi` `DeepSeek` `Minimax` `XAi` `Moonshot` | `dashscope` / `zai` / `deepseek` / `minimax` / `xai` / `moonshot` | `…/<segment>/v1/chat/completions` (compat proxy) |
 
 Anything outside this set (Ollama, LMStudio, AgentSdk, OllamaCloud, TokenRouter, …) returns `None` from `provider_segment` and bypasses the overlay — they call upstream directly (local providers need no proxy; OllamaCloud/TokenRouter have their own auth/pricing model).
+
+`QwenCloud`, `ThaiLLM` and `Groq` were in this table until 2026-08-10. The gateway now proxies only what it sells, and the sold tier is the ten Featured providers: thaillm is free upstream but rate-limited far below anything a paid tier can promise, and qwen-cloud duplicates dashscope from another region. All three still work on the desktop with the user's own key — what was withdrawn is the proxy, not the provider. Groq is the subtle one: its **LLM** segment is gone while `/groq/audio` (Whisper) stays, because the media routes are billed and routed independently. Its Whisper rows therefore keep syncing to `model_pricing` while its chat rows do not — see `MEDIA_ONLY` in `scripts/sync-cloud-pricing.py`.
 
 **Media routes.** Beyond LLMs the gateway meters generation per-unit (dev-plan/53): per-second video (`/ltx`, DashScope `video-synthesis`), per-character TTS (`/elevenlabs`, `/openai/v1/audio/speech`, `/minimax/v1/t2a_v2`), per-image (`/dashscope/...multimodal-generation`), Whisper per-second (`/groq/audio`), and Kie async jobs billed by `creditsConsumed`. See [`provider-gateway.md`](provider-gateway.md) and the gateway server's `proxy/media.rs`.
 

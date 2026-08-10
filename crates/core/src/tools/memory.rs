@@ -188,157 +188,152 @@ mod tests {
     use super::*;
     use crate::memory::MemoryStore;
 
-    /// Same env-guard pattern as kms tests — scope HOME + cwd to a
-    /// tempdir so default_path() resolves to a known location.
-    struct EnvGuard {
-        _lock: std::sync::MutexGuard<'static, ()>,
-        prev_home: Option<String>,
-        prev_userprofile: Option<String>,
-        prev_cwd: std::path::PathBuf,
-        _home_dir: tempfile::TempDir,
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            let _ = std::env::set_current_dir(&self.prev_cwd);
-            match &self.prev_home {
-                Some(h) => std::env::set_var("HOME", h),
-                None => std::env::remove_var("HOME"),
-            }
-            match &self.prev_userprofile {
-                Some(h) => std::env::set_var("USERPROFILE", h),
-                None => std::env::remove_var("USERPROFILE"),
-            }
-        }
-    }
-
-    fn scoped_home() -> EnvGuard {
-        let lock = crate::kms::test_env_lock();
-        let prev_home = std::env::var("HOME").ok();
-        let prev_userprofile = std::env::var("USERPROFILE").ok();
-        let prev_cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    /// Run `body` with memory resolving inside a private tempdir.
+    ///
+    /// The previous guard swapped process cwd *and* HOME. Both are
+    /// process-global, so these tests were hostage to any other thread that
+    /// touched either — `read_returns_frontmatter_and_body` failed at random
+    /// for exactly that reason, and removing one offender in v0.110.0 only
+    /// made it rarer (~1 full-suite run in 5 still lost it).
+    ///
+    /// `default_path()` prefers the task-local working dir that dev-plan/42
+    /// added so tenants don't race over one process cwd. That is the same
+    /// problem at a smaller scale, so use the same answer: a task-local
+    /// cannot be moved by another thread, which makes these tests immune
+    /// rather than merely lucky. It also drops the env lock — nothing here
+    /// touches process state any more, so there is nothing to serialise.
+    async fn with_memory_root<F: std::future::Future<Output = T>, T>(body: F) -> T {
         let dir = tempfile::tempdir().unwrap();
-        std::env::set_var("HOME", dir.path());
-        std::env::set_var("USERPROFILE", dir.path());
-        std::env::set_current_dir(dir.path()).unwrap();
-        EnvGuard {
-            _lock: lock,
-            prev_home,
-            prev_userprofile,
-            prev_cwd,
-            _home_dir: dir,
-        }
+        // `.thclaws/` present ⇒ default_path() takes the project-scoped
+        // branch and returns before it ever consults HOME.
+        std::fs::create_dir_all(dir.path().join(".thclaws")).unwrap();
+        crate::workdir::scope_workdir(dir.path().to_path_buf(), body).await
     }
 
     #[tokio::test]
     async fn write_creates_entry_and_updates_index() {
-        let _home = scoped_home();
-        let store = MemoryStore::default_path().map(MemoryStore::new).unwrap();
-        let result = MemoryWriteTool
-            .call(json!({
-                "name": "user_role",
-                "content": "---\ndescription: senior backend engineer\ntype: user\n---\nLikes Rust."
-            }))
-            .await
-            .unwrap();
-        assert!(result.contains("wrote memory `user_role`"));
-        // MEMORY.md got a bullet pointing at the new entry.
-        let index = std::fs::read_to_string(store.root.join("MEMORY.md")).unwrap();
-        assert!(index.contains("[user_role](user_role.md)"));
-        assert!(index.contains("senior backend engineer"));
-        // Entry on disk has frontmatter with auto-stamped `created:` + `updated:`.
-        let entry = std::fs::read_to_string(store.root.join("user_role.md")).unwrap();
-        assert!(entry.contains("description: senior backend engineer"));
-        assert!(entry.contains("created:"));
-        assert!(entry.contains("updated:"));
-        assert!(entry.contains("Likes Rust."));
+        with_memory_root(async {
+            let store = MemoryStore::default_path().map(MemoryStore::new).unwrap();
+            let result = MemoryWriteTool
+                .call(json!({
+                    "name": "user_role",
+                    "content": "---\ndescription: senior backend engineer\ntype: user\n---\nLikes Rust."
+                }))
+                .await
+                .unwrap();
+            assert!(result.contains("wrote memory `user_role`"));
+            // MEMORY.md got a bullet pointing at the new entry.
+            let index = std::fs::read_to_string(store.root.join("MEMORY.md")).unwrap();
+            assert!(index.contains("[user_role](user_role.md)"));
+            assert!(index.contains("senior backend engineer"));
+            // Entry on disk has frontmatter with auto-stamped `created:` + `updated:`.
+            let entry = std::fs::read_to_string(store.root.join("user_role.md")).unwrap();
+            assert!(entry.contains("description: senior backend engineer"));
+            assert!(entry.contains("created:"));
+            assert!(entry.contains("updated:"));
+            assert!(entry.contains("Likes Rust."));
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn write_replace_dedupes_index_bullet() {
-        let _home = scoped_home();
-        let store = MemoryStore::default_path().map(MemoryStore::new).unwrap();
-        MemoryWriteTool
-            .call(json!({"name": "topic", "content": "---\ndescription: v1\n---\nbody"}))
-            .await
-            .unwrap();
-        MemoryWriteTool
-            .call(json!({"name": "topic", "content": "---\ndescription: v2\n---\nbody2"}))
-            .await
-            .unwrap();
-        let index = std::fs::read_to_string(store.root.join("MEMORY.md")).unwrap();
-        assert_eq!(index.matches("(topic.md)").count(), 1, "{index}");
-        assert!(index.contains("v2"));
-        assert!(!index.contains("v1"));
+        with_memory_root(async {
+            let store = MemoryStore::default_path().map(MemoryStore::new).unwrap();
+            MemoryWriteTool
+                .call(json!({"name": "topic", "content": "---\ndescription: v1\n---\nbody"}))
+                .await
+                .unwrap();
+            MemoryWriteTool
+                .call(json!({"name": "topic", "content": "---\ndescription: v2\n---\nbody2"}))
+                .await
+                .unwrap();
+            let index = std::fs::read_to_string(store.root.join("MEMORY.md")).unwrap();
+            assert_eq!(index.matches("(topic.md)").count(), 1, "{index}");
+            assert!(index.contains("v2"));
+            assert!(!index.contains("v1"));
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn write_rejects_traversal_and_reserved() {
-        let _home = scoped_home();
-        let err = MemoryWriteTool
-            .call(json!({"name": "../escape", "content": "evil"}))
-            .await
-            .unwrap_err();
-        assert!(
-            format!("{err}").contains("invalid memory name") || format!("{err}").contains("..")
-        );
-        // MEMORY is reserved (would clobber the index).
-        let err2 = MemoryWriteTool
-            .call(json!({"name": "MEMORY", "content": "x"}))
-            .await
-            .unwrap_err();
-        assert!(format!("{err2}").contains("reserved"));
+        with_memory_root(async {
+            let err = MemoryWriteTool
+                .call(json!({"name": "../escape", "content": "evil"}))
+                .await
+                .unwrap_err();
+            assert!(
+                format!("{err}").contains("invalid memory name") || format!("{err}").contains("..")
+            );
+            // MEMORY is reserved (would clobber the index).
+            let err2 = MemoryWriteTool
+                .call(json!({"name": "MEMORY", "content": "x"}))
+                .await
+                .unwrap_err();
+            assert!(format!("{err2}").contains("reserved"));
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn append_creates_then_extends() {
-        let _home = scoped_home();
-        let store = MemoryStore::default_path().map(MemoryStore::new).unwrap();
-        // First call creates with bare body (no frontmatter).
-        MemoryAppendTool
-            .call(json!({"name": "rolling", "content": "first\n"}))
-            .await
-            .unwrap();
-        // Bring frontmatter in via Write, then append again.
-        MemoryWriteTool
-            .call(json!({"name": "rolling", "content": "---\ndescription: log\n---\nseed line\n"}))
-            .await
-            .unwrap();
-        MemoryAppendTool
-            .call(json!({"name": "rolling", "content": "second\n"}))
-            .await
-            .unwrap();
-        let raw = std::fs::read_to_string(store.root.join("rolling.md")).unwrap();
-        assert!(raw.contains("seed line"));
-        assert!(raw.contains("second"));
-        // Frontmatter is preserved + `updated:` was bumped.
-        assert!(raw.contains("description: log"));
-        assert!(raw.contains("updated:"));
+        with_memory_root(async {
+            let store = MemoryStore::default_path().map(MemoryStore::new).unwrap();
+            // First call creates with bare body (no frontmatter).
+            MemoryAppendTool
+                .call(json!({"name": "rolling", "content": "first\n"}))
+                .await
+                .unwrap();
+            // Bring frontmatter in via Write, then append again.
+            MemoryWriteTool
+                .call(
+                    json!({"name": "rolling", "content": "---\ndescription: log\n---\nseed line\n"}),
+                )
+                .await
+                .unwrap();
+            MemoryAppendTool
+                .call(json!({"name": "rolling", "content": "second\n"}))
+                .await
+                .unwrap();
+            let raw = std::fs::read_to_string(store.root.join("rolling.md")).unwrap();
+            assert!(raw.contains("seed line"));
+            assert!(raw.contains("second"));
+            // Frontmatter is preserved + `updated:` was bumped.
+            assert!(raw.contains("description: log"));
+            assert!(raw.contains("updated:"));
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn read_unknown_entry_errors() {
-        let _home = scoped_home();
-        let err = MemoryReadTool
-            .call(json!({"name": "nope"}))
-            .await
-            .unwrap_err();
-        assert!(format!("{err}").contains("no memory entry"));
+        with_memory_root(async {
+            let err = MemoryReadTool
+                .call(json!({"name": "nope"}))
+                .await
+                .unwrap_err();
+            assert!(format!("{err}").contains("no memory entry"));
+        })
+        .await;
     }
 
     #[tokio::test]
     async fn read_returns_frontmatter_and_body() {
-        let _home = scoped_home();
-        MemoryWriteTool
-            .call(
-                json!({"name": "foo", "content": "---\ndescription: hook\ntype: user\n---\nbody"}),
-            )
-            .await
-            .unwrap();
-        let out = MemoryReadTool.call(json!({"name": "foo"})).await.unwrap();
-        assert!(out.contains("description: hook"));
-        assert!(out.contains("type: user"));
-        assert!(out.contains("body"));
+        with_memory_root(async {
+            MemoryWriteTool
+                .call(json!({
+                    "name": "foo",
+                    "content": "---\ndescription: hook\ntype: user\n---\nbody"
+                }))
+                .await
+                .unwrap();
+            let out = MemoryReadTool.call(json!({"name": "foo"})).await.unwrap();
+            assert!(out.contains("description: hook"));
+            assert!(out.contains("type: user"));
+            assert!(out.contains("body"));
+        })
+        .await;
     }
 
     #[test]

@@ -71,15 +71,21 @@ pub fn provider_segment(kind: ProviderKind) -> Option<&'static str> {
         // (removed 2026-06-10 — no per-token upstream price to meter,
         // so the gateway dropped their routes; desktop users reach
         // them directly with their own keys).
+        //
+        // qwen-cloud / thaillm / groq left the same way on 2026-08-10:
+        // the gateway sells the ten Featured providers and nothing else.
+        // thaillm is free upstream but rate-limited far below what a
+        // paid tier can promise, and the regional siblings duplicate
+        // dashscope. All three stay fully usable with the user's own
+        // key — this drops the proxy, not the provider. Groq keeps its
+        // `/groq/audio` media route on the gateway; only the LLM
+        // segment is gone.
         ProviderKind::DashScope => Some("dashscope"),
-        ProviderKind::QwenCloud => Some("qwen-cloud"),
         ProviderKind::ZAi => Some("zai"),
         ProviderKind::DeepSeek => Some("deepseek"),
         ProviderKind::Minimax => Some("minimax"),
-        ProviderKind::ThaiLLM => Some("thaillm"),
         ProviderKind::XAi => Some("xai"),
         ProviderKind::Moonshot => Some("moonshot"),
-        ProviderKind::Groq => Some("groq"),
         _ => None,
     }
 }
@@ -117,14 +123,11 @@ pub fn segment_for_provider_name(name: &str) -> Option<&'static str> {
         "gemini" | "google" => Some("google"),
         "openrouter" => Some("openrouter"),
         "dashscope" => Some("dashscope"),
-        "qwen-cloud" => Some("qwen-cloud"),
         "zai" => Some("zai"),
         "deepseek" => Some("deepseek"),
         "minimax" => Some("minimax"),
-        "thaillm" => Some("thaillm"),
         "xai" => Some("xai"),
         "moonshot" => Some("moonshot"),
-        "groq" => Some("groq"),
         _ => None,
     }
 }
@@ -156,14 +159,11 @@ fn native_key_present_by_segment(segment: &str) -> bool {
         "google" => "GEMINI_API_KEY",
         "openrouter" => "OPENROUTER_API_KEY",
         "dashscope" => "DASHSCOPE_API_KEY",
-        "qwen-cloud" => "QWENCLOUD_API_KEY",
         "zai" => "ZAI_API_KEY",
         "deepseek" => "DEEPSEEK_API_KEY",
         "minimax" => "MINIMAX_API_KEY",
-        "thaillm" => "THAILLM_API_KEY",
         "xai" => "XAI_API_KEY",
         "moonshot" => "MOONSHOT_API_KEY",
-        "groq" => "GROQ_API_KEY",
         _ => return false,
     };
     match std::env::var(var) {
@@ -357,10 +357,51 @@ mod tests {
         // Featured providers added to the gateway in part 3.
         assert_eq!(provider_segment(ProviderKind::XAi), Some("xai"));
         assert_eq!(provider_segment(ProviderKind::Moonshot), Some("moonshot"));
-        assert_eq!(provider_segment(ProviderKind::Groq), Some("groq"));
         assert_eq!(segment_for_provider_name("xai"), Some("xai"));
         assert_eq!(segment_for_provider_name("moonshot"), Some("moonshot"));
-        assert_eq!(segment_for_provider_name("groq"), Some("groq"));
+        // Sold with the user's own key only (2026-08-10). Groq keeps its
+        // `/groq/audio` media route; what goes is the LLM segment.
+        for kind in [
+            ProviderKind::QwenCloud,
+            ProviderKind::ThaiLLM,
+            ProviderKind::Groq,
+        ] {
+            assert_eq!(provider_segment(kind), None, "{kind:?} is BYOK-only");
+        }
+        for name in ["qwen-cloud", "thaillm", "groq"] {
+            assert_eq!(segment_for_provider_name(name), None, "{name} is BYOK-only");
+        }
+    }
+
+    /// What the gateway sells and what it proxies must be the same list.
+    ///
+    /// They drifted once: `GATEWAY_ALL_PROVIDERS` carried thirteen entries
+    /// while `ProviderTier::Featured` named ten, so "is this provider
+    /// Featured?" had two answers depending on which file you opened. The
+    /// billing consequence is real — a provider in the routing set but
+    /// outside the sold tier is proxied, metered, and marked up without
+    /// ever having been offered.
+    #[test]
+    fn gateway_routing_set_matches_the_featured_tier() {
+        use crate::providers::ProviderTier;
+
+        let featured: Vec<&str> = ProviderKind::ALL
+            .iter()
+            .filter(|k| k.tier() == ProviderTier::Featured)
+            .filter_map(|k| provider_segment(*k))
+            .collect();
+        for seg in &featured {
+            assert!(
+                crate::shared::GATEWAY_ALL_PROVIDERS.contains(seg),
+                "Featured provider {seg} has no gateway route"
+            );
+        }
+        for seg in crate::shared::GATEWAY_ALL_PROVIDERS {
+            assert!(
+                featured.contains(seg),
+                "{seg} is gateway-routed but not a Featured provider"
+            );
+        }
     }
 
     #[test]

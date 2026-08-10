@@ -1,7 +1,7 @@
 {
   "schema": 4,
   "source": "baseline 2026-06-10 — pricing synced from LiteLLM (github.com/BerriAI/litellm)",
-  "fetched_at": "2026-08-09T00:00:00Z",
+  "fetched_at": "2026-08-11T00:00:00Z",
   "providers": {
     "anthropic": {
       "list_url": "https://api.anthropic.com/v1/models",
@@ -203,7 +203,7 @@
         },
         "agent/claude-haiku-4-5": {
           "context": 200000,
-          "source": "derived:claude-haiku-4-5 + litellm:claude-haiku-4-5",
+          "source": "derived:claude-haiku-4-5 (context: models.dev:claude-haiku-4-5) + litellm:claude-haiku-4-5",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.0,
           "output_per_mtok": 5.0,
@@ -212,7 +212,7 @@
         },
         "agent/claude-haiku-4-5-20251001": {
           "context": 200000,
-          "source": "derived:claude-haiku-4-5-20251001 + litellm:claude-haiku-4-5-20251001",
+          "source": "derived:claude-haiku-4-5-20251001 (context: models.dev:claude-haiku-4-5-20251001) + litellm:claude-haiku-4-5-20251001",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.0,
           "output_per_mtok": 5.0,
@@ -221,7 +221,7 @@
         },
         "agent/claude-opus-4-1-20250805": {
           "context": 200000,
-          "source": "derived:claude-opus-4-1-20250805 + litellm:claude-opus-4-1-20250805",
+          "source": "derived:claude-opus-4-1-20250805 (context unverified) + litellm:claude-opus-4-1-20250805",
           "verified_at": "2026-06-10",
           "input_per_mtok": 15.0,
           "output_per_mtok": 75.0,
@@ -230,7 +230,7 @@
         },
         "agent/claude-opus-4-20250514": {
           "context": 200000,
-          "source": "derived:claude-opus-4-20250514 + litellm:claude-opus-4-20250514",
+          "source": "derived:claude-opus-4-20250514 (context unverified) + litellm:claude-opus-4-20250514",
           "verified_at": "2026-06-10",
           "input_per_mtok": 15.0,
           "output_per_mtok": 75.0,
@@ -239,7 +239,7 @@
         },
         "agent/claude-opus-4-5-20251101": {
           "context": 200000,
-          "source": "derived:claude-opus-4-5-20251101 + litellm:claude-opus-4-5-20251101",
+          "source": "derived:claude-opus-4-5-20251101 (context: models.dev:claude-opus-4-5-20251101) + litellm:claude-opus-4-5-20251101",
           "verified_at": "2026-06-10",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
@@ -247,8 +247,8 @@
           "cache_creation_per_mtok": 6.25
         },
         "agent/claude-opus-4-6": {
-          "context": 200000,
-          "source": "derived:claude-opus-4-6 + litellm:claude-opus-4-6",
+          "context": 1000000,
+          "source": "derived:claude-opus-4-6 (context: models.dev:claude-opus-4-6) + litellm:claude-opus-4-6",
           "verified_at": "2026-06-10",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
@@ -256,8 +256,8 @@
           "cache_creation_per_mtok": 6.25
         },
         "agent/claude-opus-4-7": {
-          "context": 200000,
-          "source": "derived:claude-opus-4-7 + litellm:claude-opus-4-7",
+          "context": 1000000,
+          "source": "derived:claude-opus-4-7 (context: models.dev:claude-opus-4-7) + litellm:claude-opus-4-7",
           "verified_at": "2026-06-10",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
@@ -274,8 +274,8 @@
           "cache_creation_per_mtok": 6.25
         },
         "agent/claude-opus-4-8": {
-          "context": 200000,
-          "source": "derived:claude-opus-4-8 + litellm:claude-opus-4-8",
+          "context": 1000000,
+          "source": "derived:claude-opus-4-8 (context: models.dev:claude-opus-4-8) + litellm:claude-opus-4-8",
           "verified_at": "2026-06-10",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
@@ -283,8 +283,8 @@
           "cache_creation_per_mtok": 6.25
         },
         "agent/claude-opus-5": {
-          "context": 200000,
-          "source": "derived:claude-opus-5 + litellm:claude-opus-5",
+          "context": 1000000,
+          "source": "derived:claude-opus-5 (context: models.dev:claude-opus-5) + litellm:claude-opus-5",
           "verified_at": "2026-07-26",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
@@ -293,7 +293,7 @@
         },
         "agent/claude-sonnet-4-20250514": {
           "context": 200000,
-          "source": "derived:claude-sonnet-4-20250514 + litellm:claude-sonnet-4-20250514",
+          "source": "derived:claude-sonnet-4-20250514 (context unverified) + litellm:claude-sonnet-4-20250514",
           "verified_at": "2026-06-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0,
@@ -301,8 +301,8 @@
           "cache_creation_per_mtok": 3.75
         },
         "agent/claude-sonnet-4-5": {
-          "context": 200000,
-          "source": "derived:claude-sonnet-4-5 + litellm:claude-sonnet-4-5",
+          "context": 1000000,
+          "source": "derived:claude-sonnet-4-5 (context: models.dev:claude-sonnet-4-5) + litellm:claude-sonnet-4-5",
           "verified_at": "2026-06-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0,
@@ -310,8 +310,8 @@
           "cache_creation_per_mtok": 3.75
         },
         "agent/claude-sonnet-4-5-20250929": {
-          "context": 200000,
-          "source": "derived:claude-sonnet-4-5-20250929 + litellm:claude-sonnet-4-5-20250929",
+          "context": 1000000,
+          "source": "derived:claude-sonnet-4-5-20250929 (context: models.dev:claude-sonnet-4-5-20250929) + litellm:claude-sonnet-4-5-20250929",
           "verified_at": "2026-06-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0,
@@ -319,8 +319,8 @@
           "cache_creation_per_mtok": 3.75
         },
         "agent/claude-sonnet-4-6": {
-          "context": 200000,
-          "source": "derived:claude-sonnet-4-6 + litellm:claude-sonnet-4-6",
+          "context": 1000000,
+          "source": "derived:claude-sonnet-4-6 (context: models.dev:claude-sonnet-4-6) + litellm:claude-sonnet-4-6",
           "verified_at": "2026-06-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0,
@@ -328,8 +328,8 @@
           "cache_creation_per_mtok": 3.75
         },
         "agent/claude-sonnet-5": {
-          "context": 200000,
-          "source": "derived:claude-sonnet-5 + litellm:claude-sonnet-5",
+          "context": 1000000,
+          "source": "derived:claude-sonnet-5 (context: models.dev:claude-sonnet-5) + litellm:claude-sonnet-5",
           "verified_at": "2026-07-05",
           "input_per_mtok": 2.0,
           "output_per_mtok": 10.0,
@@ -426,8 +426,8 @@
           "output_per_mtok": 2.0
         },
         "dashscope/qwen-flash-character": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen-flash-character",
+          "context": 8192,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:dashscope/qwen-flash-character",
           "verified_at": "2026-06-09",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
@@ -480,8 +480,8 @@
           "output_per_mtok": 0.49
         },
         "dashscope/qwen-omni-turbo": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen-omni-turbo",
+          "context": 32768,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-omni-turbo) + manual:qwen-omni-turbo",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.07,
           "output_per_mtok": 0.27
@@ -522,15 +522,15 @@
           "output_per_mtok": 3.6
         },
         "dashscope/qwen-plus-2025-12-01": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen-plus-2025-12-01",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:dashscope/qwen-plus-2025-12-01",
           "verified_at": "2026-06-09",
           "input_per_mtok": 1.2,
           "output_per_mtok": 3.6
         },
         "dashscope/qwen-plus-character": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen-plus-character",
+          "context": 32768,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-plus-character) + manual:dashscope/qwen-plus-character",
           "verified_at": "2026-06-09",
           "input_per_mtok": 1.2,
           "output_per_mtok": 3.6
@@ -551,14 +551,14 @@
         },
         "dashscope/qwen-vl-max": {
           "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen-vl-max",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-vl-max) + manual:qwen-vl-max",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.8,
           "output_per_mtok": 3.2
         },
         "dashscope/qwen-vl-ocr-2025-11-20": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen-vl-ocr",
+          "context": 30720,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen-vl-ocr",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.07,
           "output_per_mtok": 0.16
@@ -585,8 +585,8 @@
           "output_per_mtok": 2.8
         },
         "dashscope/qwen3-235b-a22b-instruct-2507": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-235b-a22b",
+          "context": 129024,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3-235b-a22b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.7,
           "output_per_mtok": 2.8
@@ -658,8 +658,8 @@
           "chat": false
         },
         "dashscope/qwen3-coder-480b-a35b-instruct": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-coder-480b-a35b-instruct",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-coder-480b-a35b-instruct) + manual:dashscope/qwen3-coder-480b-a35b-instruct",
           "verified_at": "2026-06-09",
           "input_per_mtok": 6.0,
           "output_per_mtok": 60.0
@@ -693,8 +693,8 @@
           "output_per_mtok": 60.0
         },
         "dashscope/qwen3-coder-plus-2025-09-23": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-coder-plus-2025-09-23",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:dashscope/qwen3-coder-plus-2025-09-23",
           "verified_at": "2026-06-09",
           "input_per_mtok": 6.0,
           "output_per_mtok": 60.0
@@ -712,15 +712,15 @@
           "chat": false
         },
         "dashscope/qwen3-livetranslate-flash-realtime": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-livetranslate-flash-realtime",
+          "context": 53248,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-livetranslate-flash-realtime) + manual:qwen3-livetranslate-flash-realtime",
           "verified_at": "2026-06-10",
           "input_per_mtok": 10.0,
           "output_per_mtok": 38.0
         },
         "dashscope/qwen3-livetranslate-flash-realtime-2025-09-22": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-livetranslate-flash-realtime",
+          "context": 49152,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3-livetranslate-flash-realtime",
           "verified_at": "2026-06-10",
           "input_per_mtok": 10.0,
           "output_per_mtok": 38.0
@@ -733,8 +733,8 @@
           "output_per_mtok": 15.0
         },
         "dashscope/qwen3-max-2025-09-23": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-max-2025-09-23",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:dashscope/qwen3-max-2025-09-23",
           "verified_at": "2026-06-09",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0
@@ -768,15 +768,15 @@
           "output_per_mtok": 1.2
         },
         "dashscope/qwen3-omni-30b-a3b-captioner": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-omni-30b-a3b-captioner",
+          "context": 30720,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3-omni-30b-a3b-captioner",
           "verified_at": "2026-06-10",
           "input_per_mtok": 3.81,
           "output_per_mtok": 3.06
         },
         "dashscope/qwen3-omni-flash": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-omni-flash",
+          "context": 65536,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-omni-flash) + manual:qwen3-omni-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.43,
           "output_per_mtok": 1.66
@@ -789,29 +789,29 @@
           "output_per_mtok": 1.66
         },
         "dashscope/qwen3-omni-flash-2025-12-01": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-omni-flash",
+          "context": 16384,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3-omni-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.43,
           "output_per_mtok": 1.66
         },
         "dashscope/qwen3-omni-flash-realtime": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-omni-flash-realtime",
+          "context": 65536,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-omni-flash-realtime) + manual:qwen3-omni-flash-realtime",
           "verified_at": "2026-06-11",
           "input_per_mtok": 0.52,
           "output_per_mtok": 1.99
         },
         "dashscope/qwen3-omni-flash-realtime-2025-09-15": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-omni-flash-realtime-2025-09-15",
+          "context": 57344,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3-omni-flash-realtime-2025-09-15",
           "verified_at": "2026-06-11",
           "input_per_mtok": 0.52,
           "output_per_mtok": 1.99
         },
         "dashscope/qwen3-omni-flash-realtime-2025-12-01": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-omni-flash-realtime-2025-12-01",
+          "context": 57344,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3-omni-flash-realtime-2025-12-01",
           "verified_at": "2026-06-11",
           "input_per_mtok": 0.52,
           "output_per_mtok": 1.99
@@ -837,22 +837,22 @@
           "output_per_mtok": 4.0
         },
         "dashscope/qwen3-vl-flash": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-vl-flash",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:dashscope/qwen3-vl-flash",
           "verified_at": "2026-06-09",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
         },
         "dashscope/qwen3-vl-flash-2025-10-15": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-vl-flash-2025-10-15",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:dashscope/qwen3-vl-flash-2025-10-15",
           "verified_at": "2026-06-09",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
         },
         "dashscope/qwen3-vl-flash-2026-01-22": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-vl-flash-2026-01-22",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:dashscope/qwen3-vl-flash-2026-01-22",
           "verified_at": "2026-06-09",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
@@ -865,15 +865,15 @@
           "output_per_mtok": 1.6
         },
         "dashscope/qwen3-vl-plus-2025-09-23": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-vl-plus",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:qwen3-vl-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 1.6
         },
         "dashscope/qwen3-vl-plus-2025-12-19": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-vl-plus",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:qwen3-vl-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 1.6
@@ -907,15 +907,15 @@
           "output_per_mtok": 3.6
         },
         "dashscope/qwen3.5-flash": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3.5-flash",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.5-flash) + manual:dashscope/qwen3.5-flash",
           "verified_at": "2026-06-09",
           "input_per_mtok": 0.1,
           "output_per_mtok": 0.4
         },
         "dashscope/qwen3.5-flash-2026-02-23": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3.5-flash-2026-02-23",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:dashscope/qwen3.5-flash-2026-02-23",
           "verified_at": "2026-06-09",
           "input_per_mtok": 0.1,
           "output_per_mtok": 0.4
@@ -935,57 +935,57 @@
           "output_per_mtok": 30.0
         },
         "dashscope/qwen3.5-omni-flash": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-omni-flash",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3.5-omni-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 2.2
         },
         "dashscope/qwen3.5-omni-flash-2026-03-15": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-omni-flash",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3.5-omni-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 2.2
         },
         "dashscope/qwen3.5-omni-flash-realtime": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-omni-flash-realtime",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3.5-omni-flash-realtime",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.55,
           "output_per_mtok": 3.3
         },
         "dashscope/qwen3.5-omni-flash-realtime-2026-03-15": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-omni-flash-realtime",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3.5-omni-flash-realtime",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.55,
           "output_per_mtok": 3.3
         },
         "dashscope/qwen3.5-omni-plus": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-omni-plus",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3.5-omni-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.4,
           "output_per_mtok": 8.3
         },
         "dashscope/qwen3.5-omni-plus-2026-03-15": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-omni-plus",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3.5-omni-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.4,
           "output_per_mtok": 8.3
         },
         "dashscope/qwen3.5-omni-plus-realtime": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-omni-plus-realtime",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3.5-omni-plus-realtime",
           "verified_at": "2026-06-10",
           "input_per_mtok": 2.1,
           "output_per_mtok": 12.4
         },
         "dashscope/qwen3.5-omni-plus-realtime-2026-03-15": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-omni-plus-realtime",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + manual:qwen3.5-omni-plus-realtime",
           "verified_at": "2026-06-10",
           "input_per_mtok": 2.1,
           "output_per_mtok": 12.4
@@ -998,15 +998,15 @@
           "output_per_mtok": 3.0
         },
         "dashscope/qwen3.5-plus-2026-02-15": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3.5-plus-2026-02-15",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:dashscope/qwen3.5-plus-2026-02-15",
           "verified_at": "2026-06-09",
           "input_per_mtok": 0.5,
           "output_per_mtok": 3.0
         },
         "dashscope/qwen3.5-plus-2026-04-20": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3.5-plus-2026-04-20",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:dashscope/qwen3.5-plus-2026-04-20",
           "verified_at": "2026-06-09",
           "input_per_mtok": 0.5,
           "output_per_mtok": 3.0
@@ -1033,8 +1033,8 @@
           "output_per_mtok": 4.0
         },
         "dashscope/qwen3.6-flash-2026-04-16": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.6-flash",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:qwen3.6-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.0,
           "output_per_mtok": 4.0
@@ -1054,8 +1054,8 @@
           "output_per_mtok": 6.0
         },
         "dashscope/qwen3.6-plus-2026-04-02": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.6-plus",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + manual:qwen3.6-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 6.0
@@ -1241,6 +1241,20 @@
           "input_per_mtok": 0.3,
           "output_per_mtok": 2.5
         },
+        "gemini-2.5-flash-native-audio-preview-09-2025": {
+          "context": 1048576,
+          "source": "https://generativelanguage.googleapis.com/v1beta/models + litellm:gemini-2.5-flash-native-audio-preview-09-2025",
+          "verified_at": "2026-08-11",
+          "input_per_mtok": 0.3,
+          "output_per_mtok": 2.5
+        },
+        "gemini-2.5-flash-native-audio-preview-12-2025": {
+          "context": 1048576,
+          "source": "https://generativelanguage.googleapis.com/v1beta/models + litellm:gemini-2.5-flash-native-audio-preview-12-2025",
+          "verified_at": "2026-08-11",
+          "input_per_mtok": 0.3,
+          "output_per_mtok": 2.5
+        },
         "gemini-2.5-pro": {
           "context": 2000000,
           "source": "https://ai.google.dev/gemini-api/docs/models + litellm:gemini-2.5-pro",
@@ -1385,13 +1399,6 @@
       "list_url": "https://api.minimax.io/v1/models",
       "default_context": 200000,
       "models": {
-        "minimax/speech-02-hd": {
-          "chat": false,
-          "kind": "tts",
-          "tts_price_per_kchar_usd": 0.15,
-          "source": "MiniMax T2A speech-02-hd; manual estimate — verify + manual:speech-02-hd",
-          "verified_at": "2026-07-05"
-        },
         "minimax/MiniMax-M2": {
           "context": 204800,
           "max_output": 131072,
@@ -1414,7 +1421,7 @@
         "minimax/MiniMax-M2.1-highspeed": {
           "context": 200000,
           "source": "https://api.minimax.io/v1/models (context unverified) + manual:MiniMax-M2.1-highspeed",
-          "verified_at": "2026-06-10",
+          "verified_at": "2026-08-11",
           "input_per_mtok": 0.6,
           "output_per_mtok": 2.4
         },
@@ -1429,8 +1436,8 @@
           "cache_creation_per_mtok": 0.375
         },
         "minimax/MiniMax-M2.5-highspeed": {
-          "context": 200000,
-          "source": "https://api.minimax.io/v1/models (context unverified) + manual:MiniMax-M2.5-highspeed",
+          "context": 204800,
+          "source": "https://api.minimax.io/v1/models (context: models.dev:MiniMax-M2.5-highspeed) + manual:MiniMax-M2.5-highspeed",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.6,
           "output_per_mtok": 2.4
@@ -1444,8 +1451,8 @@
           "output_per_mtok": 1.2
         },
         "minimax/MiniMax-M2.7-highspeed": {
-          "context": 200000,
-          "source": "https://api.minimax.io/v1/models (context unverified) + manual:MiniMax-M2.7-highspeed",
+          "context": 204800,
+          "source": "https://api.minimax.io/v1/models (context: models.dev:MiniMax-M2.7-highspeed) + manual:MiniMax-M2.7-highspeed",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.6,
           "output_per_mtok": 2.4
@@ -1457,6 +1464,13 @@
           "input_per_mtok": 0.3,
           "output_per_mtok": 1.2,
           "cached_input_per_mtok": 0.12
+        },
+        "minimax/speech-02-hd": {
+          "chat": false,
+          "kind": "tts",
+          "tts_price_per_kchar_usd": 0.15,
+          "source": "MiniMax T2A speech-02-hd; manual estimate — verify + manual:speech-02-hd",
+          "verified_at": "2026-07-05"
         }
       }
     },
@@ -1485,8 +1499,8 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/baai/bge-m3": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 8192,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:baai/bge-m3)",
           "verified_at": "2026-05-04"
         },
         "nvidia/bigcode/starcoder2-15b": {
@@ -1506,7 +1520,7 @@
         },
         "nvidia/deepseek-ai/deepseek-v4-flash-0731": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-08-09"
         },
         "nvidia/google/codegemma-1.1-7b": {
@@ -1526,7 +1540,7 @@
         },
         "nvidia/google/diffusiongemma-26b-a4b-it": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-06-11"
         },
         "nvidia/google/gemma-2b": {
@@ -1536,17 +1550,17 @@
         },
         "nvidia/google/gemma-3-12b-it": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:google/gemma-3-12b-it)",
           "verified_at": "2026-05-04"
         },
         "nvidia/google/gemma-3-4b-it": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:google/gemma-3-4b-it)",
           "verified_at": "2026-05-04"
         },
         "nvidia/google/gemma-4-31b-it": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 256000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:google/gemma-4-31b-it)",
           "verified_at": "2026-05-04"
         },
         "nvidia/google/recurrentgemma-2b": {
@@ -1580,49 +1594,54 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/meta/llama-3.1-70b-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:meta/llama-3.1-70b-instruct)",
           "verified_at": "2026-05-04"
         },
         "nvidia/meta/llama-3.1-8b-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 16000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:meta/llama-3.1-8b-instruct)",
           "verified_at": "2026-05-04"
         },
         "nvidia/meta/llama-3.2-11b-vision-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:meta/llama-3.2-11b-vision-instruct)",
           "verified_at": "2026-05-04"
         },
         "nvidia/meta/llama-3.2-1b-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:meta/llama-3.2-1b-instruct)",
           "verified_at": "2026-05-04"
         },
         "nvidia/meta/llama-3.2-3b-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 32768,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:meta/llama-3.2-3b-instruct)",
           "verified_at": "2026-05-04"
         },
         "nvidia/meta/llama-3.2-90b-vision-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:meta/llama-3.2-90b-vision-instruct)",
           "verified_at": "2026-05-04"
         },
         "nvidia/meta/llama-3.3-70b-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:meta/llama-3.3-70b-instruct)",
           "verified_at": "2026-05-04"
         },
         "nvidia/meta/llama-guard-4-12b": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:meta/llama-guard-4-12b)",
           "verified_at": "2026-05-04"
         },
         "nvidia/meta/llama2-70b": {
           "context": 131072,
           "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-05-04"
+        },
+        "nvidia/meta/muse-glimmer-30b": {
+          "context": 131072,
+          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
         },
         "nvidia/microsoft/kosmos-2": {
           "context": 131072,
@@ -1640,8 +1659,8 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/minimaxai/minimax-m3": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "context": 1000000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:minimaxai/minimax-m3)",
           "verified_at": "2026-06-12"
         },
         "nvidia/mistralai/codestral-22b-instruct-v0.1": {
@@ -1650,8 +1669,8 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/mistralai/mistral-7b-instruct-v0.3": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 65536,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:mistralai/mistral-7b-instruct-v0.3)",
           "verified_at": "2026-05-04"
         },
         "nvidia/mistralai/mistral-large": {
@@ -1665,8 +1684,8 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/mistralai/mistral-nemotron": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:mistralai/mistral-nemotron)",
           "verified_at": "2026-05-04"
         },
         "nvidia/mistralai/mixtral-8x22b-v0.1": {
@@ -1675,8 +1694,8 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/moonshotai/kimi-k2.6": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 262144,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:moonshotai/kimi-k2.6)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nv-mistralai/mistral-nemo-12b-instruct": {
@@ -1691,7 +1710,7 @@
         },
         "nvidia/nvidia/cosmos-reason2-8b": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/cosmos-reason2-8b)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/embed-qa-4": {
@@ -1701,7 +1720,7 @@
         },
         "nvidia/nvidia/ising-calibration-1.5-31b": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-07-26"
         },
         "nvidia/nvidia/llama-3.1-nemoguard-8b-content-safety": {
@@ -1720,28 +1739,28 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/llama-3.1-nemotron-70b-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/llama-3.1-nemotron-70b-instruct)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/llama-3.1-nemotron-nano-8b-v1": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/llama-3.1-nemotron-nano-8b-v1)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/llama-3.1-nemotron-nano-vl-8b-v1": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 32768,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/llama-3.1-nemotron-nano-vl-8b-v1)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/llama-3.1-nemotron-safety-guard-8b-v3": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/llama-3.1-nemotron-safety-guard-8b-v3)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/llama-3.1-nemotron-ultra-253b-v1": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/llama-3.1-nemotron-ultra-253b-v1)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1": {
@@ -1756,12 +1775,12 @@
         },
         "nvidia/nvidia/llama-3.3-nemotron-super-49b-v1": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/llama-3.3-nemotron-super-49b-v1)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/llama-3.3-nemotron-super-49b-v1.5": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/llama-3.3-nemotron-super-49b-v1.5)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/llama-nemotron-embed-1b-v2": {
@@ -1770,8 +1789,8 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/llama-nemotron-embed-vl-1b-v2": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 32768,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/llama-nemotron-embed-vl-1b-v2)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/llama3-chatqa-1.5-70b": {
@@ -1791,27 +1810,27 @@
         },
         "nvidia/nvidia/nemotron-3-nano-30b-a3b": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/nemotron-3-nano-30b-a3b)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 256000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/nemotron-3-super-120b-a12b": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 262144,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/nemotron-3-super-120b-a12b)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/nemotron-3-ultra-550b-a55b": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "context": 1000000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/nemotron-3-ultra-550b-a55b)",
           "verified_at": "2026-06-06"
         },
         "nvidia/nvidia/nemotron-3.5-content-safety": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-06-04"
         },
         "nvidia/nvidia/nemotron-4-340b-instruct": {
@@ -1825,13 +1844,13 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/nemotron-mini-4b-instruct": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/nemotron-mini-4b-instruct)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/nemotron-nano-12b-v2-vl": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/nemotron-nano-12b-v2-vl)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/nemotron-nano-3-30b-a3b": {
@@ -1850,13 +1869,13 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/nv-embed-v1": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 32768,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/nv-embed-v1)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/nv-embedcode-7b-v1": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 32768,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/nv-embedcode-7b-v1)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/nv-embedqa-e5-v5": {
@@ -1876,7 +1895,7 @@
         },
         "nvidia/nvidia/nvidia-nemotron-nano-9b-v2": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/nvidia-nemotron-nano-9b-v2)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/riva-translate-4b-instruct": {
@@ -1885,13 +1904,13 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/riva-translate-4b-instruct-v1.1": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:nvidia/riva-translate-4b-instruct-v1.1)",
           "verified_at": "2026-05-04"
         },
         "nvidia/nvidia/riva-translate-4b-instruct-v2": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
           "verified_at": "2026-07-28"
         },
         "nvidia/nvidia/vila": {
@@ -1900,18 +1919,18 @@
           "verified_at": "2026-05-10"
         },
         "nvidia/openai/gpt-oss-120b": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "context": 128000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:openai/gpt-oss-120b)",
           "verified_at": "2026-05-04"
         },
         "nvidia/openai/gpt-oss-20b": {
           "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models (context unverified)",
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:openai/gpt-oss-20b)",
           "verified_at": "2026-05-04"
         },
         "nvidia/poolside/laguna-xs-2.1": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "context": 262144,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:poolside/laguna-xs-2.1)",
           "verified_at": "2026-07-17"
         },
         "nvidia/snowflake/arctic-embed-l": {
@@ -1920,13 +1939,13 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/stepfun-ai/step-3.7-flash": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "context": 256000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:stepfun-ai/step-3.7-flash)",
           "verified_at": "2026-06-02"
         },
         "nvidia/thinkingmachines/inkling": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "context": 1048576,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:thinkingmachines/inkling)",
           "verified_at": "2026-07-17"
         },
         "nvidia/writer/palmyra-creative-122b": {
@@ -1950,8 +1969,8 @@
           "verified_at": "2026-05-04"
         },
         "nvidia/z-ai/glm-5.2": {
-          "context": 131072,
-          "source": "https://integrate.api.nvidia.com/v1/models",
+          "context": 1000000,
+          "source": "https://integrate.api.nvidia.com/v1/models (context: models.dev:z-ai/glm-5.2)",
           "verified_at": "2026-07-05"
         },
         "nvidia/zyphra/zamba2-7b-instruct": {
@@ -1975,95 +1994,95 @@
       "default_context": 262144,
       "models": {
         "ollama-cloud/deepseek-v4-flash:0731": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models",
+          "context": 1048576,
+          "source": "https://ollama.com/v1/models (context: models.dev:deepseek-v4-flash:0731)",
           "verified_at": "2026-08-03"
         },
         "ollama-cloud/deepseek-v4-flash:preview": {
           "context": 262144,
-          "source": "https://ollama.com/v1/models",
+          "source": "https://ollama.com/v1/models (context unverified)",
           "verified_at": "2026-08-09"
         },
         "ollama-cloud/deepseek-v4-pro": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified) + litellm:deepseek-v4-pro",
+          "context": 1048576,
+          "source": "https://ollama.com/v1/models (context: models.dev:deepseek-v4-pro) + litellm:deepseek-v4-pro",
           "verified_at": "2026-06-22",
           "input_per_mtok": 0.435,
           "output_per_mtok": 0.87
         },
         "ollama-cloud/gemma4:31b": {
           "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified)",
+          "source": "https://ollama.com/v1/models (context: models.dev:gemma4:31b)",
           "verified_at": "2026-04-26"
         },
         "ollama-cloud/glm-5.1": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified)",
+          "context": 202752,
+          "source": "https://ollama.com/v1/models (context: models.dev:glm-5.1)",
           "verified_at": "2026-04-26"
         },
         "ollama-cloud/glm-5.2": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models",
+          "context": 976000,
+          "source": "https://ollama.com/v1/models (context: models.dev:glm-5.2)",
           "verified_at": "2026-06-17"
         },
         "ollama-cloud/gpt-oss:120b": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified)",
+          "context": 131072,
+          "source": "https://ollama.com/v1/models (context: models.dev:gpt-oss:120b)",
           "verified_at": "2026-04-26"
         },
         "ollama-cloud/gpt-oss:20b": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified)",
+          "context": 131072,
+          "source": "https://ollama.com/v1/models (context: models.dev:gpt-oss:20b)",
           "verified_at": "2026-04-26"
         },
         "ollama-cloud/kimi-k2.6": {
           "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified)",
+          "source": "https://ollama.com/v1/models (context: models.dev:kimi-k2.6)",
           "verified_at": "2026-04-26"
         },
         "ollama-cloud/kimi-k2.7-code": {
           "context": 262144,
-          "source": "https://ollama.com/v1/models",
+          "source": "https://ollama.com/v1/models (context: models.dev:kimi-k2.7-code)",
           "verified_at": "2026-06-13"
         },
         "ollama-cloud/kimi-k3": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models",
+          "context": 1048576,
+          "source": "https://ollama.com/v1/models (context: models.dev:kimi-k3)",
           "verified_at": "2026-07-28"
         },
         "ollama-cloud/minimax-m2.7": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified)",
+          "context": 196608,
+          "source": "https://ollama.com/v1/models (context: models.dev:minimax-m2.7)",
           "verified_at": "2026-04-26"
         },
         "ollama-cloud/minimax-m3": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models",
+          "context": 512000,
+          "source": "https://ollama.com/v1/models (context: models.dev:minimax-m3)",
           "verified_at": "2026-06-02"
         },
         "ollama-cloud/mistral-large-3:675b": {
           "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified)",
+          "source": "https://ollama.com/v1/models (context: models.dev:mistral-large-3:675b)",
           "verified_at": "2026-04-26"
         },
         "ollama-cloud/nemotron-3-nano:30b": {
-          "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified)",
+          "context": 1048576,
+          "source": "https://ollama.com/v1/models (context: models.dev:nemotron-3-nano:30b)",
           "verified_at": "2026-04-26"
         },
         "ollama-cloud/nemotron-3-super": {
           "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified)",
+          "source": "https://ollama.com/v1/models (context: models.dev:nemotron-3-super)",
           "verified_at": "2026-04-26"
         },
         "ollama-cloud/nemotron-3-ultra": {
           "context": 262144,
-          "source": "https://ollama.com/v1/models",
+          "source": "https://ollama.com/v1/models (context: models.dev:nemotron-3-ultra)",
           "verified_at": "2026-06-06"
         },
         "ollama-cloud/qwen3.5:397b": {
           "context": 262144,
-          "source": "https://ollama.com/v1/models (context unverified)",
+          "source": "https://ollama.com/v1/models (context: models.dev:qwen3.5:397b)",
           "verified_at": "2026-04-26"
         }
       }
@@ -2752,7 +2771,7 @@
       "models": {
         "codex/gpt-5-codex": {
           "context": 400000,
-          "source": "https://platform.openai.com/docs/models + litellm:gpt-5-codex",
+          "source": "https://platform.openai.com/docs/models (context unverified) + litellm:gpt-5-codex",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.25,
           "output_per_mtok": 10.0,
@@ -2760,7 +2779,7 @@
         },
         "codex/gpt-5.1-codex": {
           "context": 400000,
-          "source": "https://platform.openai.com/docs/models + litellm:gpt-5.1-codex",
+          "source": "https://platform.openai.com/docs/models (context unverified) + litellm:gpt-5.1-codex",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.25,
           "output_per_mtok": 10.0,
@@ -2768,7 +2787,7 @@
         },
         "codex/gpt-5.2-codex": {
           "context": 400000,
-          "source": "https://platform.openai.com/docs/models + litellm:gpt-5.2-codex",
+          "source": "https://platform.openai.com/docs/models (context unverified) + litellm:gpt-5.2-codex",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.75,
           "output_per_mtok": 14.0,
@@ -2795,8 +2814,8 @@
           "output_per_mtok": 0.87
         },
         "opencode-go/glm-5": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models (context unverified)",
+          "context": 202752,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:glm-5)",
           "verified_at": "2026-05-14"
         },
         "opencode-go/glm-5.1": {
@@ -2805,8 +2824,8 @@
           "verified_at": "2026-05-14"
         },
         "opencode-go/glm-5.2": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models",
+          "context": 1000000,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:glm-5.2)",
           "verified_at": "2026-06-20"
         },
         "opencode-go/gpt-5.6-luna": {
@@ -2817,13 +2836,13 @@
           "output_per_mtok": 1.2
         },
         "opencode-go/grok-4.5": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models",
+          "context": 500000,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:grok-4.5)",
           "verified_at": "2026-07-17"
         },
         "opencode-go/hy3": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models",
+          "context": 256000,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:hy3)",
           "verified_at": "2026-07-23"
         },
         "opencode-go/hy3-preview": {
@@ -2842,33 +2861,33 @@
           "verified_at": "2026-08-09"
         },
         "opencode-go/kimi-k2.7-code": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models",
+          "context": 262144,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:kimi-k2.7-code)",
           "verified_at": "2026-06-13"
         },
         "opencode-go/kimi-k3": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models",
+          "context": 1048576,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:kimi-k3)",
           "verified_at": "2026-07-17"
         },
         "opencode-go/mimo-v2-omni": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models (context unverified)",
+          "context": 262144,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:mimo-v2-omni)",
           "verified_at": "2026-05-14"
         },
         "opencode-go/mimo-v2-pro": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models (context unverified)",
+          "context": 1048576,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:mimo-v2-pro)",
           "verified_at": "2026-05-14"
         },
         "opencode-go/mimo-v2.5": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models (context unverified)",
+          "context": 1000000,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:mimo-v2.5)",
           "verified_at": "2026-05-14"
         },
         "opencode-go/mimo-v2.5-pro": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models (context unverified)",
+          "context": 1048576,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:mimo-v2.5-pro)",
           "verified_at": "2026-05-14"
         },
         "opencode-go/minimax-m2.5": {
@@ -2882,8 +2901,8 @@
           "verified_at": "2026-05-14"
         },
         "opencode-go/minimax-m3": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models",
+          "context": 1000000,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:minimax-m3)",
           "verified_at": "2026-06-02"
         },
         "opencode-go/qwen3.5-plus": {
@@ -2897,18 +2916,18 @@
           "verified_at": "2026-05-14"
         },
         "opencode-go/qwen3.7-max": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models",
+          "context": 1000000,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:qwen3.7-max)",
           "verified_at": "2026-06-02"
         },
         "opencode-go/qwen3.7-plus": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models",
+          "context": 1000000,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:qwen3.7-plus)",
           "verified_at": "2026-06-04"
         },
         "opencode-go/qwen3.8-max": {
-          "context": 131072,
-          "source": "https://opencode.ai/zen/go/v1/models",
+          "context": 1000000,
+          "source": "https://opencode.ai/zen/go/v1/models (context: models.dev:qwen3.8-max)",
           "verified_at": "2026-08-03"
         }
       }
@@ -2980,7 +2999,7 @@
         "amazon/nova-micro-v1": {
           "context": 128000,
           "max_output": 5120,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -3250,7 +3269,7 @@
         "bytedance/ui-tars-1.5-7b": {
           "context": 128000,
           "max_output": 2048,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -3270,7 +3289,7 @@
         "cohere/command-r-08-2024": {
           "context": 128000,
           "max_output": 4000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -3280,7 +3299,7 @@
         "cohere/command-r-plus-08-2024": {
           "context": 128000,
           "max_output": 4000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -3290,7 +3309,7 @@
         "cohere/command-r7b-12-2024": {
           "context": 128000,
           "max_output": 4000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -3299,7 +3318,7 @@
         },
         "deepcogito/cogito-v2.1-671b": {
           "context": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -3698,7 +3717,7 @@
         "inception/mercury-2": {
           "context": 128000,
           "max_output": 50000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -3971,7 +3990,7 @@
         },
         "mistralai/mistral-large": {
           "context": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4062,7 +4081,7 @@
         },
         "mistralai/mistral-small-3.1-24b-instruct": {
           "context": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4070,8 +4089,8 @@
           "output_per_mtok": 0.555
         },
         "mistralai/mistral-small-3.2-24b-instruct": {
-          "context": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "context": 256000,
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4274,7 +4293,7 @@
         "nvidia/nemotron-3.5-content-safety:free": {
           "context": 128000,
           "max_output": 8192,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": true,
           "chat": true,
@@ -4284,7 +4303,7 @@
         "nvidia/nemotron-nano-12b-v2-vl:free": {
           "context": 128000,
           "max_output": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": true,
           "chat": true,
@@ -4293,7 +4312,7 @@
         },
         "nvidia/nemotron-nano-9b-v2:free": {
           "context": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": true,
           "chat": true,
@@ -4353,7 +4372,7 @@
         "openai/gpt-4-turbo": {
           "context": 128000,
           "max_output": 4096,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4363,7 +4382,7 @@
         "openai/gpt-4-turbo-preview": {
           "context": 128000,
           "max_output": 4096,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4405,7 +4424,7 @@
         "openai/gpt-4o": {
           "context": 128000,
           "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4415,7 +4434,7 @@
         "openai/gpt-4o-2024-05-13": {
           "context": 128000,
           "max_output": 4096,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4425,7 +4444,7 @@
         "openai/gpt-4o-2024-08-06": {
           "context": 128000,
           "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4436,7 +4455,7 @@
         "openai/gpt-4o-2024-11-20": {
           "context": 128000,
           "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4447,7 +4466,7 @@
         "openai/gpt-4o-mini": {
           "context": 128000,
           "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4458,7 +4477,7 @@
         "openai/gpt-4o-mini-2024-07-18": {
           "context": 128000,
           "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4586,7 +4605,7 @@
         "openai/gpt-5.2-chat": {
           "context": 128000,
           "max_output": 32000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4614,16 +4633,6 @@
           "chat": true,
           "input_per_mtok": 21.0,
           "output_per_mtok": 168.0
-        },
-        "openai/gpt-5.3-chat": {
-          "context": 128000,
-          "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
-          "verified_at": "2026-06-10",
-          "free": false,
-          "chat": true,
-          "input_per_mtok": 1.75,
-          "output_per_mtok": 14.0
         },
         "openai/gpt-5.3-codex": {
           "context": 400000,
@@ -4874,7 +4883,7 @@
         },
         "openrouter/bodybuilder": {
           "context": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4891,8 +4900,8 @@
           "output_per_mtok": 0.0
         },
         "openrouter/fusion": {
-          "context": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "context": 1000000,
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4938,7 +4947,7 @@
         },
         "perplexity/sonar-deep-research": {
           "context": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -4967,7 +4976,7 @@
         },
         "perplexity/sonar-reasoning-pro": {
           "context": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -5596,8 +5605,8 @@
           "output_per_mtok": 0.65
         },
         "upstage/solar-pro-3": {
-          "context": 128000,
-          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "context": 131072,
+          "source": "https://openrouter.ai/api/v1/models (context: openrouter /v1/models) + api:openrouter",
           "verified_at": "2026-06-10",
           "free": false,
           "chat": true,
@@ -5874,8 +5883,8 @@
       "default_context": 32768,
       "models": {
         "qc/deepseek-v3.2": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:deepseek-v3.2)",
           "verified_at": "2026-07-15"
         },
         "qc/deepseek-v4-flash": {
@@ -5886,8 +5895,8 @@
           "output_per_mtok": 0.28
         },
         "qc/deepseek-v4-flash-0731": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:deepseek-v4-flash-0731)",
           "verified_at": "2026-08-03"
         },
         "qc/deepseek-v4-pro": {
@@ -5898,28 +5907,28 @@
           "output_per_mtok": 0.87
         },
         "qc/glm-5.1": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 202752,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:glm-5.1)",
           "verified_at": "2026-07-15"
         },
         "qc/glm-5.2": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:glm-5.2)",
           "verified_at": "2026-07-15"
         },
         "qc/glm-5.2-fast-preview": {
           "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified)",
           "verified_at": "2026-07-15"
         },
         "qc/kimi-k2.7-code": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:kimi-k2.7-code)",
           "verified_at": "2026-07-15"
         },
         "qc/qvq-max": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qvq-max)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen-coder-plus": {
@@ -5930,56 +5939,56 @@
           "output_per_mtok": 60.0
         },
         "qc/qwen-flash": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-flash",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-flash) + derived:dashscope/qwen-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
         },
         "qc/qwen-flash-character": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-flash-character",
+          "context": 8192,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen-flash-character",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
         },
         "qc/qwen-max": {
           "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-max",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-max) + derived:dashscope/qwen-max",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.6,
           "output_per_mtok": 6.4
         },
         "qc/qwen-mt-flash": {
           "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen-mt-lite": {
           "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen-mt-plus": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 16384,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-mt-plus)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen-mt-turbo": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 16384,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-mt-turbo)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen-omni-turbo": {
           "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-omni-turbo",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-omni-turbo) + derived:dashscope/qwen-omni-turbo",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.07,
           "output_per_mtok": 0.27
         },
         "qc/qwen-plus": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-plus",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-plus) + derived:dashscope/qwen-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 1.2
@@ -6006,57 +6015,57 @@
           "output_per_mtok": 1.2
         },
         "qc/qwen-plus-2025-09-11": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-plus-2025-09-11",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen-plus-2025-09-11",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.2,
           "output_per_mtok": 3.6
         },
         "qc/qwen-plus-2025-12-01": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-plus-2025-12-01",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen-plus-2025-12-01",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.2,
           "output_per_mtok": 3.6
         },
         "qc/qwen-plus-character": {
           "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-plus-character",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-plus-character) + derived:dashscope/qwen-plus-character",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.2,
           "output_per_mtok": 3.6
         },
         "qc/qwen-plus-latest": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-plus-latest",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen-plus-latest",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.2,
           "output_per_mtok": 3.6
         },
         "qc/qwen-turbo": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-turbo",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-turbo) + derived:dashscope/qwen-turbo",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.05,
           "output_per_mtok": 0.2
         },
         "qc/qwen-vl-max": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-vl-max",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-vl-max) + derived:dashscope/qwen-vl-max",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.8,
           "output_per_mtok": 3.2
         },
         "qc/qwen-vl-ocr-2025-11-20": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-vl-ocr-2025-11-20",
+          "context": 30720,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen-vl-ocr-2025-11-20",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.07,
           "output_per_mtok": 0.16
         },
         "qc/qwen-vl-plus": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen-vl-plus",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen-vl-plus) + derived:dashscope/qwen-vl-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.21,
           "output_per_mtok": 0.63
@@ -6067,22 +6076,22 @@
           "verified_at": "2026-05-13"
         },
         "qc/qwen3-14b": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-14b",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-14b) + derived:dashscope/qwen3-14b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.35,
           "output_per_mtok": 1.4
         },
         "qc/qwen3-235b-a22b": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-235b-a22b",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-235b-a22b) + derived:dashscope/qwen3-235b-a22b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.7,
           "output_per_mtok": 2.8
         },
         "qc/qwen3-235b-a22b-instruct-2507": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-235b-a22b-instruct-2507",
+          "context": 129024,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3-235b-a22b-instruct-2507",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.7,
           "output_per_mtok": 2.8
@@ -6116,57 +6125,57 @@
           "output_per_mtok": 0.8
         },
         "qc/qwen3-32b": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-32b",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-32b) + derived:dashscope/qwen3-32b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.16,
           "output_per_mtok": 0.64
         },
         "qc/qwen3-8b": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-8b",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-8b) + derived:dashscope/qwen3-8b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.18,
           "output_per_mtok": 0.7
         },
         "qc/qwen3-coder-480b-a35b-instruct": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-coder-480b-a35b-instruct",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-coder-480b-a35b-instruct) + derived:dashscope/qwen3-coder-480b-a35b-instruct",
           "verified_at": "2026-06-10",
           "input_per_mtok": 6.0,
           "output_per_mtok": 60.0
         },
         "qc/qwen3-coder-flash": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-coder-flash",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-coder-flash) + derived:dashscope/qwen3-coder-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.6,
           "output_per_mtok": 9.6
         },
         "qc/qwen3-coder-next": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-coder-next",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-coder-next",
           "verified_at": "2026-06-10",
           "input_per_mtok": 6.0,
           "output_per_mtok": 60.0
         },
         "qc/qwen3-coder-plus": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-coder-plus",
+          "context": 1048576,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-coder-plus) + derived:dashscope/qwen3-coder-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 6.0,
           "output_per_mtok": 60.0
         },
         "qc/qwen3-coder-plus-2025-07-22": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-coder-plus-2025-07-22",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-coder-plus-2025-07-22",
           "verified_at": "2026-06-10",
           "input_per_mtok": 6.0,
           "output_per_mtok": 60.0
         },
         "qc/qwen3-coder-plus-2025-09-23": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-coder-plus-2025-09-23",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-coder-plus-2025-09-23",
           "verified_at": "2026-06-10",
           "input_per_mtok": 6.0,
           "output_per_mtok": 60.0
@@ -6182,71 +6191,71 @@
           "verified_at": "2026-05-13"
         },
         "qc/qwen3-livetranslate-flash-realtime": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-livetranslate-flash-realtime",
+          "context": 53248,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-livetranslate-flash-realtime) + derived:dashscope/qwen3-livetranslate-flash-realtime",
           "verified_at": "2026-06-10",
           "input_per_mtok": 10.0,
           "output_per_mtok": 38.0
         },
         "qc/qwen3-livetranslate-flash-realtime-2025-09-22": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-livetranslate-flash-realtime-2025-09-22",
+          "context": 49152,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3-livetranslate-flash-realtime-2025-09-22",
           "verified_at": "2026-06-10",
           "input_per_mtok": 10.0,
           "output_per_mtok": 38.0
         },
         "qc/qwen3-max": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-max",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-max) + derived:dashscope/qwen3-max",
           "verified_at": "2026-06-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0
         },
         "qc/qwen3-max-2025-09-23": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-max-2025-09-23",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-max-2025-09-23",
           "verified_at": "2026-06-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0
         },
         "qc/qwen3-max-2026-01-23": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-max-2026-01-23",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-max-2026-01-23",
           "verified_at": "2026-06-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0
         },
         "qc/qwen3-max-preview": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-max-preview",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-max-preview",
           "verified_at": "2026-06-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0
         },
         "qc/qwen3-next-80b-a3b-instruct": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-next-80b-a3b-instruct",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-next-80b-a3b-instruct) + derived:dashscope/qwen3-next-80b-a3b-instruct",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.15,
           "output_per_mtok": 1.2
         },
         "qc/qwen3-next-80b-a3b-thinking": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-next-80b-a3b-thinking",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-next-80b-a3b-thinking) + derived:dashscope/qwen3-next-80b-a3b-thinking",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.15,
           "output_per_mtok": 1.2
         },
         "qc/qwen3-omni-30b-a3b-captioner": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-omni-30b-a3b-captioner",
+          "context": 30720,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3-omni-30b-a3b-captioner",
           "verified_at": "2026-06-10",
           "input_per_mtok": 3.81,
           "output_per_mtok": 3.06
         },
         "qc/qwen3-omni-flash": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-omni-flash",
+          "context": 65536,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-omni-flash) + derived:dashscope/qwen3-omni-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.43,
           "output_per_mtok": 1.66
@@ -6259,29 +6268,29 @@
           "output_per_mtok": 1.66
         },
         "qc/qwen3-omni-flash-2025-12-01": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-omni-flash-2025-12-01",
+          "context": 16384,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3-omni-flash-2025-12-01",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.43,
           "output_per_mtok": 1.66
         },
         "qc/qwen3-omni-flash-realtime": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-omni-flash-realtime",
+          "context": 65536,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-omni-flash-realtime) + derived:dashscope/qwen3-omni-flash-realtime",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.43,
           "output_per_mtok": 1.66
         },
         "qc/qwen3-omni-flash-realtime-2025-09-15": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-omni-flash-realtime-2025-09-15",
+          "context": 57344,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3-omni-flash-realtime-2025-09-15",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.43,
           "output_per_mtok": 1.66
         },
         "qc/qwen3-omni-flash-realtime-2025-12-01": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-omni-flash-realtime-2025-12-01",
+          "context": 57344,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3-omni-flash-realtime-2025-12-01",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.43,
           "output_per_mtok": 1.66
@@ -6306,273 +6315,273 @@
           "output_per_mtok": 4.0
         },
         "qc/qwen3-vl-flash": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-vl-flash",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-vl-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
         },
         "qc/qwen3-vl-flash-2025-10-15": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-vl-flash-2025-10-15",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-vl-flash-2025-10-15",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
         },
         "qc/qwen3-vl-flash-2026-01-22": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-vl-flash-2026-01-22",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-vl-flash-2026-01-22",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
         },
         "qc/qwen3-vl-plus": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-vl-plus",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3-vl-plus) + derived:dashscope/qwen3-vl-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 1.6
         },
         "qc/qwen3-vl-plus-2025-09-23": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-vl-plus-2025-09-23",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-vl-plus-2025-09-23",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 1.6
         },
         "qc/qwen3-vl-plus-2025-12-19": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3-vl-plus-2025-12-19",
+          "context": 256000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3-vl-plus-2025-12-19",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 1.6
         },
         "qc/qwen3.5-122b-a10b": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-122b-a10b",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.5-122b-a10b) + derived:dashscope/qwen3.5-122b-a10b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 3.2
         },
         "qc/qwen3.5-27b": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-27b",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.5-27b) + derived:dashscope/qwen3.5-27b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.3,
           "output_per_mtok": 2.4
         },
         "qc/qwen3.5-35b-a3b": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-35b-a3b",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.5-35b-a3b) + derived:dashscope/qwen3.5-35b-a3b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
         },
         "qc/qwen3.5-397b-a17b": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-397b-a17b",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.5-397b-a17b) + derived:dashscope/qwen3.5-397b-a17b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.6,
           "output_per_mtok": 3.6
         },
         "qc/qwen3.5-flash": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-flash",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.5-flash) + derived:dashscope/qwen3.5-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.1,
           "output_per_mtok": 0.4
         },
         "qc/qwen3.5-flash-2026-02-23": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-flash-2026-02-23",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3.5-flash-2026-02-23",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.1,
           "output_per_mtok": 0.4
         },
         "qc/qwen3.5-omni-flash": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-omni-flash",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3.5-omni-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 2.2
         },
         "qc/qwen3.5-omni-flash-2026-03-15": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-omni-flash-2026-03-15",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3.5-omni-flash-2026-03-15",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 2.2
         },
         "qc/qwen3.5-omni-flash-realtime": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-omni-flash-realtime",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3.5-omni-flash-realtime",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.55,
           "output_per_mtok": 3.3
         },
         "qc/qwen3.5-omni-flash-realtime-2026-03-15": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-omni-flash-realtime-2026-03-15",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3.5-omni-flash-realtime-2026-03-15",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.55,
           "output_per_mtok": 3.3
         },
         "qc/qwen3.5-omni-plus": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-omni-plus",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3.5-omni-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.4,
           "output_per_mtok": 8.3
         },
         "qc/qwen3.5-omni-plus-2026-03-15": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-omni-plus-2026-03-15",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3.5-omni-plus-2026-03-15",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.4,
           "output_per_mtok": 8.3
         },
         "qc/qwen3.5-omni-plus-realtime": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-omni-plus-realtime",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3.5-omni-plus-realtime",
           "verified_at": "2026-06-10",
           "input_per_mtok": 2.1,
           "output_per_mtok": 12.4
         },
         "qc/qwen3.5-omni-plus-realtime-2026-03-15": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-omni-plus-realtime-2026-03-15",
+          "context": 196608,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope model card 2026-08-10 max-input) + derived:dashscope/qwen3.5-omni-plus-realtime-2026-03-15",
           "verified_at": "2026-06-10",
           "input_per_mtok": 2.1,
           "output_per_mtok": 12.4
         },
         "qc/qwen3.5-plus": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-plus",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.5-plus) + derived:dashscope/qwen3.5-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.5,
           "output_per_mtok": 3.0
         },
         "qc/qwen3.5-plus-2026-02-15": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-plus-2026-02-15",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3.5-plus-2026-02-15",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.5,
           "output_per_mtok": 3.0
         },
         "qc/qwen3.5-plus-2026-04-20": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.5-plus-2026-04-20",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3.5-plus-2026-04-20",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.5,
           "output_per_mtok": 3.0
         },
         "qc/qwen3.6-27b": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.6-27b",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.6-27b) + derived:dashscope/qwen3.6-27b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.6,
           "output_per_mtok": 3.6
         },
         "qc/qwen3.6-35b-a3b": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.6-35b-a3b",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.6-35b-a3b) + derived:dashscope/qwen3.6-35b-a3b",
           "verified_at": "2026-06-10",
           "input_per_mtok": 0.375,
           "output_per_mtok": 2.25
         },
         "qc/qwen3.6-flash": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.6-flash",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.6-flash) + derived:dashscope/qwen3.6-flash",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.0,
           "output_per_mtok": 4.0
         },
         "qc/qwen3.6-flash-2026-04-16": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.6-flash-2026-04-16",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3.6-flash-2026-04-16",
           "verified_at": "2026-06-10",
           "input_per_mtok": 1.0,
           "output_per_mtok": 4.0
         },
         "qc/qwen3.6-max-preview": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.6-max-preview",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.6-max-preview) + derived:dashscope/qwen3.6-max-preview",
           "verified_at": "2026-06-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 12.0
         },
         "qc/qwen3.6-plus": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.6-plus",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.6-plus) + derived:dashscope/qwen3.6-plus",
           "verified_at": "2026-06-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 6.0
         },
         "qc/qwen3.6-plus-2026-04-02": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + derived:dashscope/qwen3.6-plus-2026-04-02",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10) + derived:dashscope/qwen3.6-plus-2026-04-02",
           "verified_at": "2026-06-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 6.0
         },
         "qc/qwen3.7-flash": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 991000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.7-flash)",
           "verified_at": "2026-07-26"
         },
         "qc/qwen3.7-flash-2026-07-15": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10)",
           "verified_at": "2026-07-26"
         },
         "qc/qwen3.7-max": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.7-max)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen3.7-max-2026-05-17": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen3.7-max-2026-05-20": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen3.7-max-2026-06-08": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen3.7-max-preview": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen3.7-plus": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.7-plus)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen3.7-plus-2026-05-26": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: dashscope pricing tiers 2026-08-10)",
           "verified_at": "2026-07-15"
         },
         "qc/qwen3.8-max": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwen3.8-max)",
           "verified_at": "2026-08-03"
         },
         "qc/qwq-plus": {
-          "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "context": 131072,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: models.dev:qwq-plus)",
           "verified_at": "2026-07-15"
         },
         "qc/qwq-plus-2025-03-05": {
           "context": 32768,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified)",
           "verified_at": "2026-07-15"
         }
       }
@@ -6838,97 +6847,97 @@
       "models": {
         "tokenrouter/MiniMax-Hailuo-2.3": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/MiniMax-M3": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-fable-5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-05"
         },
         "tokenrouter/anthropic/claude-haiku-4.5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-opus-4.5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-opus-4.6": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-opus-4.7": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-opus-4.7-fast": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-opus-4.8": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-opus-4.8-fast": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-opus-5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-26"
         },
         "tokenrouter/anthropic/claude-opus-5-fast": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-26"
         },
         "tokenrouter/anthropic/claude-sonnet-4": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-sonnet-4.5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-sonnet-4.6": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/anthropic/claude-sonnet-5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-05"
         },
         "tokenrouter/bytedance-seed/seedream-4.5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/bytedance-seed/seedream-5.0-lite": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-30"
         },
         "tokenrouter/bytedance-seed/seedream-5.0-pro": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-15"
         },
         "tokenrouter/claude-haiku-4-5": {
@@ -6940,7 +6949,7 @@
         },
         "tokenrouter/claude-opus-4-8-m-aws": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-26"
         },
         "tokenrouter/deepseek/deepseek-v3.2": {
@@ -6952,446 +6961,446 @@
         },
         "tokenrouter/deepseek/deepseek-v4-flash": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models + litellm:deepseek/deepseek-v4-flash",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified) + litellm:deepseek/deepseek-v4-flash",
           "verified_at": "2026-06-22",
           "input_per_mtok": 0.14,
           "output_per_mtok": 0.28
         },
         "tokenrouter/deepseek/deepseek-v4-flash-0731": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-08-03"
         },
         "tokenrouter/deepseek/deepseek-v4-pro": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models + litellm:deepseek/deepseek-v4-pro",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified) + litellm:deepseek/deepseek-v4-pro",
           "verified_at": "2026-06-22",
           "input_per_mtok": 0.435,
           "output_per_mtok": 0.87
         },
         "tokenrouter/dreamina-seedance-2-5-hc": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-08-09"
         },
         "tokenrouter/ex/gpt-5.4": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-20"
         },
         "tokenrouter/google/gemini-3-flash-preview": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/google/gemini-3.1-pro-preview": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/google/gemini-3.5-flash": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/google/gemini-3.5-flash-lite": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-22"
         },
         "tokenrouter/google/gemini-3.6-flash": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-22"
         },
         "tokenrouter/google/gemma-4-26b-a4b-it": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/happyhorse-1.0-t2v": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/kling-3.0-turbo": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-05"
         },
         "tokenrouter/kling-v2-6": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/kling-v3": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/kling-v3-omni": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-30"
         },
         "tokenrouter/minimax/minimax-m2-her": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/minimax/minimax-m2.1": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/minimax/minimax-m2.1-highspeed": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/minimax/minimax-m2.5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/minimax/minimax-m2.7": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/minimax/minimax-m2.7-highspeed": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/miromind/mirothinker-1-7-deepresearch": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/miromind/mirothinker-1-7-deepresearch-mini": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/mistralai/devstral-2512": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/mistralai/mistral-medium-3-5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/mistralai/mistral-small-2603": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/mistralai/voxtral-small-24b-2507": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/moonshotai/kimi-k2.5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/moonshotai/kimi-k2.6": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/moonshotai/kimi-k2.7-code": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/moonshotai/kimi-k3": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-17"
         },
         "tokenrouter/moonshotai/kimi-k3-free": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-08-03"
         },
         "tokenrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/nvidia/nemotron-3-super-120b-a12b": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/openai/gpt-4o-mini": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/openai/gpt-5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-08-03"
         },
         "tokenrouter/openai/gpt-5-mini": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/openai/gpt-5.2": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/openai/gpt-5.4": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/openai/gpt-5.4-mini": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/openai/gpt-5.4-nano": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/openai/gpt-5.4-pro": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/openai/gpt-5.5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/openai/gpt-5.5-pro": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/openai/gpt-5.6-luna": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-10"
         },
         "tokenrouter/openai/gpt-5.6-sol": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-10"
         },
         "tokenrouter/openai/gpt-5.6-terra": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-10"
         },
         "tokenrouter/openai/gpt-oss-120b": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3-coder-next": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3.5-122b-a10b": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3.5-35b-a3b": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3.5-397b-a17b": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3.5-9b": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3.5-flash": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3.5-plus-02-15": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3.6-plus": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3.7-max": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3.7-plus": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen/qwen3.8-max": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-08-03"
         },
         "tokenrouter/qwen3.5-omni-plus": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/qwen3.6-flash": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/sakana/fugu-ultra": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-26"
         },
         "tokenrouter/seed-2-0-code-preview-260328": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/seed-2-0-lite-260428": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/seed-2-0-mini-260428": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/seed-2-0-pro-260328": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/stepfun/step-3.5-flash": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/stepfun/step-3.7-flash": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/tencent/hy3-preview": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/x-ai/grok-4.1-fast": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/x-ai/grok-4.20-beta": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/x-ai/grok-4.3": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/x-ai/grok-4.5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-07-10"
         },
         "tokenrouter/x-ai/grok-build-0.1": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/xiaomi/mimo-v2-flash": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/xiaomi/mimo-v2-omni": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/xiaomi/mimo-v2-pro": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/xiaomi/mimo-v2.5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/xiaomi/mimo-v2.5-pro": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/z-ai/glm-4.5-air": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/z-ai/glm-4.6": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/z-ai/glm-4.6v": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/z-ai/glm-4.7": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/z-ai/glm-5": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/z-ai/glm-5-turbo": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/z-ai/glm-5.1": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-14"
         },
         "tokenrouter/z-ai/glm-5.2": {
           "context": 128000,
-          "source": "https://api.tokenrouter.com/v1/models",
+          "source": "https://api.tokenrouter.com/v1/models (context unverified)",
           "verified_at": "2026-06-17"
         }
       }
@@ -7416,14 +7425,14 @@
         },
         "groq/openai/gpt-oss-120b": {
           "context": 131072,
-          "source": "https://api.groq.com/openai/v1/models + litellm:openai/gpt-oss-120b",
+          "source": "https://api.groq.com/openai/v1/models (context: groq /v1/models) + litellm:openai/gpt-oss-120b",
           "verified_at": "2026-07-04",
           "input_per_mtok": 0.15,
           "output_per_mtok": 0.6
         },
         "groq/openai/gpt-oss-20b": {
           "context": 131072,
-          "source": "https://api.groq.com/openai/v1/models + litellm:openai/gpt-oss-20b",
+          "source": "https://api.groq.com/openai/v1/models (context: groq /v1/models) + litellm:openai/gpt-oss-20b",
           "verified_at": "2026-07-04",
           "input_per_mtok": 0.075,
           "output_per_mtok": 0.3
@@ -7582,189 +7591,219 @@
       "default_context": 1000000,
       "models": {
         "atlascloud/Qwen/Qwen3-235B-A22B-Instruct-2507": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 131072,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-haiku-4.5-20251001": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-haiku-4.5-20251001-coding": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4-20250514": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4-20250514-coding": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4.1-20250805": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4.1-20250805-coding": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4.5-20251101": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4.5-20251101-coding": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4.6": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4.6-coding": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4.7": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4.7-coding": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-opus-4.8": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
+        },
+        "atlascloud/anthropic/claude-opus-4.8-ccmax": {
+          "context": 1000000,
+          "source": "https://api.atlascloud.ai/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
         },
         "atlascloud/anthropic/claude-opus-4.8-coding": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
-        "atlascloud/anthropic/claude-sonnet-4-20250514": {
+        "atlascloud/anthropic/claude-opus-5": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
+        },
+        "atlascloud/anthropic/claude-opus-5-ccmax": {
+          "context": 1000000,
+          "source": "https://api.atlascloud.ai/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
+        },
+        "atlascloud/anthropic/claude-sonnet-4-20250514": {
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-sonnet-4-20250514-coding": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-sonnet-4.5-20250929": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-sonnet-4.5-20250929-coding": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-sonnet-4.6": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/anthropic/claude-sonnet-4.6-coding": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
+        },
+        "atlascloud/anthropic/claude-sonnet-5": {
+          "context": 1000000,
+          "source": "https://api.atlascloud.ai/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
         },
         "atlascloud/anthropic/claude-sonnet-5-ccmax": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-23"
         },
         "atlascloud/bytedance/doubao-seed-1.6-251015": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/bytedance/doubao-seed-1.6-flash-250828": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/bytedance/doubao-seed-1.8-251228": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/bytedance/doubao-seed-2.0-code-preview-260215": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/bytedance/doubao-seed-2.0-lite-260428": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/bytedance/doubao-seed-2.0-mini-260428": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/bytedance/doubao-seed-2.0-pro-260215": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/bytedance/doubao-seed-2.1-pro-260628": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/bytedance/doubao-seed-2.1-turbo-260628": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
-        "atlascloud/bytedance/doubao-seed-evolving": {
+        "atlascloud/bytedance/doubao-seed-character-260628": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
+        },
+        "atlascloud/bytedance/doubao-seed-evolving": {
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/deepseek-ai/DeepSeek-V3.1": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 131072,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/deepseek-ai/DeepSeek-V3.1-Terminus": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 131072,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/deepseek-ai/DeepSeek-V3.2-Exp": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 163840,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/deepseek-ai/deepseek-v3.2": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 163840,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/deepseek-ai/deepseek-v4-flash": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1048576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
+        },
+        "atlascloud/deepseek-ai/deepseek-v4-flash-0731": {
+          "context": 1000000,
+          "source": "https://api.atlascloud.ai/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
         },
         "atlascloud/deepseek-ai/deepseek-v4-pro": {
           "context": 1048576,
@@ -7773,329 +7812,349 @@
           "verified_at": "2026-07-13"
         },
         "atlascloud/google/gemini-2.0-flash": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1048576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/google/gemini-2.0-flash-lite": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1048576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/google/gemini-2.5-flash": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1048576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/google/gemini-2.5-flash-lite": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1048576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/google/gemini-2.5-pro": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/google/gemini-3-flash-preview": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/google/gemini-3.1-flash-lite": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1048576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/google/gemini-3.1-pro-preview": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/google/gemini-3.5-flash": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1048576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/kwaipilot/kat-coder-air-v2.5": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/kwaipilot/kat-coder-pro-v2": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/kwaipilot/kat-coder-pro-v2.5": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/meituan-longcat/longcat-2.0": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1048756,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/minimaxai/minimax-m2.5": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 196608,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/minimaxai/minimax-m2.7": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 196608,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/minimaxai/minimax-m3": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 524300,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/moonshotai/kimi-k2.5": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/moonshotai/kimi-k2.6": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/moonshotai/kimi-k2.7-code": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/moonshotai/kimi-k3": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1048576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-21"
         },
         "atlascloud/openai/gpt-4.1": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1047576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-4.1-mini": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1047576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-4.1-nano": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1047576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-4o": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 128000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-4o-mini": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 128000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5-chat": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 128000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5-codex": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5-mini": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5-nano": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5-pro": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.1": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.1-chat": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 128000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.1-codex": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.1-codex-max": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.1-codex-mini": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.2": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.2-chat": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 128000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.2-codex": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.3-codex": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.4": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.4-mini": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.4-nano": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 400000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.5": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1050000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/gpt-5.6-luna": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1050000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
+        },
+        "atlascloud/openai/gpt-5.6-luna-az": {
+          "context": 1000000,
+          "source": "https://api.atlascloud.ai/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
         },
         "atlascloud/openai/gpt-5.6-sol": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1050000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
+        },
+        "atlascloud/openai/gpt-5.6-sol-az": {
+          "context": 1000000,
+          "source": "https://api.atlascloud.ai/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
         },
         "atlascloud/openai/gpt-5.6-terra": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1050000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
-        "atlascloud/openai/o1": {
+        "atlascloud/openai/gpt-5.6-terra-az": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
+        },
+        "atlascloud/openai/o1": {
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/o3": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/o3-mini": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/o3-pro": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/openai/o4-mini": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 200000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/qwen/qwen3-vl-235b-a22b-thinking": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 131072,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/qwen/qwen3.5-122b-a10b": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/qwen/qwen3.5-27b": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/qwen/qwen3.5-35b-a3b": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/qwen/qwen3.5-397b-a17b": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/qwen/qwen3.5-flash": {
           "context": 1000000,
           "max_output": 67072,
-          "source": "https://api.atlascloud.ai/api/v1/models (display_console Text model, live verified 2026-07-13)",
+          "source": "https://api.atlascloud.ai/api/v1/models (display_console Text model, live verified 2026-07-13) (context: atlascloud /v1/models)",
           "verified_at": "2026-07-13"
         },
         "atlascloud/qwen/qwen3.5-plus": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/qwen/qwen3.6-35b-a3b": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/qwen/qwen3.6-plus": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/qwen/qwen3.7-max": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/qwen/qwen3.7-plus": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
-        "atlascloud/tencent/hy3": {
+        "atlascloud/qwen/qwen3.8-max": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "source": "https://api.atlascloud.ai/v1/models (context unverified)",
+          "verified_at": "2026-08-11"
+        },
+        "atlascloud/tencent/hy3": {
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/xai/grok-4.3": {
           "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models + litellm:xai/grok-4.3",
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models) + litellm:xai/grok-4.3",
           "verified_at": "2026-07-15",
           "input_per_mtok": 1.25,
           "output_per_mtok": 2.5
@@ -8108,53 +8167,53 @@
           "output_per_mtok": 6.0
         },
         "atlascloud/xai/grok-build-0.1": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/xiaomi/mimo-v2.5": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1024000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/xiaomi/mimo-v2.5-pro": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1024000,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/zai-org/GLM-4.6": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 202752,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/zai-org/glm-4.7": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 202752,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/zai-org/glm-5": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 202752,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/zai-org/glm-5-turbo": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 262144,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/zai-org/glm-5.1": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 202752,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/zai-org/glm-5.2": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 1048576,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         },
         "atlascloud/zai-org/glm-5v-turbo": {
-          "context": 1000000,
-          "source": "https://api.atlascloud.ai/v1/models",
+          "context": 202752,
+          "source": "https://api.atlascloud.ai/v1/models (context: atlascloud /v1/models)",
           "verified_at": "2026-07-15"
         }
       }
