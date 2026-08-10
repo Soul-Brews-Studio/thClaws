@@ -468,6 +468,9 @@ fn snapshot_collect_files(
     workspace_dir: &std::path::Path,
     session_id: &str,
 ) {
+    // No patterns ⇒ nothing was requested, so nothing is written. The GET
+    // then 404s with `snapshot_not_requested`, which is how a caller tells
+    // "never asked" from "asked and it broke" (#191).
     let Some(patterns) = patterns.filter(|p| !p.is_empty()) else {
         return;
     };
@@ -478,7 +481,20 @@ fn snapshot_collect_files(
             session_id,
             m.skipped.len()
         ),
-        Err(e) => eprintln!("[api_v1] artifacts snapshot failed for {session_id}: {e}"),
+        Err(e) => {
+            // Still non-fatal to the run, but no longer stderr-only: persist
+            // a `failed` manifest so the orchestrator that dispatched this
+            // job can see the outcome over HTTP.
+            eprintln!("[api_v1] artifacts snapshot failed for {session_id}: {e}");
+            if let Err(e2) = super::artifacts::record_snapshot_failure(
+                workspace_dir,
+                session_id,
+                patterns,
+                &e.to_string(),
+            ) {
+                eprintln!("[api_v1] artifacts: couldn't record the failure for {session_id}: {e2}");
+            }
+        }
     }
 }
 

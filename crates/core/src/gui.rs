@@ -798,6 +798,7 @@ fn run_gui_inner(serve: Option<crate::server::ServeConfig>) {
                 shared_for_serve,
                 pending_asks_for_serve,
                 ask_broadcast_for_serve,
+                None,
             )
             .await
             {

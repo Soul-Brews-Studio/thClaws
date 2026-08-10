@@ -1918,18 +1918,49 @@ fn normalize_dashes(rest: &str) -> String {
     rest.replace(['—', '–'], "--")
 }
 
+/// Reject a dash-prefixed token we don't recognise, instead of treating it as
+/// a workspace slug (or ignoring it outright). A silently-swallowed
+/// `--dryrun` used to run a REAL push — the safety word not being spelled
+/// exactly meant no safety at all, with no hint that anything was wrong.
+///
+/// `--workspace=<slug>` counts as known: it's the form users type, and
+/// rejecting it while accepting `--workspace <slug>` would trade one silent
+/// surprise for a confusing one.
+fn reject_unknown_flags(toks: &[&str], allowed: &[&str]) -> Option<String> {
+    let bad = toks.iter().find(|t| {
+        let Some(name) = t.strip_prefix('-') else {
+            return false;
+        };
+        // A bare "-" or a slug never starts with a dash; anything that does is
+        // meant to be a flag.
+        if name.is_empty() {
+            return true;
+        }
+        let base = t.split_once('=').map(|(k, _)| k).unwrap_or(t);
+        !allowed.contains(&base)
+    })?;
+    Some(format!(
+        "unknown option '{bad}' — valid here: {}. Nothing was run; a mistyped flag is not treated as a workspace name.",
+        allowed.join(", ")
+    ))
+}
+
 /// Target workspace for the sync subcommands: `--workspace <slug>` or the
 /// first positional (non-flag) token, so `/cloud push <slug>` works without
 /// the flag. Shared by push/pull/revision so all three name a workspace the
 /// same way.
 fn parse_workspace_target(toks: &[&str]) -> Option<String> {
     toks.iter()
-        .position(|t| *t == "--workspace")
-        .and_then(|i| toks.get(i + 1))
-        .map(|s| s.to_string())
+        .find_map(|t| t.strip_prefix("--workspace=").map(|v| v.to_string()))
         .or_else(|| {
             toks.iter()
-                .find(|t| !t.starts_with("--"))
+                .position(|t| *t == "--workspace")
+                .and_then(|i| toks.get(i + 1))
+                .map(|s| s.to_string())
+        })
+        .or_else(|| {
+            toks.iter()
+                .find(|t| !t.starts_with('-'))
                 .map(|s| s.to_string())
         })
 }
@@ -1964,6 +1995,9 @@ fn parse_cloud_subcommand(args: &str) -> SlashCommand {
         "revision" | "rev" => {
             let norm = normalize_dashes(rest);
             let toks: Vec<&str> = norm.split_whitespace().collect();
+            if let Some(err) = reject_unknown_flags(&toks, &["--workspace"]) {
+                return SlashCommand::Unknown(err);
+            }
             SlashCommand::Cloud(CloudSlash::Revision {
                 workspace: parse_workspace_target(&toks),
             })
@@ -1971,6 +2005,18 @@ fn parse_cloud_subcommand(args: &str) -> SlashCommand {
         "push" | "pull" => {
             let norm = normalize_dashes(rest);
             let toks: Vec<&str> = norm.split_whitespace().collect();
+            if let Some(err) = reject_unknown_flags(
+                &toks,
+                &[
+                    "--delete",
+                    "--dry-run",
+                    "--force",
+                    "--force-rebind",
+                    "--workspace",
+                ],
+            ) {
+                return SlashCommand::Unknown(err);
+            }
             let has = |f: &str| toks.iter().any(|t| *t == f);
             let delete = has("--delete");
             let dry_run = has("--dry-run");
@@ -12555,6 +12601,70 @@ mod tests {
         assert_eq!(parse_slash("/quit"), Some(SlashCommand::Quit));
         assert_eq!(parse_slash("/q"), Some(SlashCommand::Quit));
         assert_eq!(parse_slash("/exit"), Some(SlashCommand::Quit));
+    }
+
+    #[test]
+    fn parse_slash_cloud_rejects_a_mistyped_flag_instead_of_running() {
+        // The one that motivated this: `--dryrun` used to be swallowed and
+        // the push ran for real. A typo in the safety word must not silently
+        // mean "no safety".
+        for input in [
+            "/cloud push --dryrun",
+            "/cloud pull --dry_run",
+            "/cloud push --forcerebind",
+            "/cloud push -delete",
+            "/cloud rev --delete", // valid flag, wrong subcommand
+        ] {
+            match parse_slash(input) {
+                Some(SlashCommand::Unknown(msg)) => {
+                    assert!(msg.contains("unknown option"), "{input:?} → {msg}");
+                    assert!(
+                        msg.contains("Nothing was run"),
+                        "the message must say nothing happened: {msg}"
+                    );
+                }
+                other => panic!("{input:?} should have been refused, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_slash_cloud_still_accepts_every_real_flag_form() {
+        // Guard against the rejection being over-eager.
+        let ok = |input: &str| match parse_slash(input) {
+            Some(SlashCommand::Cloud(c)) => c,
+            other => panic!("{input:?} should have parsed, got {other:?}"),
+        };
+        match ok("/cloud push --delete --dry-run --force-rebind") {
+            CloudSlash::Push {
+                delete,
+                dry_run,
+                force_rebind,
+                force,
+                ..
+            } => assert!(delete && dry_run && force_rebind && force),
+            other => panic!("{other:?}"),
+        }
+        // Both `--workspace` spellings, plus the bare positional.
+        for input in [
+            "/cloud push --workspace my-ws",
+            "/cloud push --workspace=my-ws",
+            "/cloud push my-ws",
+            "/cloud push —workspace=my-ws", // em-dash tolerance still applies
+        ] {
+            match ok(input) {
+                CloudSlash::Push { workspace, .. } => {
+                    assert_eq!(workspace.as_deref(), Some("my-ws"), "{input:?}")
+                }
+                other => panic!("{input:?} → {other:?}"),
+            }
+        }
+        match ok("/cloud rev --workspace=my-ws") {
+            CloudSlash::Revision { workspace } => {
+                assert_eq!(workspace.as_deref(), Some("my-ws"))
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

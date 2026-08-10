@@ -1277,19 +1277,32 @@ mod tests {
         }
     }
 
+    /// The model used below is a live catalogue row, so its window changes
+    /// whenever upstream does — Sonnet 4.6 went 200k → 1M when its context was
+    /// sourced properly, and a pinned literal here turned that data fix into
+    /// three red tests. What these tests own is the *layering*: which layer
+    /// answered and that the id resolved at all. The number is the
+    /// catalogue's business, so read it from the catalogue.
     #[test]
     fn lookup_finds_exact_model() {
         let c = baseline_only();
+        let want = c
+            .baseline
+            .lookup_context("claude-sonnet-4-6")
+            .expect("model must exist in the shipped catalogue");
         let (n, src) = effective_context_window_with(&c, "claude-sonnet-4-6");
-        assert_eq!(n, 200_000);
+        assert_eq!(n, want);
         assert_eq!(src, ContextSource::Catalogue);
     }
 
     #[test]
     fn lookup_strips_vendor_prefix() {
         let c = baseline_only();
+        // The property is that the prefixed id resolves to the same row as the
+        // bare one — not that either equals some particular number.
+        let (bare, _) = effective_context_window_with(&c, "claude-sonnet-4-6");
         let (n, src) = effective_context_window_with(&c, "openrouter/anthropic/claude-sonnet-4-6");
-        assert_eq!(n, 200_000);
+        assert_eq!(n, bare);
         assert_eq!(src, ContextSource::Catalogue);
     }
 
@@ -1443,10 +1456,12 @@ mod tests {
 
     #[test]
     fn override_removal_falls_back_to_catalogue() {
-        // Empty override map → catalogue layer wins as before.
+        // Empty override map → catalogue layer wins as before. As above, the
+        // catalogue owns the number; this test owns which layer answered.
         let eff = baseline_only();
+        let want = eff.baseline.lookup_context("claude-sonnet-4-6").unwrap();
         let (n, src) = effective_context_window_with(&eff, "claude-sonnet-4-6");
-        assert_eq!(n, 200_000);
+        assert_eq!(n, want);
         assert_eq!(src, ContextSource::Catalogue);
     }
 

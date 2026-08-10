@@ -1016,6 +1016,15 @@ mod tests {
         if binary_on_path("sandbox-exec").is_none() {
             return;
         }
+        // The probes below write to `$HOME/.cache` and `$HOME/.cargo` and
+        // expect the policy to permit them — so they need HOME to still mean
+        // what it meant when the policy was built. HOME is PROCESS-WIDE, and
+        // other tests repoint it at a tempdir (`memory`'s `scoped_home`); when
+        // that overlapped, the subprocess inherited the hijacked HOME, wrote
+        // outside the allowlist, and the assertion failed with "Operation not
+        // permitted" on a path the policy never covered. Hold the suite's env
+        // lock for the duration.
+        let _env = crate::kms::test_env_lock();
         let ws = tempfile::tempdir().unwrap();
         let pol = build_policy(ConfineMode::Workspace, ws.path(), &[], &[], false);
         let pid = std::process::id();

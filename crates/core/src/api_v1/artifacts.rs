@@ -51,6 +51,22 @@ pub struct ArtifactEntry {
     pub sha256: String,
 }
 
+/// Outcome of a run's snapshot. Before this existed a manifest could only be
+/// written on success, so a manifest with no `status` is `Completed` — which
+/// keeps older manifests readable instead of defaulting them to a failure
+/// they never had.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SnapshotStatus {
+    /// The snapshot ran. `artifacts` may still be empty — a pattern that
+    /// matched nothing is a completed snapshot of nothing, not a failure.
+    #[default]
+    Completed,
+    /// Requested but not written; `error` says why. The run itself still
+    /// succeeded — collection is non-fatal by design.
+    Failed,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ArtifactManifest {
     pub session_id: String,
@@ -61,6 +77,13 @@ pub struct ArtifactManifest {
     /// collection is visible instead of silently partial.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skipped: Vec<String>,
+    #[serde(default)]
+    pub status: SnapshotStatus,
+    /// Present only when `status` is `failed`. Carries the collection error
+    /// so a caller learns the outcome from the API instead of the daemon's
+    /// stderr (#191).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 fn artifacts_root(workspace: &Path, session_id: &str) -> PathBuf {
@@ -169,6 +192,8 @@ pub(crate) fn snapshot_artifacts(
         patterns: patterns.to_vec(),
         artifacts,
         skipped,
+        status: SnapshotStatus::Completed,
+        error: None,
     };
     std::fs::write(
         root.join("manifest.json"),
@@ -221,9 +246,10 @@ pub async fn get_manifest(
         return Err(bad_id());
     }
     let path = artifacts_root(&ws, &sid).join("manifest.json");
-    let raw = std::fs::read(&path).map_err(|_| not_found("no artifacts for this session"))?;
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&raw).map_err(|_| not_found("manifest unreadable"))?;
+    let raw = std::fs::read(&path)
+        .map_err(|_| not_found_code(NO_SNAPSHOT_MSG, "snapshot_not_requested"))?;
+    let manifest: serde_json::Value = serde_json::from_slice(&raw)
+        .map_err(|_| not_found_code("artifact manifest is unreadable", "manifest_unreadable"))?;
     Ok(Json(manifest).into_response())
 }
 
@@ -240,7 +266,7 @@ pub async fn get_artifact(
     }
     let root = artifacts_root(&ws, &sid);
     let raw = std::fs::read(root.join("manifest.json"))
-        .map_err(|_| not_found("no artifacts for this session"))?;
+        .map_err(|_| not_found_code(NO_SNAPSHOT_MSG, "snapshot_not_requested"))?;
     let manifest: ArtifactManifest =
         serde_json::from_slice(&raw).map_err(|_| not_found("manifest unreadable"))?;
     let entry = manifest
@@ -404,6 +430,49 @@ fn bad_id() -> Response {
         .into_response()
 }
 
+/// Record a failed snapshot so the outcome is readable over HTTP rather than
+/// only in the daemon's stderr (#191). Written on the error path only — runs
+/// that never asked for artifacts stay free of any per-run write.
+///
+/// Best-effort by nature: the usual reason collection failed is an unwritable
+/// workspace, in which case there is nowhere to record it either and the log
+/// line stays the only trace.
+pub(crate) fn record_snapshot_failure(
+    workspace: &Path,
+    session_id: &str,
+    patterns: &[String],
+    error: &str,
+) -> std::io::Result<()> {
+    let root = artifacts_root(workspace, session_id);
+    std::fs::create_dir_all(&root)?;
+    let manifest = ArtifactManifest {
+        session_id: session_id.to_string(),
+        collected_at: chrono::Utc::now().to_rfc3339(),
+        patterns: patterns.to_vec(),
+        artifacts: Vec::new(),
+        skipped: Vec::new(),
+        status: SnapshotStatus::Failed,
+        error: Some(error.to_string()),
+    };
+    std::fs::write(
+        root.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )
+}
+
+/// 404 carrying a machine-readable `code`, so a client can tell "this run
+/// never asked for artifacts" from "the manifest is corrupt" without
+/// string-matching the message (#191).
+fn not_found_code(msg: &str, code: &'static str) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        Json(OpenAiError::invalid_request(msg.to_string(), code)),
+    )
+        .into_response()
+}
+
+const NO_SNAPSHOT_MSG: &str = "no artifact snapshot for this session — the run did not request one (`collect_files` was omitted or empty)";
+
 fn not_found(msg: &str) -> Response {
     (
         StatusCode::NOT_FOUND,
@@ -466,6 +535,150 @@ mod tests {
         std::fs::write(ws.join(".thclaws/state/kms/secret.md"), b"x").unwrap();
         let m = snapshot_artifacts(ws, "s", &["**/*.md".to_string()]).unwrap();
         assert!(m.artifacts.is_empty());
+    }
+
+    /// #191 — the four states a caller has to be able to tell apart.
+    #[test]
+    fn snapshot_states_are_distinguishable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = tmp.path();
+
+        // 1. Requested, matched nothing. A completed snapshot of nothing is
+        //    NOT a failure — this already worked and must keep working.
+        let m = snapshot_artifacts(ws, "s-empty", &["reports/*.pdf".to_string()]).unwrap();
+        assert!(m.artifacts.is_empty());
+        assert_eq!(m.status, SnapshotStatus::Completed);
+        assert!(m.error.is_none());
+        assert!(artifacts_root(ws, "s-empty").join("manifest.json").exists());
+
+        // 2. Requested and matched. Same status, artifacts present.
+        std::fs::create_dir_all(ws.join("reports")).unwrap();
+        std::fs::write(ws.join("reports/q3.pdf"), b"PDF").unwrap();
+        let m = snapshot_artifacts(ws, "s-ok", &["reports/*.pdf".to_string()]).unwrap();
+        assert_eq!(m.status, SnapshotStatus::Completed);
+        assert_eq!(m.artifacts.len(), 1);
+
+        // 3. Never requested — no manifest is written at all, which is what
+        //    makes the GET's `snapshot_not_requested` 404 meaningful. The
+        //    point is that a run with no `collect_files` costs no write.
+        assert!(!artifacts_root(ws, "s-never").join("manifest.json").exists());
+
+        // 4. Requested and failed. The outcome is persisted rather than
+        //    living only in the daemon's stderr.
+        record_snapshot_failure(ws, "s-fail", &["out/*.bin".to_string()], "disk on fire").unwrap();
+        let raw = std::fs::read(artifacts_root(ws, "s-fail").join("manifest.json")).unwrap();
+        let m: ArtifactManifest = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(m.status, SnapshotStatus::Failed);
+        assert_eq!(m.error.as_deref(), Some("disk on fire"));
+        assert_eq!(m.patterns, vec!["out/*.bin".to_string()]);
+        assert!(m.artifacts.is_empty());
+    }
+
+    /// The states above are only worth recording if a client can still tell
+    /// them apart after the response is built. The manifest tests prove the
+    /// outcome is *stored*; this one covers the layer #191 actually reported —
+    /// a GET that answered 404 identically for "never asked" and "the manifest
+    /// is corrupt", leaving the caller to read server logs.
+    #[tokio::test]
+    async fn get_manifest_keeps_the_states_apart_over_http() {
+        // `validate_workspace_dir` reads THCLAWS_AGENT_WORKSPACE_ROOT.
+        let _env = crate::kms::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        // The handler canonicalizes what it is given (/var → /private/var on
+        // macOS); write where it will look, not where tempfile said.
+        let ws = std::fs::canonicalize(tmp.path()).unwrap();
+        let q = || {
+            Query(WorkspaceQuery {
+                workspace_dir: Some(ws.to_string_lossy().into_owned()),
+            })
+        };
+        // Both arms are a Response — the status is what distinguishes them, so
+        // flattening keeps the assertions on the wire shape rather than on
+        // which side of the Result the handler chose.
+        async fn wire(r: Result<Response, Response>) -> (StatusCode, serde_json::Value) {
+            let r = match r {
+                Ok(v) | Err(v) => v,
+            };
+            let status = r.status();
+            let body = axum::body::to_bytes(r.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            (status, serde_json::from_slice(&body).unwrap())
+        }
+
+        // 1. Never requested — 404, but a code that says which 404 this is.
+        let (status, body) = wire(get_manifest(AuthOk, AxPath("s-never".into()), q()).await).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"]["code"], "snapshot_not_requested");
+
+        // 2. Corrupt manifest — same status, different code. Collapsing these
+        //    two onto one code would restore the exact ambiguity #191 filed.
+        let root = artifacts_root(&ws, "s-corrupt");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("manifest.json"), b"{ not json").unwrap();
+        let (status, body) =
+            wire(get_manifest(AuthOk, AxPath("s-corrupt".into()), q()).await).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"]["code"], "manifest_unreadable");
+
+        // 3. Requested and failed — 200. The failure is data the caller reads,
+        //    not something inferred from a status code.
+        record_snapshot_failure(&ws, "s-fail", &["out/*.bin".to_string()], "disk on fire").unwrap();
+        let (status, body) = wire(get_manifest(AuthOk, AxPath("s-fail".into()), q()).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "failed");
+        assert_eq!(body["error"], "disk on fire");
+
+        // 4. Requested, matched nothing — also 200, and must not read as a
+        //    failure: the patterns ran and the answer was "none".
+        snapshot_artifacts(&ws, "s-empty", &["nope/*.pdf".to_string()]).unwrap();
+        let (status, body) = wire(get_manifest(AuthOk, AxPath("s-empty".into()), q()).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "completed");
+        assert!(body["artifacts"].as_array().unwrap().is_empty());
+        assert!(body.get("error").is_none());
+    }
+
+    /// A manifest written before `status` existed could only have been a
+    /// success, so it must read back as one — not as a failure.
+    #[test]
+    fn pre_status_manifests_read_as_completed() {
+        let legacy = br#"{
+            "session_id": "s-old",
+            "collected_at": "2026-01-01T00:00:00Z",
+            "patterns": ["*.pdf"],
+            "artifacts": []
+        }"#;
+        let m: ArtifactManifest = serde_json::from_slice(legacy).unwrap();
+        assert_eq!(m.status, SnapshotStatus::Completed);
+        assert!(m.error.is_none());
+    }
+
+    /// `status` serializes as the documented lowercase string, and `error`
+    /// stays absent on success rather than serializing as null.
+    #[test]
+    fn status_wire_shape_is_stable() {
+        let m = ArtifactManifest {
+            session_id: "s".into(),
+            collected_at: "t".into(),
+            patterns: vec![],
+            artifacts: vec![],
+            skipped: vec![],
+            status: SnapshotStatus::Completed,
+            error: None,
+        };
+        let v: serde_json::Value = serde_json::to_value(&m).unwrap();
+        assert_eq!(v["status"], "completed");
+        assert!(v.get("error").is_none(), "no null error on success: {v}");
+
+        let failed = ArtifactManifest {
+            status: SnapshotStatus::Failed,
+            error: Some("boom".into()),
+            ..m
+        };
+        let v: serde_json::Value = serde_json::to_value(&failed).unwrap();
+        assert_eq!(v["status"], "failed");
+        assert_eq!(v["error"], "boom");
     }
 
     #[test]

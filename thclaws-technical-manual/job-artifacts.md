@@ -86,8 +86,39 @@ Manifest shape:
   "patterns": ["reports/*.md"],
   "artifacts": [ { "id": "a1", "path": "reports/summary.md",
                    "size": 180, "sha256": "67aeef…" } ],
-  "skipped": [] }
+  "skipped": [],
+  "status": "completed" }
 ```
+
+### Snapshot outcome — telling the four states apart
+
+Collection is non-fatal to the run, so "the run succeeded" says nothing about
+whether its outputs were captured. Since v0.111.0 the outcome is readable from
+the API rather than only from the daemon's stderr ([#191]). Four states, four
+distinct answers:
+
+| State | `GET …/artifacts` | How to recognise it |
+|---|---|---|
+| Requested, files captured | `200` | `status: "completed"`, `artifacts` non-empty |
+| Requested, matched nothing | `200` | `status: "completed"`, `artifacts: []` |
+| Requested, collection failed | `200` | `status: "failed"`, `error` explains why |
+| Never requested | `404` | error `code: "snapshot_not_requested"` |
+| Manifest corrupt on disk | `404` | error `code: "manifest_unreadable"` |
+
+A matched-nothing snapshot is **completed, not failed** — the patterns ran and
+found nothing, which is a real answer. Treat `status: "failed"` as "retry or
+investigate"; treat an empty `artifacts` array as "the job produced no
+outputs".
+
+`status` is absent from manifests written before v0.111.0. Read a missing
+`status` as `"completed"`: back then a manifest could only be written on
+success, so that is what it means.
+
+`snapshot_not_requested` costs nothing on disk — a run that omits
+`collect_files` writes no manifest at all, which is exactly why the 404 is
+unambiguous rather than a guess.
+
+[#191]: https://github.com/thClaws/thClaws/issues/191
 
 ## 4. Inputs — `POST /v1/inputs`
 

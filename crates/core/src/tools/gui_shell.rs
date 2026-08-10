@@ -386,7 +386,12 @@ mod tests {
 
     #[tokio::test]
     async fn create_then_list_then_remove() {
-        // Isolate scope to a temp project dir via current_dir swap.
+        // Isolate scope to a temp project dir via current_dir swap. cwd is
+        // PROCESS-WIDE, so hold the suite's env lock across the swap — without
+        // it this test moved the ground under any other test resolving a
+        // relative path, which is how `tools::memory` (which does take the
+        // lock) still failed at random.
+        let _env = crate::kms::test_env_lock();
         let tmp = std::env::temp_dir().join(format!("guishell-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();

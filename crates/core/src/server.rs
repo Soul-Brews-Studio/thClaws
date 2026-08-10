@@ -206,6 +206,23 @@ struct MultiTenantState {
 /// Spin up the server. Spawns the worker, builds the Axum router,
 /// blocks until the listener returns (Ctrl-C / panic / shutdown).
 pub async fn run(config: ServeConfig) -> crate::error::Result<()> {
+    let listener = tokio::net::TcpListener::bind(&config.bind)
+        .await
+        .map_err(|e| crate::error::Error::Tool(format!("bind {}: {e}", config.bind)))?;
+    run_on(config, listener).await
+}
+
+/// Serve on a listener the caller already bound.
+///
+/// Exists so a caller can own the bind. Asking the OS for port 0, dropping the
+/// listener, and letting `run` re-bind leaves a window where anything on the
+/// machine can take that port — which is exactly what made the round-trip test
+/// fail at random under a parallel suite. Holding the listener from allocation
+/// through to serving closes it.
+pub async fn run_on(
+    config: ServeConfig,
+    listener: tokio::net::TcpListener,
+) -> crate::error::Result<()> {
     // M6.36 SERVE6 hint: keychain access doesn't make sense on a
     // headless server (no user session, often no Secret Service
     // running). Skip the keychain probe by default; users put API
@@ -342,7 +359,15 @@ pub async fn run(config: ServeConfig) -> crate::error::Result<()> {
         });
     }
 
-    run_with_engine(config, approver, shared, pending_asks, ask_broadcast).await
+    run_with_engine(
+        config,
+        approver,
+        shared,
+        pending_asks,
+        ask_broadcast,
+        Some(listener),
+    )
+    .await
 }
 
 /// Same as [`run`], but reuses an engine constructed by the caller. Used
@@ -355,6 +380,9 @@ pub async fn run_with_engine(
     shared: Arc<SharedSessionHandle>,
     pending_asks: PendingAsks,
     ask_broadcast: broadcast::Sender<String>,
+    // Pre-bound listener, or `None` to bind `config.bind` here. See
+    // `run_on` for why a caller might want to own the bind.
+    listener: Option<tokio::net::TcpListener>,
 ) -> crate::error::Result<()> {
     let workspace = match config.workspace.clone() {
         Some(p) => p,
@@ -555,9 +583,6 @@ pub async fn run_with_engine(
         app
     };
 
-    let listener = tokio::net::TcpListener::bind(&config.bind)
-        .await
-        .map_err(|e| crate::error::Error::Tool(format!("bind {}: {e}", config.bind)))?;
     if config.gui_shell.is_none() {
         eprintln!(
             "\x1b[36m[serve] thClaws listening on http://{}\x1b[0m",
@@ -565,6 +590,12 @@ pub async fn run_with_engine(
         );
         eprintln!("\x1b[36m[serve] open the URL above in your browser (over an SSH tunnel for remote access)\x1b[0m");
     }
+    let listener = match listener {
+        Some(l) => l,
+        None => tokio::net::TcpListener::bind(&config.bind)
+            .await
+            .map_err(|e| crate::error::Error::Tool(format!("bind {}: {e}", config.bind)))?,
+    };
     axum::serve(listener, app)
         .await
         .map_err(|e| crate::error::Error::Tool(format!("serve: {e}")))?;
@@ -2094,20 +2125,18 @@ mod tests {
         use tokio_tungstenite::connect_async;
         use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
 
-        // Bind to an OS-assigned port so concurrent test runs don't
-        // collide. We pre-bind a TcpListener to discover the port,
-        // then drop the listener and let server::run rebind. Tiny
-        // window for race; in practice fine for unit tests.
+        // Bind port 0 and KEEP the listener, handing it to the server.
+        // Dropping it to let `run` re-bind used to lose the port to another
+        // test in the parallel suite often enough to fail ~1 run in 3.
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        drop(listener);
 
         let cfg = ServeConfig {
             bind: addr,
             ..Default::default()
         };
         let server_handle = tokio::spawn(async move {
-            let _ = run(cfg).await;
+            let _ = run_on(cfg, listener).await;
         });
 
         // Give the server a beat to bind. Healthz poll loop catches

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.111.0] — 2026-08-10
+
+Featured-provider context windows are now sourced from real data instead of guesses, high-severity frontend vulnerabilities are patched, and the built-in manual learns to generate its own appendix from the catalogue.
+
+### Fixed
+- **Catalogue: featured-provider context windows are sourced rather than guessed.** 120 rows across nine providers were resolved from the provider's own API, LiteLLM, or OpenRouter, correcting 91 values. Rows that resisted every source now carry an explicit "context unverified" marker instead of passing silently as fact, so a floor is no longer mistaken for a specification. (The writer can still fall back to a provider default for newly-added rows; that is tracked separately.)
+- **Cloud sync: mistyped flags are refused instead of silently ignored.** A cloud command given an unrecognised flag now errors out rather than proceeding with missing intent.
+- **API: artifact snapshot outcomes are machine-readable.** `GET /v1/sessions/{id}/artifacts` used to answer 404 identically whether a run never requested artifacts, requested them and failed, or wrote an unreadable manifest — the failure itself went only to the daemon's stderr. Each outcome now has its own answer, so an orchestrator no longer has to read server logs to find out what happened. [#191](https://github.com/thClaws/thClaws/issues/191)
+- **Frontend dependencies: four high-severity advisories patched.** Vulnerable packages in the frontend lockfile were updated to their patched versions.
+
+### Changed
+- **Manual: Appendix A is generated from the model catalogue, and now lists context windows.** The hand-maintained version covered 4 of the gateway's 16 providers and had gone two months stale; it is now a view over the catalogue (652 models) carrying each model's context window beside its price. A window nobody published renders as `131k?` rather than as a citation, and a release gate fails if the appendix drifts from the catalogue again.
+- **Manual: Chapter 22 is now a tombstone instead of a deletion.** The retired chapter shows a short notice rather than breaking any existing bookmarks or links into it.
+
 ## [0.110.0] — 2026-08-09
 
 Thai PII gets masked before it ever reaches the model, the dashboard shows plan expiry on every workspace card, and a stale context-window guess no longer freezes the catalogue.

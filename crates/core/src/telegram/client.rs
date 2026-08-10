@@ -472,25 +472,32 @@ mod tests {
         TelegramClient::new("123456789:AAFmKQk_abcdefghijklmnopqrstuvwxyz")
     }
 
+    /// Both halves of `method_url`: the default API root and the
+    /// `THCLAWS_TELEGRAM_API` override.
+    ///
+    /// One test, not two, because the override is a PROCESS-WIDE env var —
+    /// as separate tests they set and cleared the same variable and raced
+    /// each other under the parallel runner, failing at random. They were
+    /// always two halves of one behaviour anyway.
     #[test]
-    fn method_url_embeds_token_and_method() {
+    fn method_url_uses_the_default_root_or_the_env_override() {
         std::env::remove_var("THCLAWS_TELEGRAM_API");
-        let c = client();
         assert_eq!(
-            c.method_url("getUpdates"),
+            client().method_url("getUpdates"),
             "https://api.telegram.org/bot123456789:AAFmKQk_abcdefghijklmnopqrstuvwxyz/getUpdates"
         );
-    }
 
-    #[test]
-    fn api_base_override_is_honored() {
         std::env::set_var("THCLAWS_TELEGRAM_API", "http://localhost:8088/");
-        let c = TelegramClient::new("1:aaaaaaaaaaaaaaaaaaaaaa");
         assert_eq!(
-            c.method_url("sendMessage"),
+            TelegramClient::new("1:aaaaaaaaaaaaaaaaaaaaaa").method_url("sendMessage"),
             "http://localhost:8088/bot1:aaaaaaaaaaaaaaaaaaaaaa/sendMessage"
         );
         std::env::remove_var("THCLAWS_TELEGRAM_API");
+
+        // …and back to the default once the override is gone.
+        assert!(client()
+            .method_url("getMe")
+            .starts_with("https://api.telegram.org/"));
     }
 
     #[test]

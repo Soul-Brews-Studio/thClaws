@@ -26,9 +26,9 @@
           "cache_creation_per_mtok": 3.75
         },
         "claude-fable-5": {
-          "context": 200000,
-          "source": "https://api.anthropic.com/v1/models + manual:claude-fable-5 + litellm:claude-fable-5",
-          "verified_at": "2026-06-10",
+          "context": 1000000,
+          "source": "https://api.anthropic.com/v1/models (context: litellm:claude-fable-5) + manual:claude-fable-5 + litellm:claude-fable-5",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 10.0,
           "output_per_mtok": 50.0,
           "cached_input_per_mtok": 1.0,
@@ -36,8 +36,8 @@
         },
         "claude-haiku-4-5": {
           "context": 200000,
-          "source": "https://docs.anthropic.com/en/docs/about-claude/models/overview + litellm:claude-haiku-4-5",
-          "verified_at": "2026-06-10",
+          "source": "https://docs.anthropic.com/en/docs/about-claude/models/overview (context: litellm:claude-haiku-4-5) + litellm:claude-haiku-4-5",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.0,
           "output_per_mtok": 5.0,
           "cached_input_per_mtok": 0.1,
@@ -45,8 +45,8 @@
         },
         "claude-haiku-4-5-20251001": {
           "context": 200000,
-          "source": "https://api.anthropic.com/v1/models (context unverified) + litellm:claude-haiku-4-5-20251001",
-          "verified_at": "2026-06-10",
+          "source": "https://api.anthropic.com/v1/models (context: litellm:claude-haiku-4-5-20251001) + litellm:claude-haiku-4-5-20251001",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.0,
           "output_per_mtok": 5.0,
           "cached_input_per_mtok": 0.1,
@@ -54,8 +54,8 @@
         },
         "claude-opus-4-1-20250805": {
           "context": 200000,
-          "source": "https://api.anthropic.com/v1/models (context unverified) + litellm:claude-opus-4-1-20250805",
-          "verified_at": "2026-06-10",
+          "source": "https://api.anthropic.com/v1/models (context: litellm:claude-opus-4-1-20250805) + litellm:claude-opus-4-1-20250805",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 15.0,
           "output_per_mtok": 75.0,
           "cached_input_per_mtok": 1.5,
@@ -63,8 +63,8 @@
         },
         "claude-opus-4-20250514": {
           "context": 200000,
-          "source": "https://api.anthropic.com/v1/models (context unverified) + litellm:claude-opus-4-20250514",
-          "verified_at": "2026-06-10",
+          "source": "https://api.anthropic.com/v1/models (context: litellm:claude-opus-4-20250514) + litellm:claude-opus-4-20250514",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 15.0,
           "output_per_mtok": 75.0,
           "cached_input_per_mtok": 1.5,
@@ -72,26 +72,26 @@
         },
         "claude-opus-4-5-20251101": {
           "context": 200000,
-          "source": "https://api.anthropic.com/v1/models (context unverified) + litellm:claude-opus-4-5-20251101",
-          "verified_at": "2026-06-10",
+          "source": "https://api.anthropic.com/v1/models (context: litellm:claude-opus-4-5-20251101) + litellm:claude-opus-4-5-20251101",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
           "cached_input_per_mtok": 0.5,
           "cache_creation_per_mtok": 6.25
         },
         "claude-opus-4-6": {
-          "context": 200000,
-          "source": "https://docs.anthropic.com/en/docs/about-claude/models/overview + litellm:claude-opus-4-6",
-          "verified_at": "2026-06-10",
+          "context": 1000000,
+          "source": "https://docs.anthropic.com/en/docs/about-claude/models/overview (context: litellm:claude-opus-4-6) + litellm:claude-opus-4-6",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
           "cached_input_per_mtok": 0.5,
           "cache_creation_per_mtok": 6.25
         },
         "claude-opus-4-7": {
-          "context": 200000,
-          "source": "https://docs.anthropic.com/en/docs/about-claude/models/overview + litellm:claude-opus-4-7",
-          "verified_at": "2026-06-10",
+          "context": 1000000,
+          "source": "https://docs.anthropic.com/en/docs/about-claude/models/overview (context: litellm:claude-opus-4-7) + litellm:claude-opus-4-7",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
           "cached_input_per_mtok": 0.5,
@@ -107,9 +107,9 @@
           "cache_creation_per_mtok": 6.25
         },
         "claude-opus-4-8": {
-          "context": 200000,
-          "source": "https://api.anthropic.com/v1/models + litellm:claude-opus-4-8",
-          "verified_at": "2026-06-10",
+          "context": 1000000,
+          "source": "https://api.anthropic.com/v1/models (context: litellm:claude-opus-4-8) + litellm:claude-opus-4-8",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 5.0,
           "output_per_mtok": 25.0,
           "cached_input_per_mtok": 0.5,
@@ -126,8 +126,8 @@
         },
         "claude-sonnet-4-20250514": {
           "context": 200000,
-          "source": "https://api.anthropic.com/v1/models (context unverified) + litellm:claude-sonnet-4-20250514",
-          "verified_at": "2026-06-10",
+          "source": "https://api.anthropic.com/v1/models (context: anthropic-docs:base-window; 1M is the context-1m-2025-08-07 beta) + litellm:claude-sonnet-4-20250514",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0,
           "cached_input_per_mtok": 0.3,
@@ -135,8 +135,8 @@
         },
         "claude-sonnet-4-5": {
           "context": 200000,
-          "source": "https://docs.anthropic.com/en/docs/about-claude/models/overview + litellm:claude-sonnet-4-5",
-          "verified_at": "2026-06-10",
+          "source": "https://docs.anthropic.com/en/docs/about-claude/models/overview (context: litellm:claude-sonnet-4-5) + litellm:claude-sonnet-4-5",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0,
           "cached_input_per_mtok": 0.3,
@@ -144,17 +144,17 @@
         },
         "claude-sonnet-4-5-20250929": {
           "context": 200000,
-          "source": "https://api.anthropic.com/v1/models (context unverified) + litellm:claude-sonnet-4-5-20250929",
-          "verified_at": "2026-06-10",
+          "source": "https://api.anthropic.com/v1/models (context: litellm:claude-sonnet-4-5-20250929) + litellm:claude-sonnet-4-5-20250929",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0,
           "cached_input_per_mtok": 0.3,
           "cache_creation_per_mtok": 3.75
         },
         "claude-sonnet-4-6": {
-          "context": 200000,
-          "source": "https://docs.anthropic.com/en/docs/about-claude/models/overview + litellm:claude-sonnet-4-6",
-          "verified_at": "2026-06-10",
+          "context": 1000000,
+          "source": "https://docs.anthropic.com/en/docs/about-claude/models/overview (context: litellm:claude-sonnet-4-6) + litellm:claude-sonnet-4-6",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0,
           "cached_input_per_mtok": 0.3,
@@ -344,49 +344,49 @@
       "models": {
         "dashscope/ccai-pro": {
           "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context unverified)",
           "verified_at": "2026-06-02",
           "chat": false
         },
         "dashscope/deepseek-v3.2": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:dashscope/deepseek-v3.2",
-          "verified_at": "2026-06-09",
+          "context": 163840,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:dashscope/deepseek-v3.2",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.287,
           "output_per_mtok": 0.431
         },
         "dashscope/deepseek-v4-flash": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:deepseek-v4-flash",
-          "verified_at": "2026-06-10",
+          "context": 1000000,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: litellm:deepseek-v4-flash) + manual:deepseek-v4-flash",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 0.4
         },
         "dashscope/deepseek-v4-flash-0731": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:deepseek-v4-flash-0731",
-          "verified_at": "2026-08-03",
+          "context": 1048576,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:deepseek-v4-flash-0731",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 0.4
         },
         "dashscope/deepseek-v4-pro": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:deepseek-v4-pro",
-          "verified_at": "2026-06-10",
+          "context": 1000000,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: litellm:deepseek-v4-pro) + manual:deepseek-v4-pro",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.4,
           "output_per_mtok": 4.8
         },
         "dashscope/glm-5.1": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:dashscope/glm-5.1",
-          "verified_at": "2026-06-09",
+          "context": 204800,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:dashscope/glm-5.1",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.86,
           "output_per_mtok": 3.154
         },
         "dashscope/glm-5.2": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:glm-5.2",
-          "verified_at": "2026-06-26",
+          "context": 1048576,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:glm-5.2",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.86,
           "output_per_mtok": 3.154
         },
@@ -398,9 +398,9 @@
           "output_per_mtok": 3.154
         },
         "dashscope/kimi-k2.7-code": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:kimi-k2.7-code",
-          "verified_at": "2026-06-26",
+          "context": 262144,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:kimi-k2.7-code",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.574,
           "output_per_mtok": 3.011
         },
@@ -419,9 +419,9 @@
           "output_per_mtok": 60.0
         },
         "dashscope/qwen-flash": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen-flash",
-          "verified_at": "2026-06-09",
+          "context": 997952,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen-flash) + manual:dashscope/qwen-flash",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
         },
@@ -445,9 +445,9 @@
           "price_per_image_usd": 0.075
         },
         "dashscope/qwen-max": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + litellm:dashscope/qwen-max",
-          "verified_at": "2026-06-10",
+          "context": 30720,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen-max) + litellm:dashscope/qwen-max",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.6,
           "output_per_mtok": 6.4
         },
@@ -487,37 +487,37 @@
           "output_per_mtok": 0.27
         },
         "dashscope/qwen-plus": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + litellm:dashscope/qwen-plus",
-          "verified_at": "2026-06-10",
+          "context": 129024,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen-plus) + litellm:dashscope/qwen-plus",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 1.2
         },
         "dashscope/qwen-plus-2025-01-25": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + litellm:dashscope/qwen-plus-2025-01-25",
-          "verified_at": "2026-06-10",
+          "context": 129024,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen-plus-2025-01-25) + litellm:dashscope/qwen-plus-2025-01-25",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 1.2
         },
         "dashscope/qwen-plus-2025-04-28": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + litellm:dashscope/qwen-plus-2025-04-28",
-          "verified_at": "2026-06-10",
+          "context": 129024,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen-plus-2025-04-28) + litellm:dashscope/qwen-plus-2025-04-28",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 1.2
         },
         "dashscope/qwen-plus-2025-07-14": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + litellm:dashscope/qwen-plus-2025-07-14",
-          "verified_at": "2026-06-10",
+          "context": 129024,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen-plus-2025-07-14) + litellm:dashscope/qwen-plus-2025-07-14",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 1.2
         },
         "dashscope/qwen-plus-2025-09-11": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen-plus-2025-09-11",
-          "verified_at": "2026-06-09",
+          "context": 997952,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen-plus-2025-09-11) + manual:dashscope/qwen-plus-2025-09-11",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.2,
           "output_per_mtok": 3.6
         },
@@ -536,16 +536,16 @@
           "output_per_mtok": 3.6
         },
         "dashscope/qwen-plus-latest": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen-plus-latest",
-          "verified_at": "2026-06-09",
+          "context": 997952,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen-plus-latest) + manual:dashscope/qwen-plus-latest",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.2,
           "output_per_mtok": 3.6
         },
         "dashscope/qwen-turbo": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + litellm:dashscope/qwen-turbo",
-          "verified_at": "2026-06-10",
+          "context": 129024,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen-turbo) + litellm:dashscope/qwen-turbo",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.05,
           "output_per_mtok": 0.2
         },
@@ -564,23 +564,23 @@
           "output_per_mtok": 0.16
         },
         "dashscope/qwen-vl-plus": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen-vl-plus",
-          "verified_at": "2026-06-10",
+          "context": 8192,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:openrouter/qwen/qwen-vl-plus) + manual:qwen-vl-plus",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.21,
           "output_per_mtok": 0.63
         },
         "dashscope/qwen3-14b": {
           "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-14b",
-          "verified_at": "2026-06-10",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3-14b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.35,
           "output_per_mtok": 1.4
         },
         "dashscope/qwen3-235b-a22b": {
           "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-235b-a22b",
-          "verified_at": "2026-06-10",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3-235b-a22b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.7,
           "output_per_mtok": 2.8
         },
@@ -592,68 +592,68 @@
           "output_per_mtok": 2.8
         },
         "dashscope/qwen3-235b-a22b-thinking-2507": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-235b-a22b-thinking",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:openrouter/qwen/qwen3-235b-a22b-thinking-2507) + manual:qwen3-235b-a22b-thinking",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.7,
           "output_per_mtok": 8.4
         },
         "dashscope/qwen3-30b-a3b": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-30b-a3b",
-          "verified_at": "2026-06-10",
+          "context": 129024,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-30b-a3b) + manual:qwen3-30b-a3b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 0.8
         },
         "dashscope/qwen3-30b-a3b-instruct-2507": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-30b-a3b",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3-30b-a3b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 0.8
         },
         "dashscope/qwen3-30b-a3b-thinking-2507": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-30b-a3b",
-          "verified_at": "2026-06-10",
+          "context": 81920,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3-30b-a3b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 0.8
         },
         "dashscope/qwen3-32b": {
           "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-32b",
-          "verified_at": "2026-06-10",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3-32b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.16,
           "output_per_mtok": 0.64
         },
         "dashscope/qwen3-8b": {
           "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-8b",
-          "verified_at": "2026-06-10",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3-8b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.18,
           "output_per_mtok": 0.7
         },
         "dashscope/qwen3-asr-flash-2026-02-10": {
           "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context unverified)",
           "verified_at": "2026-06-02",
           "chat": false
         },
         "dashscope/qwen3-asr-flash-realtime": {
           "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context unverified)",
           "verified_at": "2026-06-02",
           "chat": false
         },
         "dashscope/qwen3-asr-flash-realtime-2025-10-27": {
           "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context unverified)",
           "verified_at": "2026-06-02",
           "chat": false
         },
         "dashscope/qwen3-asr-flash-realtime-2026-02-10": {
           "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context unverified)",
           "verified_at": "2026-06-02",
           "chat": false
         },
@@ -665,30 +665,30 @@
           "output_per_mtok": 60.0
         },
         "dashscope/qwen3-coder-flash": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-coder-flash",
-          "verified_at": "2026-06-09",
+          "context": 997952,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-coder-flash) + manual:dashscope/qwen3-coder-flash",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.6,
           "output_per_mtok": 9.6
         },
         "dashscope/qwen3-coder-next": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-coder-next",
-          "verified_at": "2026-06-09",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:dashscope/qwen3-coder-next",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 6.0,
           "output_per_mtok": 60.0
         },
         "dashscope/qwen3-coder-plus": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-coder-plus",
-          "verified_at": "2026-06-09",
+          "context": 997952,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-coder-plus) + manual:dashscope/qwen3-coder-plus",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 6.0,
           "output_per_mtok": 60.0
         },
         "dashscope/qwen3-coder-plus-2025-07-22": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-coder-plus-2025-07-22",
-          "verified_at": "2026-06-09",
+          "context": 997952,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-coder-plus-2025-07-22) + manual:dashscope/qwen3-coder-plus-2025-07-22",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 6.0,
           "output_per_mtok": 60.0
         },
@@ -726,9 +726,9 @@
           "output_per_mtok": 38.0
         },
         "dashscope/qwen3-max": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-max",
-          "verified_at": "2026-06-09",
+          "context": 258048,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-max) + manual:dashscope/qwen3-max",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0
         },
@@ -740,30 +740,30 @@
           "output_per_mtok": 15.0
         },
         "dashscope/qwen3-max-2026-01-23": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-max-2026-01-23",
-          "verified_at": "2026-06-09",
+          "context": 258048,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-max-2026-01-23) + manual:dashscope/qwen3-max-2026-01-23",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0
         },
         "dashscope/qwen3-max-preview": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3-max-preview",
-          "verified_at": "2026-06-09",
+          "context": 258048,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-max-preview) + manual:dashscope/qwen3-max-preview",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 3.0,
           "output_per_mtok": 15.0
         },
         "dashscope/qwen3-next-80b-a3b-instruct": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + litellm:dashscope/qwen3-next-80b-a3b-instruct",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-next-80b-a3b-instruct) + litellm:dashscope/qwen3-next-80b-a3b-instruct",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.15,
           "output_per_mtok": 1.2
         },
         "dashscope/qwen3-next-80b-a3b-thinking": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + litellm:dashscope/qwen3-next-80b-a3b-thinking",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-next-80b-a3b-thinking) + litellm:dashscope/qwen3-next-80b-a3b-thinking",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.15,
           "output_per_mtok": 1.2
         },
@@ -824,15 +824,15 @@
         },
         "dashscope/qwen3-vl-235b-a22b-instruct": {
           "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + litellm:dashscope/qwen3-vl-235b-a22b-instruct",
-          "verified_at": "2026-06-10",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-vl-235b-a22b-instruct) + litellm:dashscope/qwen3-vl-235b-a22b-instruct",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 1.6
         },
         "dashscope/qwen3-vl-235b-a22b-thinking": {
           "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + litellm:dashscope/qwen3-vl-235b-a22b-thinking",
-          "verified_at": "2026-06-10",
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-vl-235b-a22b-thinking) + litellm:dashscope/qwen3-vl-235b-a22b-thinking",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 4.0
         },
@@ -858,9 +858,9 @@
           "output_per_mtok": 2.0
         },
         "dashscope/qwen3-vl-plus": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3-vl-plus",
-          "verified_at": "2026-06-10",
+          "context": 260096,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3-vl-plus) + manual:qwen3-vl-plus",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 1.6
         },
@@ -879,30 +879,30 @@
           "output_per_mtok": 1.6
         },
         "dashscope/qwen3.5-122b-a10b": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-122b-a10b",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:openrouter/qwen/qwen3.5-122b-a10b) + manual:qwen3.5-122b-a10b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 3.2
         },
         "dashscope/qwen3.5-27b": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-27b",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:openrouter/qwen/qwen3.5-27b) + manual:qwen3.5-27b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.3,
           "output_per_mtok": 2.4
         },
         "dashscope/qwen3.5-35b-a3b": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-35b-a3b",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:openrouter/qwen/qwen3.5-35b-a3b) + manual:qwen3.5-35b-a3b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0
         },
         "dashscope/qwen3.5-397b-a17b": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.5-397b-a17b",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:openrouter/qwen/qwen3.5-397b-a17b) + manual:qwen3.5-397b-a17b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.6,
           "output_per_mtok": 3.6
         },
@@ -991,9 +991,9 @@
           "output_per_mtok": 12.4
         },
         "dashscope/qwen3.5-plus": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:dashscope/qwen3.5-plus",
-          "verified_at": "2026-06-09",
+          "context": 991808,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3.5-plus) + manual:dashscope/qwen3.5-plus",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.5,
           "output_per_mtok": 3.0
         },
@@ -1012,23 +1012,23 @@
           "output_per_mtok": 3.0
         },
         "dashscope/qwen3.6-27b": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.6-27b",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3.6-27b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.6,
           "output_per_mtok": 3.6
         },
         "dashscope/qwen3.6-35b-a3b": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.6-35b-a3b",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3.6-35b-a3b",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.375,
           "output_per_mtok": 2.25
         },
         "dashscope/qwen3.6-flash": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.6-flash",
-          "verified_at": "2026-06-10",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3.6-flash",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.0,
           "output_per_mtok": 4.0
         },
@@ -1040,16 +1040,16 @@
           "output_per_mtok": 4.0
         },
         "dashscope/qwen3.6-max-preview": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.6-max",
-          "verified_at": "2026-06-10",
+          "context": 262144,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3.6-max",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 12.0
         },
         "dashscope/qwen3.6-plus": {
-          "context": 131072,
-          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context unverified) + manual:qwen3.6-plus",
-          "verified_at": "2026-06-10",
+          "context": 1000000,
+          "source": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models (context: litellm:openrouter/qwen/qwen3.6-plus) + manual:qwen3.6-plus",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 6.0
         },
@@ -1061,9 +1061,9 @@
           "output_per_mtok": 6.0
         },
         "dashscope/qwen3.7-flash": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:qwen3.7-flash",
-          "verified_at": "2026-07-26",
+          "context": 1000000,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3.7-flash",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 0.8
         },
@@ -1075,9 +1075,9 @@
           "output_per_mtok": 0.8
         },
         "dashscope/qwen3.7-max": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:qwen3.7-max",
-          "verified_at": "2026-06-10",
+          "context": 991808,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3.7-max) + manual:qwen3.7-max",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.5,
           "output_per_mtok": 7.5
         },
@@ -1110,9 +1110,9 @@
           "output_per_mtok": 7.5
         },
         "dashscope/qwen3.7-plus": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:qwen3.7-plus",
-          "verified_at": "2026-06-10",
+          "context": 991808,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: litellm:dashscope/qwen3.7-plus) + manual:qwen3.7-plus",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.2,
           "output_per_mtok": 4.8
         },
@@ -1124,9 +1124,9 @@
           "output_per_mtok": 4.8
         },
         "dashscope/qwen3.8-max": {
-          "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models + manual:qwen3.8-max",
-          "verified_at": "2026-08-03",
+          "context": 1000000,
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context: openrouter /api/v1/models via bare id) + manual:qwen3.8-max",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 6.0
         },
@@ -1146,7 +1146,7 @@
         },
         "dashscope/tongyi-tingwu-slp": {
           "context": 131072,
-          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
+          "source": "https://dashscope.aliyuncs.com/compatible-mode/v1/models (context unverified)",
           "verified_at": "2026-06-02",
           "chat": false
         }
@@ -1218,9 +1218,9 @@
           "output_per_mtok": 10.0
         },
         "gemini-2.5-flash": {
-          "context": 1000000,
-          "source": "https://ai.google.dev/gemini-api/docs/models + litellm:gemini-2.5-flash",
-          "verified_at": "2026-06-10",
+          "context": 1048576,
+          "source": "https://ai.google.dev/gemini-api/docs/models (context: litellm:gemini-2.5-flash) + litellm:gemini-2.5-flash",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.3,
           "output_per_mtok": 2.5,
           "cached_input_per_mtok": 0.03
@@ -1369,13 +1369,13 @@
         },
         "gemini-robotics-er-1.6-preview": {
           "context": 1000000,
-          "source": "https://generativelanguage.googleapis.com/v1beta/models",
+          "source": "https://generativelanguage.googleapis.com/v1beta/models (context unverified)",
           "verified_at": "2026-06-02",
           "chat": false
         },
         "gemini-robotics-er-2-preview": {
           "context": 1000000,
-          "source": "https://generativelanguage.googleapis.com/v1beta/models",
+          "source": "https://generativelanguage.googleapis.com/v1beta/models (context unverified)",
           "verified_at": "2026-08-03",
           "chat": false
         }
@@ -1403,9 +1403,9 @@
           "cache_creation_per_mtok": 0.375
         },
         "minimax/MiniMax-M2.1": {
-          "context": 200000,
-          "source": "https://api.minimax.io/v1/models (context unverified) + litellm:minimax/MiniMax-M2.1",
-          "verified_at": "2026-06-10",
+          "context": 1000000,
+          "source": "https://api.minimax.io/v1/models (context: litellm:minimax/MiniMax-M2.1) + litellm:minimax/MiniMax-M2.1",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.3,
           "output_per_mtok": 1.2,
           "cached_input_per_mtok": 0.03,
@@ -1451,9 +1451,9 @@
           "output_per_mtok": 2.4
         },
         "minimax/MiniMax-M3": {
-          "context": 200000,
-          "source": "https://api.minimax.io/v1/models + litellm:MiniMax-M3",
-          "verified_at": "2026-06-22",
+          "context": 1000000,
+          "source": "https://api.minimax.io/v1/models (context: litellm:minimax/MiniMax-M3) + litellm:MiniMax-M3",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.3,
           "output_per_mtok": 1.2,
           "cached_input_per_mtok": 0.12
@@ -2081,16 +2081,16 @@
           "output_per_mtok": 1.5
         },
         "gpt-3.5-turbo-0125": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-3.5-turbo-0125",
-          "verified_at": "2026-06-10",
+          "context": 16385,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-3.5-turbo-0125) + litellm:gpt-3.5-turbo-0125",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.5,
           "output_per_mtok": 1.5
         },
         "gpt-3.5-turbo-1106": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-3.5-turbo-1106",
-          "verified_at": "2026-06-10",
+          "context": 16385,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-3.5-turbo-1106) + litellm:gpt-3.5-turbo-1106",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.0,
           "output_per_mtok": 2.0
         },
@@ -2111,9 +2111,9 @@
           "output_per_mtok": 2.0
         },
         "gpt-3.5-turbo-instruct-0914": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-3.5-turbo-instruct-0914",
-          "verified_at": "2026-06-10",
+          "context": 8192,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-3.5-turbo-instruct-0914) + litellm:gpt-3.5-turbo-instruct-0914",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.5,
           "output_per_mtok": 2.0
         },
@@ -2126,24 +2126,24 @@
           "output_per_mtok": 60.0
         },
         "gpt-4-0613": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-4-0613",
-          "verified_at": "2026-06-10",
+          "context": 8192,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-4-0613) + litellm:gpt-4-0613",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 30.0,
           "output_per_mtok": 60.0
         },
         "gpt-4-turbo": {
           "context": 128000,
           "max_output": 4096,
-          "source": "https://platform.openai.com/docs/models + litellm:gpt-4-turbo",
-          "verified_at": "2026-06-10",
+          "source": "https://platform.openai.com/docs/models (context: litellm:gpt-4-turbo) + litellm:gpt-4-turbo",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 10.0,
           "output_per_mtok": 30.0
         },
         "gpt-4-turbo-2024-04-09": {
           "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-4-turbo-2024-04-09",
-          "verified_at": "2026-06-10",
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-4-turbo-2024-04-09) + litellm:gpt-4-turbo-2024-04-09",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 10.0,
           "output_per_mtok": 30.0
         },
@@ -2157,9 +2157,9 @@
           "cached_input_per_mtok": 0.5
         },
         "gpt-4.1-2025-04-14": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-4.1-2025-04-14",
-          "verified_at": "2026-06-10",
+          "context": 1047576,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-4.1-2025-04-14) + litellm:gpt-4.1-2025-04-14",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 8.0,
           "cached_input_per_mtok": 0.5
@@ -2174,9 +2174,9 @@
           "cached_input_per_mtok": 0.1
         },
         "gpt-4.1-mini-2025-04-14": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-4.1-mini-2025-04-14",
-          "verified_at": "2026-06-10",
+          "context": 1047576,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-4.1-mini-2025-04-14) + litellm:gpt-4.1-mini-2025-04-14",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.4,
           "output_per_mtok": 1.6,
           "cached_input_per_mtok": 0.1
@@ -2191,9 +2191,9 @@
           "cached_input_per_mtok": 0.025
         },
         "gpt-4.1-nano-2025-04-14": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-4.1-nano-2025-04-14",
-          "verified_at": "2026-06-10",
+          "context": 1047576,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-4.1-nano-2025-04-14) + litellm:gpt-4.1-nano-2025-04-14",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.1,
           "output_per_mtok": 0.4,
           "cached_input_per_mtok": 0.025
@@ -2201,8 +2201,8 @@
         "gpt-4o": {
           "context": 128000,
           "max_output": 16384,
-          "source": "https://platform.openai.com/docs/models + litellm:gpt-4o",
-          "verified_at": "2026-06-10",
+          "source": "https://platform.openai.com/docs/models (context: litellm:gpt-4o) + litellm:gpt-4o",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.5,
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 1.25
@@ -2210,16 +2210,16 @@
         "gpt-4o-2024-05-13": {
           "context": 128000,
           "max_output": 4096,
-          "source": "https://openrouter.ai/api/v1/models via bare id + litellm:gpt-4o-2024-05-13",
-          "verified_at": "2026-06-10",
+          "source": "https://openrouter.ai/api/v1/models via bare id (context: litellm:gpt-4o-2024-05-13) + litellm:gpt-4o-2024-05-13",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 5.0,
           "output_per_mtok": 15.0
         },
         "gpt-4o-2024-08-06": {
           "context": 128000,
           "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models via bare id + litellm:gpt-4o-2024-08-06",
-          "verified_at": "2026-06-10",
+          "source": "https://openrouter.ai/api/v1/models via bare id (context: litellm:gpt-4o-2024-08-06) + litellm:gpt-4o-2024-08-06",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.5,
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 1.25
@@ -2227,8 +2227,8 @@
         "gpt-4o-2024-11-20": {
           "context": 128000,
           "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models via bare id + litellm:gpt-4o-2024-11-20",
-          "verified_at": "2026-06-10",
+          "source": "https://openrouter.ai/api/v1/models via bare id (context: litellm:gpt-4o-2024-11-20) + litellm:gpt-4o-2024-11-20",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.5,
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 1.25
@@ -2236,8 +2236,8 @@
         "gpt-4o-mini": {
           "context": 128000,
           "max_output": 16384,
-          "source": "https://platform.openai.com/docs/models + litellm:gpt-4o-mini",
-          "verified_at": "2026-06-10",
+          "source": "https://platform.openai.com/docs/models (context: litellm:gpt-4o-mini) + litellm:gpt-4o-mini",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.15,
           "output_per_mtok": 0.6,
           "cached_input_per_mtok": 0.075
@@ -2245,8 +2245,8 @@
         "gpt-4o-mini-2024-07-18": {
           "context": 128000,
           "max_output": 16384,
-          "source": "https://openrouter.ai/api/v1/models via bare id + litellm:gpt-4o-mini-2024-07-18",
-          "verified_at": "2026-06-10",
+          "source": "https://openrouter.ai/api/v1/models via bare id (context: litellm:gpt-4o-mini-2024-07-18) + litellm:gpt-4o-mini-2024-07-18",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.15,
           "output_per_mtok": 0.6,
           "cached_input_per_mtok": 0.075
@@ -2268,17 +2268,17 @@
           "cached_input_per_mtok": 0.125
         },
         "gpt-5-2025-08-07": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5-2025-08-07",
-          "verified_at": "2026-06-10",
+          "context": 272000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5-2025-08-07) + litellm:gpt-5-2025-08-07",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.25,
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 0.125
         },
         "gpt-5-chat-latest": {
           "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5-chat-latest",
-          "verified_at": "2026-06-10",
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5-chat-latest) + litellm:gpt-5-chat-latest",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.25,
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 0.125
@@ -2302,9 +2302,9 @@
           "cached_input_per_mtok": 0.025
         },
         "gpt-5-mini-2025-08-07": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5-mini-2025-08-07",
-          "verified_at": "2026-06-10",
+          "context": 272000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5-mini-2025-08-07) + litellm:gpt-5-mini-2025-08-07",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.25,
           "output_per_mtok": 2.0,
           "cached_input_per_mtok": 0.025
@@ -2318,9 +2318,9 @@
           "cached_input_per_mtok": 0.005
         },
         "gpt-5-nano-2025-08-07": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5-nano-2025-08-07",
-          "verified_at": "2026-06-10",
+          "context": 272000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5-nano-2025-08-07) + litellm:gpt-5-nano-2025-08-07",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.05,
           "output_per_mtok": 0.4,
           "cached_input_per_mtok": 0.005
@@ -2334,24 +2334,24 @@
           "output_per_mtok": 120.0
         },
         "gpt-5-pro-2025-10-06": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5-pro-2025-10-06",
-          "verified_at": "2026-06-10",
+          "context": 400000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5-pro-2025-10-06) + litellm:gpt-5-pro-2025-10-06",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 15.0,
           "output_per_mtok": 120.0
         },
         "gpt-5-search-api": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5-search-api",
-          "verified_at": "2026-06-10",
+          "context": 272000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5-search-api) + litellm:gpt-5-search-api",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.25,
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 0.125
         },
         "gpt-5-search-api-2025-10-14": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5-search-api-2025-10-14",
-          "verified_at": "2026-06-10",
+          "context": 272000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5-search-api-2025-10-14) + litellm:gpt-5-search-api-2025-10-14",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.25,
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 0.125
@@ -2366,17 +2366,17 @@
           "cached_input_per_mtok": 0.125
         },
         "gpt-5.1-2025-11-13": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.1-2025-11-13",
-          "verified_at": "2026-06-10",
+          "context": 272000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.1-2025-11-13) + litellm:gpt-5.1-2025-11-13",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.25,
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 0.125
         },
         "gpt-5.1-chat-latest": {
           "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.1-chat-latest",
-          "verified_at": "2026-06-10",
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.1-chat-latest) + litellm:gpt-5.1-chat-latest",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.25,
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 0.125
@@ -2418,17 +2418,17 @@
           "cached_input_per_mtok": 0.175
         },
         "gpt-5.2-2025-12-11": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.2-2025-12-11",
-          "verified_at": "2026-06-10",
+          "context": 272000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.2-2025-12-11) + litellm:gpt-5.2-2025-12-11",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.75,
           "output_per_mtok": 14.0,
           "cached_input_per_mtok": 0.175
         },
         "gpt-5.2-chat-latest": {
           "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.2-chat-latest",
-          "verified_at": "2026-06-10",
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.2-chat-latest) + litellm:gpt-5.2-chat-latest",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.75,
           "output_per_mtok": 14.0,
           "cached_input_per_mtok": 0.175
@@ -2451,16 +2451,16 @@
           "output_per_mtok": 168.0
         },
         "gpt-5.2-pro-2025-12-11": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.2-pro-2025-12-11",
-          "verified_at": "2026-06-10",
+          "context": 272000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.2-pro-2025-12-11) + litellm:gpt-5.2-pro-2025-12-11",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 21.0,
           "output_per_mtok": 168.0
         },
         "gpt-5.3-chat-latest": {
           "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.3-chat-latest",
-          "verified_at": "2026-06-10",
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.3-chat-latest) + litellm:gpt-5.3-chat-latest",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.75,
           "output_per_mtok": 14.0,
           "cached_input_per_mtok": 0.175
@@ -2484,9 +2484,9 @@
           "cached_input_per_mtok": 0.25
         },
         "gpt-5.4-2026-03-05": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.4-2026-03-05",
-          "verified_at": "2026-06-10",
+          "context": 1050000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.4-2026-03-05) + litellm:gpt-5.4-2026-03-05",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.5,
           "output_per_mtok": 15.0,
           "cached_input_per_mtok": 0.25
@@ -2501,9 +2501,9 @@
           "cached_input_per_mtok": 0.075
         },
         "gpt-5.4-mini-2026-03-17": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.4-mini-2026-03-17",
-          "verified_at": "2026-06-10",
+          "context": 272000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.4-mini-2026-03-17) + litellm:gpt-5.4-mini-2026-03-17",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.75,
           "output_per_mtok": 4.5,
           "cached_input_per_mtok": 0.075
@@ -2518,9 +2518,9 @@
           "cached_input_per_mtok": 0.02
         },
         "gpt-5.4-nano-2026-03-17": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.4-nano-2026-03-17",
-          "verified_at": "2026-06-10",
+          "context": 272000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.4-nano-2026-03-17) + litellm:gpt-5.4-nano-2026-03-17",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 1.25,
           "cached_input_per_mtok": 0.02
@@ -2535,9 +2535,9 @@
           "cached_input_per_mtok": 3.0
         },
         "gpt-5.4-pro-2026-03-05": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.4-pro-2026-03-05",
-          "verified_at": "2026-06-10",
+          "context": 1050000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.4-pro-2026-03-05) + litellm:gpt-5.4-pro-2026-03-05",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 30.0,
           "output_per_mtok": 180.0,
           "cached_input_per_mtok": 3.0
@@ -2552,9 +2552,9 @@
           "cached_input_per_mtok": 0.5
         },
         "gpt-5.5-2026-04-23": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.5-2026-04-23",
-          "verified_at": "2026-06-10",
+          "context": 1050000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.5-2026-04-23) + litellm:gpt-5.5-2026-04-23",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 5.0,
           "output_per_mtok": 30.0,
           "cached_input_per_mtok": 0.5
@@ -2569,9 +2569,9 @@
           "cached_input_per_mtok": 3.0
         },
         "gpt-5.5-pro-2026-04-23": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:gpt-5.5-pro-2026-04-23",
-          "verified_at": "2026-06-10",
+          "context": 1050000,
+          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.5-pro-2026-04-23) + litellm:gpt-5.5-pro-2026-04-23",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 30.0,
           "output_per_mtok": 180.0,
           "cached_input_per_mtok": 3.0
@@ -2615,9 +2615,9 @@
           "cached_input_per_mtok": 7.5
         },
         "o1-2024-12-17": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:o1-2024-12-17",
-          "verified_at": "2026-06-10",
+          "context": 200000,
+          "source": "https://api.openai.com/v1/models (context: litellm:o1-2024-12-17) + litellm:o1-2024-12-17",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 15.0,
           "output_per_mtok": 60.0,
           "cached_input_per_mtok": 7.5
@@ -2638,9 +2638,9 @@
           "output_per_mtok": 600.0
         },
         "o1-pro-2025-03-19": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:o1-pro-2025-03-19",
-          "verified_at": "2026-06-10",
+          "context": 200000,
+          "source": "https://api.openai.com/v1/models (context: litellm:o1-pro-2025-03-19) + litellm:o1-pro-2025-03-19",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 150.0,
           "output_per_mtok": 600.0
         },
@@ -2654,9 +2654,9 @@
           "cached_input_per_mtok": 0.5
         },
         "o3-2025-04-16": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:o3-2025-04-16",
-          "verified_at": "2026-06-10",
+          "context": 200000,
+          "source": "https://api.openai.com/v1/models (context: litellm:o3-2025-04-16) + litellm:o3-2025-04-16",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 8.0,
           "cached_input_per_mtok": 0.5
@@ -2671,9 +2671,9 @@
           "cached_input_per_mtok": 2.5
         },
         "o3-deep-research-2025-06-26": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:o3-deep-research-2025-06-26",
-          "verified_at": "2026-06-10",
+          "context": 200000,
+          "source": "https://api.openai.com/v1/models (context: litellm:o3-deep-research-2025-06-26) + litellm:o3-deep-research-2025-06-26",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 10.0,
           "output_per_mtok": 40.0,
           "cached_input_per_mtok": 2.5
@@ -2688,9 +2688,9 @@
           "cached_input_per_mtok": 0.55
         },
         "o3-mini-2025-01-31": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:o3-mini-2025-01-31",
-          "verified_at": "2026-06-10",
+          "context": 200000,
+          "source": "https://api.openai.com/v1/models (context: litellm:o3-mini-2025-01-31) + litellm:o3-mini-2025-01-31",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.1,
           "output_per_mtok": 4.4,
           "cached_input_per_mtok": 0.55
@@ -2704,9 +2704,9 @@
           "output_per_mtok": 80.0
         },
         "o3-pro-2025-06-10": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:o3-pro-2025-06-10",
-          "verified_at": "2026-06-10",
+          "context": 200000,
+          "source": "https://api.openai.com/v1/models (context: litellm:o3-pro-2025-06-10) + litellm:o3-pro-2025-06-10",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 20.0,
           "output_per_mtok": 80.0
         },
@@ -2720,9 +2720,9 @@
           "cached_input_per_mtok": 0.275
         },
         "o4-mini-2025-04-16": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:o4-mini-2025-04-16",
-          "verified_at": "2026-06-10",
+          "context": 200000,
+          "source": "https://api.openai.com/v1/models (context: litellm:o4-mini-2025-04-16) + litellm:o4-mini-2025-04-16",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.1,
           "output_per_mtok": 4.4,
           "cached_input_per_mtok": 0.275
@@ -2737,9 +2737,9 @@
           "cached_input_per_mtok": 0.5
         },
         "o4-mini-deep-research-2025-06-26": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context unverified) + litellm:o4-mini-deep-research-2025-06-26",
-          "verified_at": "2026-06-10",
+          "context": 200000,
+          "source": "https://api.openai.com/v1/models (context: litellm:o4-mini-deep-research-2025-06-26) + litellm:o4-mini-deep-research-2025-06-26",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 8.0,
           "cached_input_per_mtok": 0.5
@@ -6630,18 +6630,18 @@
       "default_context": 131072,
       "models": {
         "zai/glm-4.5": {
-          "context": 131072,
+          "context": 128000,
           "max_output": 98304,
-          "source": "https://docs.z.ai/guides/llm/glm-4.5 + litellm:zai/glm-4.5",
-          "verified_at": "2026-06-10",
+          "source": "https://docs.z.ai/guides/llm/glm-4.5 (context: litellm:zai/glm-4.5) + litellm:zai/glm-4.5",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.6,
           "output_per_mtok": 2.2
         },
         "zai/glm-4.5-air": {
-          "context": 131072,
+          "context": 128000,
           "max_output": 98304,
-          "source": "https://docs.z.ai/guides/llm/glm-4.5 + litellm:zai/glm-4.5-air",
-          "verified_at": "2026-06-10",
+          "source": "https://docs.z.ai/guides/llm/glm-4.5 (context: litellm:zai/glm-4.5-air) + litellm:zai/glm-4.5-air",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.2,
           "output_per_mtok": 1.1
         },
@@ -6670,9 +6670,9 @@
           "output_per_mtok": 3.2
         },
         "zai/glm-5-turbo": {
-          "context": 131072,
-          "source": "https://api.z.ai/api/coding/paas/v4/models + manual:glm-5-turbo",
-          "verified_at": "2026-06-17",
+          "context": 202752,
+          "source": "https://api.z.ai/api/coding/paas/v4/models (context: openrouter /api/v1/models via bare id) + manual:glm-5-turbo",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.2,
           "output_per_mtok": 4.0
         },
@@ -6699,9 +6699,9 @@
       "default_context": 262144,
       "models": {
         "xai/grok-4.20-0309-non-reasoning": {
-          "context": 262144,
-          "source": "https://api.x.ai/v1/models + manual:grok-4.20-0309-non-reasoning",
-          "verified_at": "2026-06-17",
+          "context": 1000000,
+          "source": "https://api.x.ai/v1/models (context: xai /v1/models context_length) + manual:grok-4.20-0309-non-reasoning",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.25,
           "output_per_mtok": 2.5
         },
@@ -6713,9 +6713,9 @@
           "output_per_mtok": 6.0
         },
         "xai/grok-4.20-multi-agent-0309": {
-          "context": 262144,
-          "source": "https://api.x.ai/v1/models + manual:grok-4.20-multi-agent-0309",
-          "verified_at": "2026-06-17",
+          "context": 1000000,
+          "source": "https://api.x.ai/v1/models (context: xai /v1/models context_length) + manual:grok-4.20-multi-agent-0309",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.25,
           "output_per_mtok": 2.5
         },
@@ -6727,16 +6727,16 @@
           "output_per_mtok": 2.5
         },
         "xai/grok-4.5": {
-          "context": 262144,
-          "source": "https://api.x.ai/v1/models + manual:grok-4.5",
-          "verified_at": "2026-07-09",
+          "context": 500000,
+          "source": "https://api.x.ai/v1/models (context: xai /v1/models context_length) + manual:grok-4.5",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 2.0,
           "output_per_mtok": 6.0
         },
         "xai/grok-build-0.1": {
-          "context": 262144,
-          "source": "https://api.x.ai/v1/models + manual:grok-build-0.1",
-          "verified_at": "2026-06-17",
+          "context": 256000,
+          "source": "https://api.x.ai/v1/models (context: xai /v1/models context_length) + manual:grok-build-0.1",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.0,
           "output_per_mtok": 2.0
         }
@@ -6748,29 +6748,29 @@
       "models": {
         "moonshot/kimi-k2.5": {
           "context": 262144,
-          "source": "https://api.moonshot.ai/v1/models + litellm:kimi-k2.5",
-          "verified_at": "2026-06-17",
+          "source": "https://api.moonshot.ai/v1/models (context: moonshot /v1/models context_length) + litellm:kimi-k2.5",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.6,
           "output_per_mtok": 3.0
         },
         "moonshot/kimi-k2.6": {
           "context": 262144,
-          "source": "https://api.moonshot.ai/v1/models + litellm:kimi-k2.6",
-          "verified_at": "2026-06-17",
+          "source": "https://api.moonshot.ai/v1/models (context: moonshot /v1/models context_length) + litellm:kimi-k2.6",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.95,
           "output_per_mtok": 4.0
         },
         "moonshot/kimi-k2.7-code": {
           "context": 262144,
-          "source": "https://api.moonshot.ai/v1/models + manual:kimi-k2.7-code",
-          "verified_at": "2026-06-17",
+          "source": "https://api.moonshot.ai/v1/models (context: moonshot /v1/models context_length) + manual:kimi-k2.7-code",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 0.95,
           "output_per_mtok": 4.0
         },
         "moonshot/kimi-k2.7-code-highspeed": {
           "context": 262144,
-          "source": "https://api.moonshot.ai/v1/models + manual:kimi-k2.7-code-highspeed",
-          "verified_at": "2026-06-17",
+          "source": "https://api.moonshot.ai/v1/models (context: moonshot /v1/models context_length) + manual:kimi-k2.7-code-highspeed",
+          "verified_at": "2026-08-10",
           "input_per_mtok": 1.9,
           "output_per_mtok": 8.0
         },
