@@ -60,6 +60,7 @@ pub mod thclaws_gateway;
 pub enum ProviderKind {
     Anthropic,
     AtlasCloud,
+    MetaAi,
     NineRouter,
     AgentSdk,
     OpenAI,
@@ -220,6 +221,7 @@ impl ProviderKind {
     pub const ALL: &'static [Self] = &[
         Self::Anthropic,
         Self::AtlasCloud,
+        Self::MetaAi,
         Self::NineRouter,
         Self::AgentSdk,
         Self::OpenAI,
@@ -253,6 +255,7 @@ impl ProviderKind {
         match self {
             Self::Anthropic => "anthropic",
             Self::AtlasCloud => "atlascloud",
+            Self::MetaAi => "meta",
             Self::NineRouter => "9router",
             Self::AgentSdk => "anthropic-agent",
             Self::OpenAI => "openai",
@@ -287,6 +290,9 @@ impl ProviderKind {
         match self {
             Self::Anthropic => "claude-sonnet-4-6",
             Self::AtlasCloud => "atlascloud/qwen/qwen3.5-flash",
+            // muse-spark reasons before it answers, so it needs a large
+            // output budget — see the catalogue's max_output note.
+            Self::MetaAi => "meta/muse-spark-1.2",
             // 9router routes by `<alias>/<model>`; `anthropic` is a standard
             // registry alias. Users normally pick from the live /models list.
             Self::NineRouter => "9router/anthropic/claude-sonnet-4.5",
@@ -394,6 +400,7 @@ impl ProviderKind {
         match self {
             Self::TokenRouter => Some("TOKENROUTER_BASE_URL"),
             Self::AtlasCloud => Some("ATLASCLOUD_BASE_URL"),
+            Self::MetaAi => Some("META_BASE_URL"),
             Self::NineRouter => Some("NINEROUTER_BASE_URL"),
             Self::DashScope => Some("DASHSCOPE_BASE_URL"),
             Self::QwenCloud => Some("QWENCLOUD_BASE_URL"),
@@ -445,6 +452,7 @@ impl ProviderKind {
         match self {
             Self::TokenRouter => Some("https://api.tokenrouter.com/v1"),
             Self::AtlasCloud => Some("https://api.atlascloud.ai/v1"),
+            Self::MetaAi => Some("https://api.meta.ai/v1"),
             // Self-hosted router; localhost default. Override per user via
             // NINEROUTER_BASE_URL for a remote / non-default-port instance.
             Self::NineRouter => Some("http://localhost:20128/v1"),
@@ -544,6 +552,7 @@ impl ProviderKind {
             Self::OpenRouter => Some("OPENROUTER_API_KEY"),
             Self::TokenRouter => Some("TOKENROUTER_API_KEY"),
             Self::AtlasCloud => Some("ATLASCLOUD_API_KEY"),
+            Self::MetaAi => Some("META_API_KEY"),
             Self::NineRouter => Some("NINEROUTER_API_KEY"),
             Self::Gemini => Some("GEMINI_API_KEY"),
             Self::Ollama => None,
@@ -645,6 +654,7 @@ impl ProviderKind {
             Self::OpenAI
             | Self::OpenAIResponses
             | Self::AtlasCloud
+            | Self::MetaAi
             // 9router uses full `9router/<alias>/<model>` ids; no short-alias
             // table (the alias segment is 9router's own, typed explicitly).
             | Self::NineRouter
@@ -684,6 +694,13 @@ impl ProviderKind {
             Some(Self::OpenRouter)
         } else if model.starts_with("atlascloud/") {
             Some(Self::AtlasCloud)
+        } else if model.starts_with("meta/") {
+            // Meta AI (api.meta.ai) — BYOK only, no gateway route. Ids look
+            // like meta/muse-spark-1.2; the prefix is stripped before the
+            // upstream request. OpenRouter proxies the same models, but its
+            // ids always arrive as `openrouter/meta/...` and that branch is
+            // checked first — same arrangement as `nvidia/` above.
+            Some(Self::MetaAi)
         } else if model.starts_with("9router/") {
             // Self-hosted 9router gateway. Ids look like
             // `9router/kr/claude-sonnet-4.5`; the `9router/` prefix is stripped
@@ -2039,6 +2056,55 @@ mod tests {
         assert_eq!(
             ProviderKind::AtlasCloud.default_model(),
             "atlascloud/qwen/qwen3.5-flash"
+        );
+    }
+
+    #[test]
+    fn detect_meta_prefix_routes_to_meta_provider() {
+        assert_eq!(
+            ProviderKind::detect("meta/muse-spark-1.2"),
+            Some(ProviderKind::MetaAi)
+        );
+        assert_eq!(
+            ProviderKind::detect("meta/muse-spark-1.2-contributor"),
+            Some(ProviderKind::MetaAi)
+        );
+        assert_eq!(ProviderKind::MetaAi.api_key_env(), Some("META_API_KEY"));
+        assert_eq!(ProviderKind::MetaAi.endpoint_env(), Some("META_BASE_URL"));
+        assert_eq!(
+            ProviderKind::MetaAi.default_endpoint(),
+            Some("https://api.meta.ai/v1")
+        );
+        assert_eq!(ProviderKind::MetaAi.name(), "meta");
+        assert_eq!(ProviderKind::MetaAi.default_model(), "meta/muse-spark-1.2");
+    }
+
+    /// OpenRouter proxies the same models and the catalogue stores its ids
+    /// unprefixed (`meta/muse-spark-1.2`), so the two only stay apart because
+    /// `detect` checks `openrouter/` first. Reordering that chain would send
+    /// every OpenRouter Meta route to api.meta.ai — with a key most users
+    /// routing through OpenRouter do not have.
+    #[test]
+    fn openrouter_wrapper_wins_over_the_meta_prefix() {
+        assert_eq!(
+            ProviderKind::detect("openrouter/meta/muse-spark-1.2"),
+            Some(ProviderKind::OpenRouter)
+        );
+    }
+
+    /// Meta AI is BYOK-only on purpose: no gateway segment, so it must not
+    /// leak into the sold tier or the routed set.
+    #[test]
+    fn meta_is_byok_only() {
+        assert_eq!(ProviderKind::MetaAi.tier(), ProviderTier::Additional);
+        assert_eq!(
+            crate::providers::thclaws_gateway::provider_segment(ProviderKind::MetaAi),
+            None,
+            "Meta AI has no gateway route"
+        );
+        assert!(
+            !crate::shared::GATEWAY_ALL_PROVIDERS.contains(&ProviderKind::MetaAi.name()),
+            "Meta AI must stay out of the gateway-routed set"
         );
     }
 

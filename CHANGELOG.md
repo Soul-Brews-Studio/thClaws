@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.113.0] — 2026-08-11
+
+46 OpenRouter models that had quietly gone missing are back in the picker, and Meta AI joins as a bring-your-own-key provider.
+
+### Added
+- **Meta AI (`api.meta.ai`) is available with your own key.** Set `META_API_KEY`, pick a `meta/muse-spark-*` model, and it works like any other provider — three models, 1M context. Bring-your-own-key only: there is no gateway route, so a hosted workspace cannot reach it without your key.
+- **46 OpenRouter models that were missing are now listed**, among them `claude-opus-5`, `claude-sonnet-5`, the `gpt-5.6` family, `grok-4.5`, `glm-5.2`, `qwen3.8-max`, `kimi-k3` and `deepseek-v4-flash-0731`. They were never unavailable — OpenRouter served them all along and typing the id worked — but they did not appear in the picker, so in practice you had to already know the name.
+
+### Fixed
+- **The catalogue can no longer fall behind OpenRouter without anyone noticing.** `make catalogue` refreshes every provider from its live API, but OpenRouter was filtered down to a single entry: the refresh could retire dead routes and never add new ones. Adding was a separate command nobody remembered to run, which is how the list drifted 46 models behind. That command is now part of `make catalogue` itself, so a release ships a current list by construction rather than by recollection. Batch-only and variant routes stay out — they are not interactive chat, and 60 of them would have buried the models people actually pick.
+- **A truncated API key can no longer be published to the gateway.** The secret-sync step copied whatever `.env` held; a two-character value made it to the live gateway and armed a 401 on every request to that provider. Implausibly short values are now refused by name before anything is written.
+
 ## [0.112.0] — 2026-08-11
 
 Context windows across the catalogue are now sourced rather than guessed — including 112 rows that had been advertising eight times the space they actually have — the gateway proxies only the providers it sells, and an MCP server that installs its dependencies on first launch no longer times out doing so.

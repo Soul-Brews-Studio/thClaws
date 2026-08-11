@@ -4447,6 +4447,29 @@ pub fn build_provider(config: &AppConfig) -> Result<Arc<dyn Provider>> {
                     .with_strip_model_prefix("atlascloud/"),
             ))
         }
+        ProviderKind::MetaAi => {
+            // Meta AI (api.meta.ai) — OpenAI-compatible chat/completions.
+            // BYOK only: there is no gateway segment for it, so a hosted
+            // workspace without META_API_KEY simply cannot reach it.
+            //
+            // muse-spark reasons before answering and bills that to the same
+            // budget as the reply — "2+2" spends ~257 reasoning tokens for an
+            // 11-token answer. Too small a max_tokens returns HTTP 200 with
+            // empty content and finish_reason=length, which reads like a
+            // broken provider rather than an exhausted budget.
+            let (key, url) = compat_endpoint(
+                config,
+                kind,
+                "META_BASE_URL",
+                "https://api.meta.ai/v1",
+                api_key,
+            );
+            Ok(Arc::new(
+                OpenAIProvider::new(key)
+                    .with_base_url(url)
+                    .with_strip_model_prefix("meta/"),
+            ))
+        }
         ProviderKind::NineRouter => {
             // 9router (github.com/decolua/9router) — self-hosted OpenAI-
             // compatible router/gateway (default localhost:20128). Model ids

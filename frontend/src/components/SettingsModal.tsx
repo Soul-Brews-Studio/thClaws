@@ -54,6 +54,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   "ollama-cloud": "Ollama Cloud",
   "opencode-go": "OpenCode Go",
   moonshot: "Moonshot AI (Kimi)",
+  meta: "Meta AI (Muse Spark)",
   xai: "xAI (Grok)",
   groq: "Groq",
   minimax: "MiniMax",
