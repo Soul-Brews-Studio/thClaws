@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.114.0] — 2026-08-11
+
+Every OpenAI model in the picker now actually works: the `gpt-5.6` family accepts tools, the `-pro` tier reaches the endpoint that serves it, and nine models that OpenAI retired are gone for good.
+
+### Fixed
+- **`gpt-5.6-luna`, `-sol` and `-terra` refused every request that carried tools.** OpenAI defaults `reasoning_effort` to a non-'none' value for that family and then rejects the combination with function tools, so any agentic turn failed outright with an HTTP error. Nothing in thClaws sets that field — the default is OpenAI's — so the request is now retried once with `reasoning_effort: none`, which is what OpenAI's own error message asks for. The retry keys off that specific refusal rather than a list of model names, so the next model with the same behaviour is handled without a release. These models were unaffected through OpenRouter.
+- **The whole `-pro` tier failed on every turn.** `gpt-5-pro`, `gpt-5.2-pro`, `gpt-5.4-pro`, `gpt-5.5-pro` and their dated snapshots are served only by OpenAI's Responses API and answer Chat Completions with "This is not a chat model". They are now routed to the Responses endpoint, where they work.
+- **Nine retired OpenAI models are removed, and they stay removed.** The `*-chat-latest` and older `*-codex` ids answer 404 on both endpoints, but OpenAI's model listing still advertises them — so a `make catalogue` refresh kept putting them back after each removal. The refresh now excludes them by name.
+- **The OpenAI Responses provider pointed at models that no longer exist.** All three of its catalogue entries were retired ids, including the one it used as its default — selecting the provider without naming a model failed on the first turn. It now carries `gpt-5.3-codex`.
+
 ## [0.113.0] — 2026-08-11
 
 46 OpenRouter models that had quietly gone missing are back in the picker, and Meta AI joins as a bring-your-own-key provider.

@@ -298,7 +298,11 @@ impl ProviderKind {
             Self::NineRouter => "9router/anthropic/claude-sonnet-4.5",
             Self::AgentSdk => "agent/claude-sonnet-4-6",
             Self::OpenAI => "gpt-4.1",
-            Self::OpenAIResponses => "codex/gpt-5.2-codex",
+            // gpt-5.2-codex was retired by OpenAI (404 on both
+            // /v1/chat/completions and /v1/responses); gpt-5.3-codex is the
+            // live successor. A dead default means every user who picks this
+            // provider without naming a model gets a 404 on their first turn.
+            Self::OpenAIResponses => "codex/gpt-5.3-codex",
             Self::ChatGptCodex => "chatgpt-codex/gpt-5.4",
             Self::OpenRouter => "openrouter/qwen/qwen3.7-plus",
             Self::TokenRouter => "tokenrouter/anthropic/claude-sonnet-4.5",
@@ -721,6 +725,18 @@ impl ProviderKind {
             // the broader match steals the route.
             Some(Self::ChatGptCodex)
         } else if model.starts_with("codex/") || model.contains("codex") {
+            Some(Self::OpenAIResponses)
+        } else if model.starts_with("gpt-") && model.contains("-pro") {
+            // OpenAI's `-pro` tier is Responses-only: `gpt-5-pro`,
+            // `gpt-5.2-pro`, `gpt-5.4-pro`, `gpt-5.5-pro` and their dated
+            // snapshots all answer `/v1/responses` and 404 on
+            // `/v1/chat/completions` with "This is not a chat model". They
+            // used to land on the OpenAI arm below and fail every time.
+            //
+            // Guarded on the `gpt-` prefix so it cannot catch a `-pro` model
+            // from another vendor; every routed id here is one of OpenAI's
+            // own bare names, since prefixed ones (openrouter/…, atlascloud/…)
+            // are matched earlier.
             Some(Self::OpenAIResponses)
         } else if model.starts_with("gpt-")
             || model.starts_with("o1-")
@@ -2056,6 +2072,41 @@ mod tests {
         assert_eq!(
             ProviderKind::AtlasCloud.default_model(),
             "atlascloud/qwen/qwen3.5-flash"
+        );
+    }
+
+    /// OpenAI's `-pro` tier answers `/v1/responses` and 404s on
+    /// `/v1/chat/completions` ("This is not a chat model"). Routing them to
+    /// the chat provider is a guaranteed failure, which is what every
+    /// `gpt-*-pro` row in the catalogue did until 2026-08-11.
+    #[test]
+    fn detect_routes_openai_pro_models_to_responses() {
+        for m in [
+            "gpt-5-pro",
+            "gpt-5-pro-2025-10-06",
+            "gpt-5.2-pro",
+            "gpt-5.4-pro-2026-03-05",
+            "gpt-5.5-pro",
+        ] {
+            assert_eq!(
+                ProviderKind::detect(m),
+                Some(ProviderKind::OpenAIResponses),
+                "{m} must go to the Responses endpoint"
+            );
+        }
+        // Non-pro OpenAI ids keep the chat path.
+        for m in ["gpt-5", "gpt-5.4-mini", "gpt-5.6-terra"] {
+            assert_eq!(ProviderKind::detect(m), Some(ProviderKind::OpenAI), "{m}");
+        }
+        // The `gpt-` guard keeps another vendor's `-pro` out of it; a
+        // prefixed id is matched by its own branch further up.
+        assert_eq!(
+            ProviderKind::detect("openrouter/openai/gpt-5.5-pro"),
+            Some(ProviderKind::OpenRouter)
+        );
+        assert_eq!(
+            ProviderKind::detect("atlascloud/deepseek-ai/deepseek-v4-pro"),
+            Some(ProviderKind::AtlasCloud)
         );
     }
 

@@ -36,7 +36,7 @@ Prices are **what you pay** — upstream cost with the 1.25× platform markup al
 
 A context marked **`?`** was never published by the provider — it is that provider's blanket default, kept because a missing window breaks model pickers. Treat it as a lower bound, not a specification.
 
-613 models across 14 providers.
+605 models across 14 providers.
 
 ### Anthropic
 
@@ -89,8 +89,6 @@ A context marked **`?`** was never published by the provider — it is that prov
 | `gpt-4o-mini-2024-07-18` | 128k | $0.19 | $0.09 | $0.75 |
 | `gpt-5` | 400k | $1.56 | $0.16 | $12.50 |
 | `gpt-5-2025-08-07` | 272k | $1.56 | $0.16 | $12.50 |
-| `gpt-5-chat-latest` | 128k | $1.56 | $0.16 | $12.50 |
-| `gpt-5-codex` | 400k | $1.56 | $0.16 | $12.50 |
 | `gpt-5-mini` | 400k | $0.31 | $0.03 | $2.50 |
 | `gpt-5-mini-2025-08-07` | 272k | $0.31 | $0.03 | $2.50 |
 | `gpt-5-nano` | 400k | $0.06 | $0.0063 | $0.50 |
@@ -101,17 +99,10 @@ A context marked **`?`** was never published by the provider — it is that prov
 | `gpt-5-search-api-2025-10-14` | 272k | $1.56 | $0.16 | $12.50 |
 | `gpt-5.1` | 400k | $1.56 | $0.16 | $12.50 |
 | `gpt-5.1-2025-11-13` | 272k | $1.56 | $0.16 | $12.50 |
-| `gpt-5.1-chat-latest` | 128k | $1.56 | $0.16 | $12.50 |
-| `gpt-5.1-codex` | 400k | $1.56 | $0.16 | $12.50 |
-| `gpt-5.1-codex-max` | 400k | $1.56 | $0.16 | $12.50 |
-| `gpt-5.1-codex-mini` | 400k | $0.31 | $0.03 | $2.50 |
 | `gpt-5.2` | 400k | $2.19 | $0.22 | $17.50 |
 | `gpt-5.2-2025-12-11` | 272k | $2.19 | $0.22 | $17.50 |
-| `gpt-5.2-chat-latest` | 128k | $2.19 | $0.22 | $17.50 |
-| `gpt-5.2-codex` | 400k | $2.19 | $0.22 | $17.50 |
 | `gpt-5.2-pro` | 400k | $26.25 | — | $210.00 |
 | `gpt-5.2-pro-2025-12-11` | 272k | $26.25 | — | $210.00 |
-| `gpt-5.3-chat-latest` | 128k | $2.19 | $0.22 | $17.50 |
 | `gpt-5.3-codex` | 400k | $2.19 | $0.22 | $17.50 |
 | `gpt-5.4` | 1.05M | $3.12 | $0.31 | $18.75 |
 | `gpt-5.4-2026-03-05` | 1.05M | $3.12 | $0.31 | $18.75 |
@@ -468,6 +459,7 @@ A context marked **`?`** was never published by the provider — it is that prov
 | `relace/relace-apply-3` | 256k | $1.06 | — | $1.56 |
 | `relace/relace-search` | 256k | $1.25 | — | $3.75 |
 | `sakana/fugu-ultra` | 1M | $6.25 | — | $37.50 |
+| `sakana/sakana-namazu` | 262k | $1.19 | — | $5.00 |
 | `sao10k/l3-lunaris-8b` | 8k | $0.05 | — | $0.06 |
 | `sao10k/l3.1-euryale-70b` | 131k | $1.06 | — | $1.06 |
 | `sao10k/l3.3-euryale-70b` | 131k | $0.81 | — | $0.94 |

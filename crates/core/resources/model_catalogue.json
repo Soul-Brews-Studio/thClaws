@@ -2294,23 +2294,6 @@
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 0.125
         },
-        "gpt-5-chat-latest": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5-chat-latest) + litellm:gpt-5-chat-latest",
-          "verified_at": "2026-08-10",
-          "input_per_mtok": 1.25,
-          "output_per_mtok": 10.0,
-          "cached_input_per_mtok": 0.125
-        },
-        "gpt-5-codex": {
-          "context": 400000,
-          "max_output": 128000,
-          "source": "https://openrouter.ai/api/v1/models via bare id + litellm:gpt-5-codex",
-          "verified_at": "2026-06-10",
-          "input_per_mtok": 1.25,
-          "output_per_mtok": 10.0,
-          "cached_input_per_mtok": 0.125
-        },
         "gpt-5-mini": {
           "context": 400000,
           "max_output": 128000,
@@ -2392,41 +2375,6 @@
           "output_per_mtok": 10.0,
           "cached_input_per_mtok": 0.125
         },
-        "gpt-5.1-chat-latest": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.1-chat-latest) + litellm:gpt-5.1-chat-latest",
-          "verified_at": "2026-08-10",
-          "input_per_mtok": 1.25,
-          "output_per_mtok": 10.0,
-          "cached_input_per_mtok": 0.125
-        },
-        "gpt-5.1-codex": {
-          "context": 400000,
-          "max_output": 128000,
-          "source": "https://openrouter.ai/api/v1/models via bare id + litellm:gpt-5.1-codex",
-          "verified_at": "2026-06-10",
-          "input_per_mtok": 1.25,
-          "output_per_mtok": 10.0,
-          "cached_input_per_mtok": 0.125
-        },
-        "gpt-5.1-codex-max": {
-          "context": 400000,
-          "max_output": 128000,
-          "source": "https://openrouter.ai/api/v1/models via bare id + litellm:gpt-5.1-codex-max",
-          "verified_at": "2026-06-10",
-          "input_per_mtok": 1.25,
-          "output_per_mtok": 10.0,
-          "cached_input_per_mtok": 0.125
-        },
-        "gpt-5.1-codex-mini": {
-          "context": 400000,
-          "max_output": 128000,
-          "source": "https://openrouter.ai/api/v1/models via bare id + litellm:gpt-5.1-codex-mini",
-          "verified_at": "2026-06-10",
-          "input_per_mtok": 0.25,
-          "output_per_mtok": 2.0,
-          "cached_input_per_mtok": 0.025
-        },
         "gpt-5.2": {
           "context": 400000,
           "max_output": 128000,
@@ -2440,23 +2388,6 @@
           "context": 272000,
           "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.2-2025-12-11) + litellm:gpt-5.2-2025-12-11",
           "verified_at": "2026-08-10",
-          "input_per_mtok": 1.75,
-          "output_per_mtok": 14.0,
-          "cached_input_per_mtok": 0.175
-        },
-        "gpt-5.2-chat-latest": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.2-chat-latest) + litellm:gpt-5.2-chat-latest",
-          "verified_at": "2026-08-10",
-          "input_per_mtok": 1.75,
-          "output_per_mtok": 14.0,
-          "cached_input_per_mtok": 0.175
-        },
-        "gpt-5.2-codex": {
-          "context": 400000,
-          "max_output": 128000,
-          "source": "https://openrouter.ai/api/v1/models via bare id + litellm:gpt-5.2-codex",
-          "verified_at": "2026-06-10",
           "input_per_mtok": 1.75,
           "output_per_mtok": 14.0,
           "cached_input_per_mtok": 0.175
@@ -2475,14 +2406,6 @@
           "verified_at": "2026-08-10",
           "input_per_mtok": 21.0,
           "output_per_mtok": 168.0
-        },
-        "gpt-5.3-chat-latest": {
-          "context": 128000,
-          "source": "https://api.openai.com/v1/models (context: litellm:gpt-5.3-chat-latest) + litellm:gpt-5.3-chat-latest",
-          "verified_at": "2026-08-10",
-          "input_per_mtok": 1.75,
-          "output_per_mtok": 14.0,
-          "cached_input_per_mtok": 0.175
         },
         "gpt-5.3-codex": {
           "context": 400000,
@@ -2769,26 +2692,11 @@
       "list_url": "https://api.openai.com/v1/models",
       "default_context": 400000,
       "models": {
-        "codex/gpt-5-codex": {
+        "codex/gpt-5.3-codex": {
           "context": 400000,
-          "source": "https://platform.openai.com/docs/models (context unverified) + litellm:gpt-5-codex",
-          "verified_at": "2026-06-10",
-          "input_per_mtok": 1.25,
-          "output_per_mtok": 10.0,
-          "cached_input_per_mtok": 0.125
-        },
-        "codex/gpt-5.1-codex": {
-          "context": 400000,
-          "source": "https://platform.openai.com/docs/models (context unverified) + litellm:gpt-5.1-codex",
-          "verified_at": "2026-06-10",
-          "input_per_mtok": 1.25,
-          "output_per_mtok": 10.0,
-          "cached_input_per_mtok": 0.125
-        },
-        "codex/gpt-5.2-codex": {
-          "context": 400000,
-          "source": "https://platform.openai.com/docs/models (context unverified) + litellm:gpt-5.2-codex",
-          "verified_at": "2026-06-10",
+          "max_output": 128000,
+          "source": "https://openrouter.ai/api/v1/models via bare id + litellm:gpt-5.3-codex + verified on /v1/responses 2026-08-11",
+          "verified_at": "2026-08-11",
           "input_per_mtok": 1.75,
           "output_per_mtok": 14.0,
           "cached_input_per_mtok": 0.175
@@ -5862,6 +5770,16 @@
           "chat": true,
           "input_per_mtok": 5.0,
           "output_per_mtok": 30.0
+        },
+        "sakana/sakana-namazu": {
+          "context": 262144,
+          "max_output": 65536,
+          "source": "https://openrouter.ai/api/v1/models + api:openrouter",
+          "verified_at": "2026-08-11",
+          "free": false,
+          "chat": true,
+          "input_per_mtok": 0.95,
+          "output_per_mtok": 4.0
         },
         "sao10k/l3-lunaris-8b": {
           "context": 8192,

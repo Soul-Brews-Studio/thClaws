@@ -452,6 +452,18 @@ impl OpenAIProvider {
 /// bare single segment, the original `openrouter/<x>` already WAS the
 /// correct upstream id — keep it. Sending the vendor-less `<x>` 404s with
 /// "No endpoints found that support tool use".
+/// Whether an error body is OpenAI refusing function tools because the
+/// model's default `reasoning_effort` is not 'none'.
+///
+/// Matched on the two stable halves of the sentence rather than the whole
+/// string: the message names the model inline, so an exact match would break
+/// on the next model, and both halves together are specific enough that no
+/// other 400 collides with them.
+fn needs_reasoning_effort_none(body: &str) -> bool {
+    let b = body.to_ascii_lowercase();
+    b.contains("reasoning_effort") && b.contains("function tools")
+}
+
 fn strip_wire_prefix(model: &str, strip_prefix: Option<&str>) -> String {
     let Some(prefix) = strip_prefix else {
         return model.to_string();
@@ -668,7 +680,41 @@ impl Provider for OpenAIProvider {
             // 413) is NOT a vision problem — stripping there would mislabel a
             // vision-capable model as "not vision-capable" and mask the real
             // cause, so we surface a clear size error instead.
-            if status.is_client_error() && carries_image && !too_large {
+            if status.is_client_error() && needs_reasoning_effort_none(&text) {
+                // gpt-5.6-* defaults `reasoning_effort` to something other than
+                // 'none' and then refuses function tools on chat/completions:
+                //
+                //   Function tools with reasoning_effort are not supported for
+                //   gpt-5.6-terra in /v1/chat/completions. To use function
+                //   tools, use /v1/responses or set reasoning_effort to 'none'.
+                //
+                // Nothing in this stack sends that field — the default is the
+                // provider's — so the only way through chat/completions is to
+                // say 'none' explicitly. Retrying on the error rather than
+                // matching a model-name prefix is deliberate: the affected set
+                // is whatever OpenAI decides next, and a hardcoded `gpt-5.6`
+                // list would be wrong the week gpt-5.7 ships. It also leaves
+                // reasoning untouched for every model that does not complain.
+                //
+                // Only this endpoint is affected; the same models reach us
+                // fine through OpenRouter, which handles the field upstream.
+                let mut retry_body = body.clone();
+                if let Some(obj) = retry_body.as_object_mut() {
+                    obj.insert("reasoning_effort".into(), json!("none"));
+                }
+                match self.send_body(&retry_body).await {
+                    Ok(r) if r.status().is_success() => resp = r,
+                    _ => {
+                        return Err(Error::Provider(format!(
+                            "http {status}: {}\n\n⚠️ `{}` rejects function tools unless reasoning is off. \
+                             Retrying with `reasoning_effort: none` did not help — use this model without tools, \
+                             or reach it through OpenRouter, which handles the combination.",
+                            super::redact_key(&text, &self.api_key),
+                            req.model
+                        )));
+                    }
+                }
+            } else if status.is_client_error() && carries_image && !too_large {
                 let retry_body = self.build_body(&strip_request_images(&req));
                 match self.send_body(&retry_body).await {
                     Ok(r) if r.status().is_success() => resp = r,
@@ -2202,6 +2248,37 @@ mod tests {
     /// some OpenAI-compatible providers 400 on an assistant message with
     /// no `content`. We fall back to an empty string.
     #[test]
+    /// The retry that unblocks gpt-5.6-* must fire on OpenAI's wording and
+    /// nothing else. Matching too loosely would send `reasoning_effort: none`
+    /// after unrelated 400s — silently disabling reasoning on models that
+    /// never asked for it.
+    #[test]
+    fn reasoning_effort_retry_matches_only_the_tools_refusal() {
+        assert!(needs_reasoning_effort_none(
+            "Function tools with reasoning_effort are not supported for \
+             gpt-5.6-terra in /v1/chat/completions. To use function tools, \
+             use /v1/responses or set reasoning_effort to 'none'."
+        ));
+        // Same sentence, a model OpenAI has not shipped yet.
+        assert!(needs_reasoning_effort_none(
+            "Function tools with reasoning_effort are not supported for gpt-9-x"
+        ));
+        for other in [
+            "Unsupported parameter: 'max_tokens' is not supported with this model.",
+            "This model is only supported in v1/responses and not in v1/chat/completions.",
+            "The model `gpt-5.1-codex` has been deprecated",
+            "rate limit exceeded",
+            // Mentions one half only — not the refusal we handle.
+            "Invalid value for reasoning_effort: expected one of low, medium, high",
+            "Function tools must have a name",
+        ] {
+            assert!(
+                !needs_reasoning_effort_none(other),
+                "should not match: {other}"
+            );
+        }
+    }
+
     fn strip_wire_prefix_handles_openrouter_vendor_collision() {
         // Normal OpenRouter models: strip the routing prefix → vendor/model.
         assert_eq!(
