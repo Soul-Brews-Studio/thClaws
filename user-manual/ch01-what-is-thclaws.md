@@ -167,10 +167,10 @@ dedicated bullet below and [Chapter 27](ch27-thclaws-cloud.md):
   Gemini & Gemma, Alibaba DashScope (Qwen), DeepSeek, Z.ai (GLM Coding
   Plan), NVIDIA NIM, NSTDA Thai LLM (OpenThaiGPT, Typhoon, Pathumma,
   THaLLE), OpenRouter, Moonshot, xAI, Groq, Azure AI Foundry, Ollama (local,
-  local Anthropic-compatible, and Ollama Cloud), LMStudio, plus a
-  generic **OpenAI-compatible** slot (`oai/*`) for LiteLLM / Portkey /
-  Helicone / vLLM / internal proxies — auto-detected by model name
-  prefix. Switch models mid-session with `/model` (validated against
+  local Anthropic-compatible, and Ollama Cloud), LMStudio, self-hosted
+  vLLM / llama.cpp / LiteLLM, plus a generic **OpenAI-compatible** slot
+  (`oai/*`) for Portkey / Helicone / internal proxies — auto-detected by
+  model name prefix. Switch models mid-session with `/model` (validated against
   the provider's catalogue) or swap the whole provider with `/provider`.
 - **API-ready for standard tooling.** `--serve` exposes
   `/v1/chat/completions` (OpenAI-compatible for Cursor, Aider, n8n,

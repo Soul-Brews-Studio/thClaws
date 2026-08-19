@@ -1,6 +1,6 @@
 # Chapter 6 — Providers, models & API keys
 
-thClaws talks to **twenty-five providers**, auto-detected from the model name.
+thClaws talks to **thirty-one providers**, auto-detected from the model name.
 Switch any time with `/model`, `/provider`, or by clicking the provider/model
 chip in the sidebar (Desktop GUI, v0.7.2+).
 
@@ -32,6 +32,9 @@ chip in the sidebar (Desktop GUI, v0.7.2+).
 | Ollama Cloud | `ollama-cloud/*` | `OLLAMA_CLOUD_API_KEY` | Hosted Ollama catalog (Kimi, GPT-OSS, DeepSeek, Llama, etc.). OpenAI-compatible at `ollama.com/v1` |
 | NVIDIA NIM | `nvidia/*` | `NVIDIA_API_KEY` (+ `NVIDIA_BASE_URL`) | NVIDIA hosted inference at `integrate.api.nvidia.com/v1`. Catalog spans Nemotron, Llama, DeepSeek, GLM and more — the `nvidia/` prefix routes everything; the outer prefix is stripped on the wire. Override the env var for on-prem NIM deployments |
 | LMStudio | `lmstudio/*` | — (local) | LMStudio's local OpenAI-compatible server at `localhost:1234/v1`. No auth. Models follow whatever's loaded in the LMStudio app |
+| vLLM | `vllm/*` | — (self-hosted, + `VLLM_BASE_URL`) | `vllm serve` at `localhost:8000/v1`. No auth unless started with `--api-key`. The id after the prefix is the served id (often an HF path — `vllm/Qwen/Qwen3-8B`); `/models` lists the one it's actually serving |
+| llama.cpp | `llamacpp/*` | — (self-hosted, + `LLAMACPP_BASE_URL`) | `llama-server` at `localhost:8080/v1`. No auth. Serves one GGUF per process and ignores the request's `model` field, so any id after the prefix works |
+| LiteLLM | `litellm/*` | `LITELLM_API_KEY` (optional) (+ `LITELLM_BASE_URL`) | Self-hosted LiteLLM proxy at `localhost:4000/v1`. Ids are your own `model_name` aliases from `config.yaml` (`litellm/gpt-4o-mini`, `litellm/azure/prod-gpt4`); `/models` lists them live and `/model/info` supplies the real context window. The key is only needed when the proxy runs with a `master_key` or virtual keys |
 | Azure AI Foundry | `azure/<deployment>` | `AZURE_AI_FOUNDRY_API_KEY` (+ `AZURE_AI_FOUNDRY_ENDPOINT`) | Anthropic-Messages-shaped Azure deployments. `<deployment>` is your Azure-side deployment name (no defaults — set per subscription) |
 
 The default on first run is `claude-sonnet-4-6`; change it with
@@ -448,6 +451,42 @@ the EE Phase 3 org-policy `gateway` route.
 If your endpoint also implements `/v1/models`, `/models refresh`
 will populate the catalogue automatically. If it doesn't, the
 refresh fails silently and chat continues to work.
+
+## Using a self-hosted LiteLLM proxy (`litellm/*`)
+
+LiteLLM has its own slot rather than sharing `oai/`, so it can keep a
+separate base URL and key from whatever else you point `oai/` at:
+
+```sh
+LITELLM_BASE_URL=http://localhost:4000/v1   # default; edit in Settings too
+LITELLM_API_KEY=sk-...                      # only if the proxy sets master_key
+```
+
+Model ids are the `model_name` aliases from your `config.yaml`, with
+the `litellm/` prefix stripped before the request goes upstream:
+
+```yaml
+model_list:
+  - model_name: gpt-4o-mini            # → /model litellm/gpt-4o-mini
+    litellm_params: { model: openai/gpt-4o-mini }
+  - model_name: azure/prod-gpt4        # → /model litellm/azure/prod-gpt4
+    litellm_params: { model: azure/my-deployment }
+```
+
+Because those aliases are yours, no shipped catalogue can list them —
+`/models` asks the proxy's `/models` live instead, and switching onto a
+model reads the real context window from LiteLLM's `/model/info` (tried
+at the root as well as under `/v1`) and caches it.
+
+Auth is optional: a proxy started without `master_key` accepts any
+bearer, so thClaws sends a placeholder rather than refusing to start.
+
+One caveat — LiteLLM is a **router**, not local inference. Even though
+you host it, the model it resolves to usually lives at OpenAI /
+Anthropic / Azure, so thClaws treats its traffic as leaving the machine:
+Thai PII masking still applies (unlike `ollama/*`, `vllm/*` or
+`llamacpp/*`), and an org-policy gateway does not grant it the
+local-model bypass.
 
 ## Using ChatGPT-subscription Codex (`chatgpt-codex/*`)
 

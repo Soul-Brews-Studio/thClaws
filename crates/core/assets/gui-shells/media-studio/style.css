@@ -99,6 +99,10 @@ body {
 
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field.grow { flex: 1; }
+/* The audio switch sits in the same params row as the selects, so it
+   aligns to their controls rather than to their labels. */
+.checkbox-field { flex-direction: row; align-items: center; gap: 7px; align-self: flex-end; padding-bottom: 7px; }
+.checkbox-field .label { text-transform: none; letter-spacing: 0; font-size: 12px; }
 .label-row { display: flex; align-items: center; gap: 8px; }
 .label-row .label { flex: 1; }
 .link-btn {

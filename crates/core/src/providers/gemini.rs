@@ -1203,7 +1203,7 @@ mod tests {
     }
 
     #[test]
-    fn build_body_places_system_in_systemInstruction() {
+    fn build_body_places_system_in_system_instruction() {
         let req = StreamRequest {
             model: "gemini-2.0-flash".into(),
             system: Some("you are helpful".into()),

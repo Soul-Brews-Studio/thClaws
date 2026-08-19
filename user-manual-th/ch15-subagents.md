@@ -180,6 +180,7 @@ thClaws มี subagent ชุดหนึ่งที่ ship มาในไ�
 |---|---|---|
 | `dream` | โมเดลของ session | Consolidate KMS ของ project โดยอ่าน session ล่าสุด, dedupe page, ดึง insight ออกมา เรียกผ่าน `/dream` (ดู [บทที่ 9](ch09-knowledge-bases-kms.md)) |
 | `translator` | โมเดลของ session | แปลข้อความ/ไฟล์ระหว่างภาษา รักษา structure ของ markdown (heading, list, code block, frontmatter) เรียกผ่าน `/agent translator <prompt>` หรือ `Task(agent: "translator")` |
+| `folder-indexer` | โมเดลของ session | ทำสารบัญของโฟลเดอร์เป็น `<folder>/index.md` — หนึ่งแถวต่อหนึ่งไฟล์ พร้อมคำอธิบายที่อ่านจากเนื้อหาจริง (ทั้งข้อความ เอกสาร และรูป) ทำงานแบบ incremental: tool `FolderIndex` ทำ fingerprint ทุกไฟล์ จึงอ่านซ้ำเฉพาะไฟล์ที่เปลี่ยนไปจากรอบก่อน เรียกผ่าน `/index <folder>`, คลิกขวาโฟลเดอร์ในแท็บ Files → **Index folder…** หรือ `Task(agent: "folder-indexer")` |
 | `kms-linker` | โมเดลของ session | ซ่อม link หน้าที่พัง, refresh หน้าที่ stale, เติม index entry ที่ขาดใน KMS ถูก dispatch เป็น side-channel โดย `/kms wrap-up --fix` |
 | `kms-reconcile` | โมเดลของ session | หาและแก้ความขัดแย้งข้ามหน้าใน KMS — rewrite หน้าที่ล้าสมัยพร้อม History section, ทำเครื่องหมายเคสกำกวมเป็น Conflict page ถูก dispatch โดย `/kms reconcile <name> [--apply]` |
 

@@ -157,6 +157,15 @@ pub struct VideoRequest {
     /// (resolution follows its aspect); DashScope video (happyhorse)
     /// takes it as a `resolution` parameter that changes pricing.
     pub resolution: String,
+    /// Frame rate, when the caller pinned one. LTX takes 24/25/48/50 and
+    /// the high end is the lever for clean speech (48/50 resolves the
+    /// P/B/M lip closures that 24/25 smears); Veo and DashScope have no
+    /// such knob and ignore it.
+    pub fps: Option<u32>,
+    /// Generate the soundtrack (dialogue, ambience) alongside the video.
+    /// LTX's only audio switch — everything else about the voice comes
+    /// from the prompt. Ignored by providers without native audio.
+    pub generate_audio: bool,
 }
 
 /// Opaque handle to a provider-side job (e.g. a Veo long-running

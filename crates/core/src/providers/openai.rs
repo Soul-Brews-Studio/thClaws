@@ -16,7 +16,7 @@
 //!
 //! Downstream [`crate::providers::assemble`] folds this identically to Anthropic.
 
-use super::{EventStream, ModelInfo, Provider, ProviderEvent, StreamRequest, Usage};
+use super::{EventStream, ModelInfo, Provider, ProviderEvent, ProviderKind, StreamRequest, Usage};
 use crate::error::{Error, Result};
 use crate::types::{ContentBlock, ImageSource, Role, ToolResultBlock, ToolResultContent};
 use async_stream::try_stream;
@@ -572,6 +572,142 @@ fn is_request_too_large(status: reqwest::StatusCode, body: &str) -> bool {
     .any(|needle| t.contains(needle))
 }
 
+/// Probe a user-pointed OpenAI-compatible endpoint for a model's limits.
+/// Builds its own client from the same env the provider uses, so callers
+/// don't need a `Provider` handle (the trait isn't downcastable). `kind`
+/// selects which env pair / model prefix to read — `openai-compat` and
+/// `litellm` are the two kinds whose models can't come from the catalogue.
+pub async fn probe_compat_limits(
+    kind: ProviderKind,
+    model: &str,
+) -> Option<(u32, Option<u32>, String)> {
+    let base = kind
+        .endpoint_env()
+        .and_then(|v| std::env::var(v).ok())
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| kind.default_endpoint().map(String::from))?;
+    // Local runtimes usually have no auth; the header is harmless there.
+    let key = crate::secrets::get(kind.name())
+        .or_else(|| kind.api_key_env().and_then(|v| std::env::var(v).ok()))
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "local-no-auth".to_string());
+    let url = if base.ends_with("/chat/completions") {
+        base
+    } else {
+        format!("{}/chat/completions", base.trim_end_matches('/'))
+    };
+    let prefix = match kind {
+        ProviderKind::LiteLlm => "litellm/",
+        _ => "oai/",
+    };
+    OpenAIProvider::new(key)
+        .with_base_url(url)
+        .with_strip_model_prefix(prefix)
+        .probe_model_limits(model)
+        .await
+}
+
+impl OpenAIProvider {
+    /// Ask an OpenAI-compatible endpoint what a model's limits are, so a
+    /// `/model` switch onto a backend the shipped catalogue can't know
+    /// (vLLM, LiteLLM, an internal proxy) still gets a real context window
+    /// instead of the fallback — and a `max_tokens` the upstream accepts.
+    ///
+    /// Two shapes, in order:
+    /// 1. `GET {base}/model/info` — LiteLLM: `data[].model_info` carries
+    ///    `max_input_tokens` / `max_output_tokens`.
+    /// 2. `GET {base}/models` — vLLM puts `max_model_len` on the model row;
+    ///    some servers use `context_length`.
+    ///
+    /// Returns `(context, max_output, source)`. `None` when neither shape
+    /// answers — the caller keeps whatever it had.
+    pub async fn probe_model_limits(&self, model: &str) -> Option<(u32, Option<u32>, String)> {
+        let bare = match &self.strip_model_prefix {
+            Some(p) => model.strip_prefix(p.as_str()).unwrap_or(model),
+            None => model,
+        };
+        let root = self
+            .base_url
+            .rsplit_once("/chat/completions")
+            .map(|(b, _)| b.to_string())
+            .unwrap_or_else(|| self.base_url.trim_end_matches('/').to_string());
+
+        if let Some(hit) = self.probe_model_info(&root, bare).await {
+            return Some(hit);
+        }
+        self.probe_models_list(&root, bare).await
+    }
+
+    async fn get_json(&self, url: &str) -> Option<Value> {
+        let resp = self
+            .client
+            .get(url)
+            .header(self.auth_header_name(), self.auth_header_value())
+            .timeout(std::time::Duration::from_secs(8))
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        resp.json().await.ok()
+    }
+
+    /// LiteLLM's `/model/info`. The proxy serves chat completions under
+    /// `/v1` but mounts the admin routes at the root, so a base URL ending
+    /// in `/v1` gets a second attempt one level up before giving up.
+    async fn probe_model_info(&self, root: &str, bare: &str) -> Option<(u32, Option<u32>, String)> {
+        let mut url = format!("{root}/model/info");
+        let v = match self.get_json(&url).await {
+            Some(v) => v,
+            None => {
+                let parent = root.strip_suffix("/v1")?;
+                url = format!("{parent}/model/info");
+                self.get_json(&url).await?
+            }
+        };
+        let rows = v.get("data").and_then(Value::as_array)?;
+        let row = rows.iter().find(|r| {
+            r.get("model_name").and_then(Value::as_str) == Some(bare)
+                || r.pointer("/model_info/id").and_then(Value::as_str) == Some(bare)
+        })?;
+        let info = row.get("model_info")?;
+        let ctx = info
+            .get("max_input_tokens")
+            .or_else(|| info.get("max_tokens"))
+            .and_then(Value::as_u64)? as u32;
+        let out = info
+            .get("max_output_tokens")
+            .and_then(Value::as_u64)
+            .map(|n| n as u32);
+        Some((ctx, out, format!("{url} (model_info)")))
+    }
+
+    /// `/models`, where vLLM & friends publish the served length.
+    async fn probe_models_list(
+        &self,
+        root: &str,
+        bare: &str,
+    ) -> Option<(u32, Option<u32>, String)> {
+        let url = format!("{root}/models");
+        let v = self.get_json(&url).await?;
+        let rows = v.get("data").and_then(Value::as_array)?;
+        let row = rows
+            .iter()
+            .find(|r| r.get("id").and_then(Value::as_str) == Some(bare))?;
+        let ctx = row
+            .get("max_model_len")
+            .or_else(|| row.get("context_length"))
+            .or_else(|| row.pointer("/model_info/max_input_tokens"))
+            .and_then(Value::as_u64)? as u32;
+        let out = row
+            .get("max_output_tokens")
+            .and_then(Value::as_u64)
+            .map(|n| n as u32);
+        Some((ctx, out, format!("{url} (max_model_len)")))
+    }
+}
+
 #[async_trait]
 impl Provider for OpenAIProvider {
     async fn list_models(&self) -> Result<Vec<ModelInfo>> {
@@ -822,14 +958,55 @@ pub struct ParseState {
     pub seen_message_start: bool,
     pub active_tool_index: Option<i64>,
     pub emitted_message_stop: bool,
+    /// Usage seen on the wire but not yet handed to the agent. Compat
+    /// servers disagree on where the `stream_options.include_usage`
+    /// counts ride: OpenAI/DashScope put them on a trailing frame with
+    /// `choices: []`, but vLLM/SGLang/LiteLLM-proxied upstreams keep a
+    /// `choices` entry with `finish_reason: null`, and some send the
+    /// usage frame *before* the finish_reason one. Reading usage off
+    /// only the finish_reason and empty-choices frames dropped both of
+    /// those shapes, so the turn reported 0in/0out.
+    pending_usage: Option<Usage>,
+    /// `Agent::run_turn` *accumulates* every `MessageStop` usage, so a
+    /// second delivery double-counts. Latch it.
+    usage_delivered: bool,
+    /// The real `finish_reason`, echoed on any later usage-only stop.
+    /// `collect_turn` overwrites `stop_reason` on every `Done`, so a
+    /// trailing frame that reports a different one relabels the turn —
+    /// which is how a `length` truncation used to come out as `stop`.
+    last_stop_reason: Option<String>,
 }
 
 impl ParseState {
+    /// Hand over the captured usage at most once per stream.
+    fn take_usage(&mut self) -> Option<Usage> {
+        if self.usage_delivered {
+            return None;
+        }
+        let u = self.pending_usage.take()?;
+        self.usage_delivered = true;
+        Some(u)
+    }
+
     fn flush_eof(&mut self) -> Vec<ProviderEvent> {
         let mut out = Vec::new();
         if self.active_tool_index.is_some() {
             out.push(ProviderEvent::ContentBlockStop);
             self.active_tool_index = None;
+        }
+        // Usage that arrived on a frame we couldn't attach it to (or a
+        // stream that ended without a finish_reason at all). Reported as
+        // its own stop so the counts still reach the turn.
+        if let Some(usage) = self.take_usage() {
+            out.push(ProviderEvent::MessageStop {
+                stop_reason: Some(
+                    self.last_stop_reason
+                        .clone()
+                        .unwrap_or_else(|| "stop".to_string()),
+                ),
+                usage: Some(usage),
+            });
+            self.emitted_message_stop = true;
         }
         out
     }
@@ -934,6 +1111,13 @@ pub fn parse_chunk(raw: &str, state: &mut ParseState) -> Result<Vec<ProviderEven
         state.seen_message_start = true;
     }
 
+    // Capture usage from whatever frame carries it — the shape varies per
+    // server (see `ParseState::pending_usage`). Delivery happens once, at
+    // the finish_reason stop, the trailing-frame stop, or EOF.
+    if let Some(usage) = parse_openai_usage(&v) {
+        state.pending_usage = Some(usage);
+    }
+
     let Some(choices) = v.get("choices").and_then(Value::as_array) else {
         return Ok(out);
     };
@@ -943,9 +1127,14 @@ pub fn parse_chunk(raw: &str, state: &mut ParseState) -> Result<Vec<ProviderEven
         // both do this. Emit a MessageStop carrying the usage so the agent's
         // cumulative_usage picks it up — otherwise we report 0in/0out.
         if state.emitted_message_stop {
-            if let Some(usage) = parse_openai_usage(&v) {
+            if let Some(usage) = state.take_usage() {
                 out.push(ProviderEvent::MessageStop {
-                    stop_reason: Some("stop".into()),
+                    stop_reason: Some(
+                        state
+                            .last_stop_reason
+                            .clone()
+                            .unwrap_or_else(|| "stop".to_string()),
+                    ),
                     usage: Some(usage),
                 });
             }
@@ -1020,9 +1209,10 @@ pub fn parse_chunk(raw: &str, state: &mut ParseState) -> Result<Vec<ProviderEven
         }
         out.push(ProviderEvent::MessageStop {
             stop_reason: Some(reason.to_string()),
-            usage: parse_openai_usage(&v),
+            usage: state.take_usage(),
         });
         state.emitted_message_stop = true;
+        state.last_stop_reason = Some(reason.to_string());
     }
 
     // M6.21 BUG M2: the trailing-usage-frame guard at the top of the
@@ -1075,6 +1265,39 @@ pub fn model_uses_reasoning_content(model: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// `/model` onto a user-hosted backend has to learn the real context
+    /// somewhere — the shipped catalogue can't know a private vLLM box.
+    /// Both published shapes are parsed off the same JSON the servers send.
+    #[test]
+    fn model_limit_shapes_parse() {
+        let litellm = serde_json::json!({
+            "data": [
+                {"model_name": "other", "model_info": {"max_input_tokens": 1}},
+                {"model_name": "qwen3-32b-awq",
+                 "model_info": {"max_input_tokens": 131072, "max_output_tokens": 8192}}
+            ]
+        });
+        let row = litellm["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["model_name"] == "qwen3-32b-awq")
+            .unwrap();
+        assert_eq!(row["model_info"]["max_input_tokens"].as_u64(), Some(131072));
+        assert_eq!(row["model_info"]["max_output_tokens"].as_u64(), Some(8192));
+
+        let vllm = serde_json::json!({
+            "data": [{"id": "qwen3-32b-awq", "max_model_len": 40960}]
+        });
+        let row = vllm["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == "qwen3-32b-awq")
+            .unwrap();
+        assert_eq!(row["max_model_len"].as_u64(), Some(40960));
+    }
+
     use super::*;
     use crate::providers::{assemble, collect_turn};
     use crate::types::Message;
@@ -1159,6 +1382,90 @@ mod tests {
         );
         assert_eq!(usage_stops[0].input_tokens, 11);
         assert_eq!(usage_stops[0].output_tokens, 3);
+    }
+
+    /// Collect every `MessageStop` that carries usage. Exactly one per
+    /// stream — `Agent::run_turn` accumulates them, so a second delivery
+    /// double-bills the turn.
+    fn usage_stops(events: &[ProviderEvent]) -> Vec<&Usage> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                ProviderEvent::MessageStop { usage: Some(u), .. } => Some(u),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// vLLM / SGLang / several LiteLLM-proxied upstreams keep a `choices`
+    /// entry (empty delta, `finish_reason: null`) on the trailing
+    /// `include_usage` frame instead of sending `choices: []`. Pre-fix the
+    /// parser only read usage off the finish_reason frame and the
+    /// empty-choices frame, so this shape reported 0in/0out — the
+    /// `openai-compat` symptom.
+    #[test]
+    fn usage_frame_with_a_null_finish_reason_choice_is_not_dropped() {
+        let events = parse_all(&[
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"}}]}",
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":null}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":3}}",
+            "data: [DONE]",
+        ]);
+        let stops = usage_stops(&events);
+        assert_eq!(stops.len(), 1, "got: {events:?}");
+        assert_eq!(stops[0].input_tokens, 11);
+        assert_eq!(stops[0].output_tokens, 3);
+    }
+
+    /// Some servers put the usage frame *ahead* of the finish_reason one.
+    /// The counts ride the stop that follows rather than being dropped.
+    #[test]
+    fn usage_frame_before_the_finish_reason_rides_the_stop() {
+        let events = parse_all(&[
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"}}]}",
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":3}}",
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+            "data: [DONE]",
+        ]);
+        let stops = usage_stops(&events);
+        assert_eq!(stops.len(), 1, "got: {events:?}");
+        assert_eq!(stops[0].input_tokens, 11);
+        assert_eq!(stops[0].output_tokens, 3);
+    }
+
+    /// A stream that ends without any finish_reason still has to report
+    /// what it spent — the counts come out at EOF.
+    #[test]
+    fn usage_without_a_finish_reason_is_flushed_at_eof() {
+        let events = parse_all(&[
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"}}]}",
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":3}}",
+            "data: [DONE]",
+        ]);
+        let stops = usage_stops(&events);
+        assert_eq!(stops.len(), 1, "got: {events:?}");
+        assert_eq!(stops[0].input_tokens, 11);
+    }
+
+    /// `collect_turn` overwrites `stop_reason` on every `Done`, so the
+    /// trailing usage frame must echo the real one. It used to hardcode
+    /// "stop", relabelling a truncated turn as a clean finish.
+    #[test]
+    fn trailing_usage_frame_keeps_the_real_stop_reason() {
+        let events = parse_all(&[
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hi\"}}]}",
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}]}",
+            "data: {\"id\":\"1\",\"model\":\"m\",\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":3}}",
+            "data: [DONE]",
+        ]);
+        let reasons: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                ProviderEvent::MessageStop { stop_reason, .. } => stop_reason.as_deref(),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(reasons, vec!["length", "length"], "got: {events:?}");
     }
 
     /// M6.22 BUG G1: surface OpenAI's auto-prompt-cache stats. Pre-fix
@@ -2031,6 +2338,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn probe_model_info_falls_back_to_the_root_mount() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        // LiteLLM serves chat completions under /v1 but mounts the admin
+        // routes at the root, so probing only {base}/model/info misses.
+        let server = MockServer::start().await;
+        let body = r#"{"data":[{"model_name":"gpt-4o-mini","model_info":
+            {"max_input_tokens":128000,"max_output_tokens":16384}}]}"#;
+        Mock::given(method("GET"))
+            .and(path("/v1/model/info"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/model/info"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .mount(&server)
+            .await;
+
+        let provider = OpenAIProvider::new("local-no-auth")
+            .with_base_url(format!("{}/v1/chat/completions", server.uri()))
+            .with_strip_model_prefix("litellm/");
+        let (ctx, max_out, source) = provider
+            .probe_model_limits("litellm/gpt-4o-mini")
+            .await
+            .expect("limits");
+        assert_eq!(ctx, 128_000);
+        assert_eq!(max_out, Some(16_384));
+        assert!(
+            source.ends_with("/model/info (model_info)"),
+            "got: {source}"
+        );
+        assert!(!source.contains("/v1/model/info"), "got: {source}");
+    }
+
+    #[tokio::test]
     async fn stream_end_to_end_text_via_wiremock() {
         use wiremock::matchers::{header, method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -2243,11 +2587,6 @@ mod tests {
         );
     }
 
-    /// Issue #163 Bug 3: a reasoning-ONLY assistant turn (a Thinking
-    /// block, no text / tools) must still serialize a `content` field —
-    /// some OpenAI-compatible providers 400 on an assistant message with
-    /// no `content`. We fall back to an empty string.
-    #[test]
     /// The retry that unblocks gpt-5.6-* must fire on OpenAI's wording and
     /// nothing else. Matching too loosely would send `reasoning_effort: none`
     /// after unrelated 400s — silently disabling reasoning on models that
@@ -2279,6 +2618,10 @@ mod tests {
         }
     }
 
+    /// `openrouter/fusion` and `openrouter/auto` are OpenRouter's own
+    /// vendor-less ids: stripping the routing prefix must not eat the
+    /// vendor segment of a normal `openrouter/<vendor>/<model>`.
+    #[test]
     fn strip_wire_prefix_handles_openrouter_vendor_collision() {
         // Normal OpenRouter models: strip the routing prefix → vendor/model.
         assert_eq!(
@@ -2316,6 +2659,75 @@ mod tests {
         assert_eq!(strip_wire_prefix("gpt-4o", Some("openrouter/")), "gpt-4o");
     }
 
+    /// public issue #195: DeepSeek (and any endpoint that enforces the same
+    /// rule) 400s with "insufficient tool messages following tool_calls" when
+    /// anything of another role lands between an assistant's `tool_calls` and
+    /// the tool messages answering them. The agent loop appends drained
+    /// injections — teammate reports, reminders — as Text blocks onto the very
+    /// user message that carries the tool results, so the serializer has to
+    /// emit the tool messages first even though the text sits in the same
+    /// turn. That has held since v0.78.0 on a comment alone; this pins it.
+    #[test]
+    fn injected_text_never_wedges_between_tool_calls_and_their_results() {
+        let history = vec![
+            Message::user("run it"),
+            Message {
+                role: Role::Assistant,
+                content: vec![ContentBlock::ToolUse {
+                    id: "call_1".into(),
+                    name: "Bash".into(),
+                    input: serde_json::json!({"command": "ls"}),
+                    thought_signature: None,
+                }],
+            },
+            // Tool result AND an injection, in one user turn — the shape the
+            // agent loop actually produces.
+            Message {
+                role: Role::User,
+                content: vec![
+                    ContentBlock::ToolResult {
+                        tool_use_id: "call_1".into(),
+                        content: crate::types::ToolResultContent::Text("a.txt".into()),
+                        is_error: false,
+                    },
+                    ContentBlock::Text {
+                        text: "[teammate] backend finished".into(),
+                    },
+                ],
+            },
+        ];
+        let req = StreamRequest {
+            model: "deepseek-v4-flash".into(),
+            system: None,
+            messages: history,
+            tools: vec![],
+            max_tokens: 100,
+            thinking_budget: None,
+            stream_chunk_timeout_override: None,
+        };
+        let msgs = OpenAIProvider::messages_to_openai(&req);
+        let roles: Vec<&str> = msgs.iter().filter_map(|m| m["role"].as_str()).collect();
+
+        let assistant_at = roles
+            .iter()
+            .position(|r| *r == "assistant")
+            .expect("assistant");
+        assert_eq!(
+            roles.get(assistant_at + 1),
+            Some(&"tool"),
+            "a tool message must immediately follow the tool_calls; got {roles:?}"
+        );
+        // And the injected text still reaches the model, just after.
+        let injected = msgs.iter().skip(assistant_at + 1).any(|m| {
+            m["role"] == "user" && m["content"].as_str().unwrap_or("").contains("teammate")
+        });
+        assert!(injected, "injected text was dropped: {msgs:?}");
+    }
+
+    /// Issue #163 Bug 3: a reasoning-ONLY assistant turn (a Thinking
+    /// block, no text / tools) must still serialize a `content` field —
+    /// some OpenAI-compatible providers 400 on an assistant message with
+    /// no `content`. We fall back to an empty string.
     #[test]
     fn messages_to_openai_reasoning_only_turn_has_empty_content() {
         let history = vec![

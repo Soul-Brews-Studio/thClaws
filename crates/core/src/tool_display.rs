@@ -228,6 +228,13 @@ pub(crate) fn tool_label(name: &str, input: &serde_json::Value) -> String {
             .get("markdown_path")
             .and_then(|v| v.as_str())
             .map(|p| preview(p, PREVIEW_CAP)),
+        "FolderIndex" => input.get("path").and_then(|v| v.as_str()).map(|p| {
+            let action = input
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("plan");
+            preview(&format!("{p} — {action}"), PREVIEW_CAP)
+        }),
         "WebSearch" => input
             .get("query")
             .and_then(|v| v.as_str())

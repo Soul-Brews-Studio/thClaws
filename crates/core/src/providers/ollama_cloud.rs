@@ -304,7 +304,6 @@ impl Provider for OllamaCloudProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::{assemble, collect_turn};
     use crate::types::Message;
 
     #[test]

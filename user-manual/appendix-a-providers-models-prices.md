@@ -36,7 +36,7 @@ Prices are **what you pay** — upstream cost with the 1.25× platform markup al
 
 A context marked **`?`** was never published by the provider — it is that provider's blanket default, kept because a missing window breaks model pickers. Treat it as a lower bound, not a specification.
 
-605 models across 14 providers.
+607 models across 14 providers.
 
 ### Anthropic
 
@@ -704,6 +704,8 @@ A context marked **`?`** was never published by the provider — it is that prov
 | `ltx/ltx-2-3-fast` | 1080P | $0.07 |
 | `ltx/ltx-2-3-pro` | 1080P | $0.10 |
 | `ltx/ltx-2-3-pro-audio` | 1080P | $0.12 |
+| `ltx/ltx-2-5-fast` | 1080P | $0.16 |
+| `ltx/ltx-2-5-pro` | 1080P | $0.21 |
 
 ### ElevenLabs
 

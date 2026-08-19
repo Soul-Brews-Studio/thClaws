@@ -105,6 +105,9 @@ const MANAGED: &[ProviderKind] = &[
     ProviderKind::ZAi,
     ProviderKind::AzureAIFoundry,
     ProviderKind::OpenAICompat,
+    // Optional master / virtual key — the proxy is usable without one, but
+    // installs that set `master_key` need somewhere to keep it.
+    ProviderKind::LiteLlm,
     ProviderKind::DeepSeek,
     ProviderKind::ThaiLLM,
     ProviderKind::Nvidia,

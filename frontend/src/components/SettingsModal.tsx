@@ -61,6 +61,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   azure: "Azure AI Foundry",
   vllm: "vLLM (self-hosted)",
   llamacpp: "llama.cpp (self-hosted)",
+  litellm: "LiteLLM Proxy (self-hosted)",
   "openai-compat": "OpenAI-Compatible (custom endpoint)",
   tavily: "Tavily Search",
   "brave-search": "Brave Search",

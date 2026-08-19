@@ -33,12 +33,20 @@ const MODELS = {
     { value: "fast", label: "Veo 3.1 Fast" },
     { value: "quality", label: "Veo 3.1" },
     { value: "lite", label: "Veo 3.1 Lite" },
+    { value: "ltx", label: "LTX-2.3 Fast" },
+    { value: "ltx-pro", label: "LTX-2.3 Pro" },
+    { value: "ltx-2-5-fast", label: "LTX-2.5 Fast (best speech)" },
+    { value: "ltx-2-5-pro", label: "LTX-2.5 Pro" },
     { value: "happyhorse-1.0-t2v", label: "HappyHorse 1.0 (DashScope)" },
   ],
   image2video: [
     { value: "fast", label: "Veo 3.1 Fast" },
     { value: "quality", label: "Veo 3.1" },
     { value: "lite", label: "Veo 3.1 Lite" },
+    { value: "ltx", label: "LTX-2.3 Fast" },
+    { value: "ltx-pro", label: "LTX-2.3 Pro" },
+    { value: "ltx-2-5-fast", label: "LTX-2.5 Fast (best speech)" },
+    { value: "ltx-2-5-pro", label: "LTX-2.5 Pro" },
     { value: "happyhorse-1.0-i2v", label: "HappyHorse 1.0 (DashScope)" },
   ],
   text2speech: [{ value: "flash", label: "Gemini 3.1 Flash TTS" }],
@@ -55,8 +63,8 @@ const TOOL = {
 const HINTS = {
   text2image: "",
   image2image: "",
-  text2video: "Video renders asynchronously (~30–120s) and keeps going if you leave this tab. Veo ≈ $3–6 per clip.",
-  image2video: "Video renders asynchronously (~30–120s) and keeps going if you leave this tab. Veo ≈ $3–6 per clip.",
+  text2video: "Renders asynchronously (~30–120s) and keeps going if you leave this tab. Veo ≈ $3–6 per clip; LTX 2.3 ≈ $0.06/s, 2.5 ≈ $0.13/s. For speech: put the line in quotation marks and name the language and accent (e.g. she says in Thai, natural Bangkok accent: \"…\"), give it enough seconds to say it, and pick 48/50 fps.",
+  image2video: "Renders asynchronously (~30–120s) and keeps going if you leave this tab. Veo ≈ $3–6 per clip; LTX 2.3 ≈ $0.06/s, 2.5 ≈ $0.13/s and holds a character\u2019s face from the reference frame. For speech: quote the line, name the language and accent, and pick 48/50 fps.",
   text2speech: "Speech is written to output/ as a .wav you can play here or hand to the agent.",
 };
 
@@ -102,6 +110,11 @@ const sizeField = $("size-field");
 const durationField = $("duration-field");
 const durationSel = $("duration");
 const resolutionField = $("resolution-field");
+const resolutionSel = $("resolution");
+const fpsField = $("fps-field");
+const fpsSel = $("fps");
+const audioField = $("audio-field");
+const audioEl = $("generate-audio");
 const voiceSel = $("voice");
 const styleInput = $("style");
 const generateBtn = $("generate");
@@ -144,6 +157,27 @@ function isSpeech() {
 }
 function needsInput() {
   return mode === "image2image" || mode === "image2video";
+}
+/// The picked model is an LTX one (the only backend with a 4K tier).
+function isLtx() {
+  return isVideo() && String(modelSel.value || "").startsWith("ltx");
+}
+
+/// LTX is the only backend with a 4K tier, an fps knob and an audio
+/// switch — Veo ignores `resolution` entirely and DashScope tops out at
+/// 1080P, so offering those elsewhere would bill a clip that comes back
+/// wrong. Re-run on both mode and model changes.
+function applyLtxOnlyFields() {
+  const ltx = isLtx();
+  fpsField.hidden = !ltx;
+  audioField.hidden = !ltx;
+
+  const fourK = [...resolutionSel.options].find((o) => o.value === "4K");
+  if (!fourK) return;
+  fourK.disabled = !ltx;
+  if (fourK.disabled && resolutionSel.value === "4K") {
+    resolutionSel.value = "1080P";
+  }
 }
 
 function setStatus(text, kind) {
@@ -189,6 +223,8 @@ function applyMode() {
   if (isVideo() && !["16:9", "9:16"].includes(aspectSel.value)) {
     aspectSel.value = "16:9";
   }
+
+  applyLtxOnlyFields();
 
   // Speech has no prompt to enhance — the text IS the deliverable.
   enhanceBtn.hidden = isSpeech();
@@ -547,7 +583,12 @@ async function generate() {
     if (style) args.style = style;
   } else if (isVideo()) {
     args.duration = parseInt(durationSel.value, 10);
-    args.resolution = $("resolution").value;
+    args.resolution = resolutionSel.value;
+    if (isLtx()) {
+      // Only LTX reads these; sending them to Veo/DashScope would be noise.
+      args.fps = parseInt(fpsSel.value, 10);
+      args.generate_audio = audioEl.checked;
+    }
   } else {
     args.size = $("size").value;
   }
@@ -728,6 +769,7 @@ searchEl.addEventListener("input", () => {
   renderGallery();
 });
 
+modelSel.addEventListener("change", applyLtxOnlyFields);
 generateBtn.addEventListener("click", generate);
 enhanceBtn.addEventListener("click", enhancePrompt);
 clearEnhancedBtn.addEventListener("click", discardEnhanced);

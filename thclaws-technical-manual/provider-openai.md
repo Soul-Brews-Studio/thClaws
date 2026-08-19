@@ -411,7 +411,19 @@ OpenAIProvider::new(api_key)
     .with_strip_model_prefix("oai/")
 ```
 
-For SML Gateway, LiteLLM, Portkey, Helicone, vLLM, internal corporate proxies. Models look like `oai/gpt-4o-mini` (or any upstream model id the user picks). Auth via `OPENAI_COMPAT_API_KEY`.
+For SML Gateway, Portkey, Helicone, internal corporate proxies. Models look like `oai/gpt-4o-mini` (or any upstream model id the user picks). Auth via `OPENAI_COMPAT_API_KEY`. vLLM, llama.cpp and LiteLLM have their own kinds and no longer share this slot.
+
+### `LiteLlm`
+
+```rust
+OpenAIProvider::new(api_key or "local-no-auth")
+    .with_base_url($LITELLM_BASE_URL or "http://localhost:4000/v1")
+    .with_strip_model_prefix("litellm/")
+```
+
+Self-hosted LiteLLM proxy. Built BEFORE `build_provider`'s Stage B key lookup, so `LITELLM_API_KEY` is optional (a proxy without `master_key` accepts any bearer). Models are the operator's `model_name` aliases, so ids may nest (`litellm/azure/prod-gpt4` → wire `azure/prod-gpt4`) and none of them are catalogued: `/models` unions the live `GET /models`, and a `/model` switch runs `probe_compat_limits(ProviderKind::LiteLlm, …)`, which reads `/model/info` (retried at the root when the base URL ends in `/v1`, since LiteLLM mounts admin routes there) before falling back to `/models`.
+
+Not in `is_local()` nor `gateway::is_local_provider()` — it routes to cloud upstreams, so PII masking and org-policy gating stay on.
 
 ### `DeepSeek`
 

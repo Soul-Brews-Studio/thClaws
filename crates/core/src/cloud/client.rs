@@ -2,15 +2,36 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Live byte counters for a download, shared with the caller so it can
+/// render a readout while the transfer runs. `total` is 0 until the
+/// response arrives, and stays 0 when the far end sends no
+/// `Content-Length` (chunked) — render bytes-so-far in that case.
+#[derive(Debug, Default)]
+pub struct DownloadProgress {
+    pub received: std::sync::atomic::AtomicU64,
+    pub total: std::sync::atomic::AtomicU64,
+}
+
 /// Stream a response body to a temp file so a large `.tar.gz` never rides in
-/// memory. Returns the temp file (auto-deleted on drop).
-async fn stream_to_temp(res: reqwest::Response) -> Result<tempfile::NamedTempFile, String> {
+/// memory. Returns the temp file (auto-deleted on drop). Pass `progress` to
+/// have the counters updated as bytes land; `None` streams without a readout.
+async fn stream_to_temp_with(
+    res: reqwest::Response,
+    progress: Option<std::sync::Arc<DownloadProgress>>,
+) -> Result<tempfile::NamedTempFile, String> {
     use futures::StreamExt;
     use std::io::Write;
+    use std::sync::atomic::Ordering;
+    if let (Some(p), Some(total)) = (progress.as_ref(), res.content_length()) {
+        p.total.store(total, Ordering::Relaxed);
+    }
     let mut tmp = tempfile::NamedTempFile::new().map_err(|e| format!("temp: {}", e))?;
     let mut stream = res.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("body: {}", e))?;
+        if let Some(p) = progress.as_ref() {
+            p.received.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+        }
         tmp.as_file_mut()
             .write_all(&chunk)
             .map_err(|e| format!("write temp: {}", e))?;
@@ -261,6 +282,7 @@ impl Client {
         ws_url: &str,
         jwt: &str,
         include_runtime: bool,
+        progress: Option<std::sync::Arc<DownloadProgress>>,
     ) -> Result<tempfile::NamedTempFile, String> {
         let mut url = format!("{}/workspace/sync/pull", ws_url.trim_end_matches('/'));
         if include_runtime {
@@ -283,7 +305,7 @@ impl Client {
                 res.text().await.unwrap_or_default()
             ));
         }
-        stream_to_temp(res).await
+        stream_to_temp_with(res, progress).await
     }
 
     /// Upload a `.tar.gz` (from `tarball_path`) to the cloud workspace,
@@ -391,6 +413,7 @@ impl Client {
         ws_url: &str,
         jwt: &str,
         paths: &[String],
+        progress: Option<std::sync::Arc<DownloadProgress>>,
     ) -> Result<tempfile::NamedTempFile, String> {
         let res = self
             .http_bulk
@@ -410,7 +433,7 @@ impl Client {
                 res.text().await.unwrap_or_default()
             ));
         }
-        stream_to_temp(res).await
+        stream_to_temp_with(res, progress).await
     }
 
     /// POST a path list to move to `.sync-trash/` on the runner.

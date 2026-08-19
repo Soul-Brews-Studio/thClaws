@@ -1076,6 +1076,22 @@ fn post_install_hint_lines(m: &crate::cloud::manifest::Manifest, target: &Path) 
 
 #[cfg(test)]
 mod tests {
+    /// A pull with media in it runs for minutes writing nothing to the
+    /// folder — without a readout it reads as a hang, and users kill it
+    /// mid-transfer. A chunked response has no total, and must still
+    /// show movement rather than a bogus 0%.
+    #[test]
+    fn download_line_renders_with_and_without_a_total() {
+        let known = super::download_line(5 * 1_048_576, 20 * 1_048_576);
+        assert_eq!(known, "  downloading… 5.0/20.0 MB (25%)");
+
+        let chunked = super::download_line(3 * 1_048_576, 0);
+        assert_eq!(chunked, "  downloading… 3.0 MB", "no total ⇒ no percentage");
+
+        // A body longer than its declared length can't read as >100%.
+        assert!(super::download_line(21 * 1_048_576, 20 * 1_048_576).contains("(100%)"));
+    }
+
     use super::*;
 
     fn write_settings(dir: &Path, json: &str) {
@@ -1864,9 +1880,14 @@ async fn sync_inner(
                 }
                 emit(format!("Pulling {} changed file(s)…", download.len()));
                 if !download.is_empty() {
-                    let tmp = client.ws_sync_export(&ws.url, &jwt, &download).await?;
+                    let tmp = pull_with_progress(
+                        |p| client.ws_sync_export(&ws.url, &jwt, &download, p),
+                        emit,
+                    )
+                    .await?;
                     let f =
                         std::fs::File::open(tmp.path()).map_err(|e| format!("open temp: {}", e))?;
+                    emit(format!("  unpacking {} file(s)…", download.len()));
                     wssync::untar_workspace_from(f, cwd, false)?;
                 }
                 let deleted = if opts.delete && !extraneous.is_empty() {
@@ -1916,8 +1937,11 @@ async fn sync_inner(
                     "Pulling cloud '{}' ({} file(s))…",
                     ws.slug, stat.file_count
                 ));
-                let tmp = client.ws_sync_pull(&ws.url, &jwt, false).await?;
+                let tmp =
+                    pull_with_progress(|p| client.ws_sync_pull(&ws.url, &jwt, false, p), emit)
+                        .await?;
                 let f = std::fs::File::open(tmp.path()).map_err(|e| format!("open temp: {}", e))?;
+                emit(format!("  unpacking {} file(s)…", stat.file_count));
                 let r = wssync::untar_workspace_from(f, cwd, opts.delete)?;
                 write_pull_binding(cwd, &ws, &url, &local_binding, revision)?;
                 emit(format!(
@@ -2007,6 +2031,70 @@ fn pack_paths_temp(cwd: &Path, paths: &[String]) -> Result<tempfile::NamedTempFi
     let tmp = tempfile::NamedTempFile::new().map_err(|e| format!("temp: {}", e))?;
     wssync::tar_paths_to(cwd, paths, tmp.as_file())?;
     Ok(tmp)
+}
+
+/// Run a download and narrate it. A workspace with media in it takes
+/// minutes to arrive, and the pull wrote nothing to the folder until the
+/// tarball finished — so the app looked hung and users killed it
+/// mid-transfer. Ticks every 300 ms while the bytes land; falls silent
+/// (no ticker at all) once the transfer is done.
+async fn pull_with_progress<F, Fut>(
+    start: F,
+    emit: &mut (dyn FnMut(String) + Send),
+) -> Result<tempfile::NamedTempFile, String>
+where
+    F: FnOnce(Option<std::sync::Arc<crate::cloud::client::DownloadProgress>>) -> Fut,
+    Fut: std::future::Future<Output = Result<tempfile::NamedTempFile, String>>,
+{
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+    let progress = Arc::new(crate::cloud::client::DownloadProgress::default());
+    let fut = start(Some(progress.clone()));
+    tokio::pin!(fut);
+    let mut last = String::new();
+    // The cloud packs the tarball before the first byte moves — on a
+    // few-hundred-file workspace that's the longest silent stretch of the
+    // whole pull, and the one that reads as a hang. Say so once.
+    let started = std::time::Instant::now();
+    let mut said_waiting = false;
+    loop {
+        tokio::select! {
+            r = &mut fut => return r,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(300)) => {
+                let done = progress.received.load(Ordering::Relaxed);
+                if done == 0 {
+                    if !said_waiting && started.elapsed() >= std::time::Duration::from_secs(2) {
+                        said_waiting = true;
+                        emit("  waiting for the cloud to pack the files…".into());
+                    }
+                    continue;
+                }
+                let total = progress.total.load(Ordering::Relaxed);
+                let line = download_line(done, total);
+                // The percentage moves slower than the ticker on a big
+                // tarball; don't repeat the same line at it.
+                if line != last {
+                    emit(line.clone());
+                    last = line;
+                }
+            }
+        }
+    }
+}
+
+/// Render one progress line. Split out of the ticker so the formatting
+/// (and the unknown-total case) is testable without a live transfer.
+fn download_line(done: u64, total: u64) -> String {
+    if total > 0 {
+        format!(
+            "  downloading… {:.1}/{:.1} MB ({}%)",
+            done as f64 / 1_048_576.0,
+            total as f64 / 1_048_576.0,
+            done.min(total) * 100 / total
+        )
+    } else {
+        format!("  downloading… {:.1} MB", done as f64 / 1_048_576.0)
+    }
 }
 
 async fn push_with_progress(

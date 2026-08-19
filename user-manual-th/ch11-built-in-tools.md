@@ -161,14 +161,29 @@ thClaws redistribute ได้ภายใต้ MIT/Apache ฟอนต์ Noto
 | Google Gemini | `gemini-3.1-flash-image`, `gemini-3.1-pro-image` | `veo-3.1-fast-generate-preview`, `veo-3.1-generate-preview`, `veo-3.1-lite-generate-preview` | `GEMINI_API_KEY` / `GOOGLE_API_KEY` |
 | OpenAI | `gpt-image-2` | — | `OPENAI_API_KEY` |
 | Alibaba DashScope | `qwen-image-2.0`, `qwen-image-2.0-pro` | `happyhorse-1.0-t2v` (text→video), `happyhorse-1.0-i2v` (image→video) | `DASHSCOPE_API_KEY` |
+| LTX (Lightricks) | — | `ltx-2-3-fast` (alias `ltx`), `ltx-2-3-pro` (`ltx-pro`), `ltx-2-5-fast` (`ltx-2-5`), `ltx-2-5-pro` | `LTX_API_KEY` |
 
 - **วิดีโอเป็นแบบ asynchronous** `TextToVideo` / `ImageToVideo` จะ submit
   งานแล้วคืน `job_id` ทันที — ไฟล์ยังไม่พร้อม เรียก
   `MediaJobStatus { job_id }` เพื่อ poll: `running`, `done` (พร้อม path
   `output/…mp4`) หรือ `failed` (พร้อม error ของ provider) สถานะงานถูก
   บันทึกที่ `.thclaws/media-jobs.jsonl` การ poll จึงรอดแม้รีสตาร์ท
-- **คลิป Veo ยาว 4–8 วินาที** Veo และ HappyHorse รับ `resolution` เป็น
-  `720P` หรือ `1080P`
+- **คลิปยาว 4–8 วินาที** `resolution` มีผลกับ LTX และ HappyHorse
+  (`720P` / `1080P` และ LTX รับ `4K` ด้วย) ส่วน Veo ไม่สนใจค่านี้ —
+  render ตามขนาดมาตรฐานของ aspect ที่เลือก
+- **LTX สร้างเสียงเองได้ รวมถึงเสียงพูดภาษาไทย** และเป็นตัวเดียวที่คุม
+  ให้ตัวละครหน้าเหมือนเดิมข้ามช็อตได้ ถ้าป้อนภาพอ้างอิงผ่าน
+  `ImageToVideo` สวิตช์เสียงมีตัวเดียวคือ `generate_audio` (ดีฟอลต์ true,
+  ใส่ false ได้คลิปเงียบ) — **ไม่มีพารามิเตอร์ voice/ภาษา/สำเนียง**
+  ทั้งหมดคุมจาก **prompt**: ใส่บทพูดในเครื่องหมายคำพูดและระบุภาษา+สำเนียง
+  (`พูดภาษาไทย สำเนียงกรุงเทพธรรมชาติ: "…"`) อีกสองปุ่มที่มีผลกับคุณภาพเสียง
+  คือ `fps` (24/25/48/50 — 48 หรือ 50 ทำให้เห็นการปิดปาก P/B/M ชัด ซึ่ง
+  24/25 จะเบลอ) และ `duration` ที่ต้องยาวพอจะพูดจบโดยไม่ต้องรีบ LTX รับ
+  4, 6, 8, 10 … 20 วินาที ค่าอื่นจะถูกปัดเข้าค่าที่ใกล้ที่สุด ส่วน
+  `ltx-2-5-*` คือรุ่นปัจจุบัน (เสียงพูดดีขึ้น ทำหลายช็อตในคลิปเดียวโดยคง
+  เสียงเดิม) ราคาราว 2 เท่าของ 2.3 LTX รับขนาดเป็นพิกเซลไม่ใช่ aspect tier ดังนั้น
+  `aspect_ratio: 9:16` จะสลับด้านของ resolution ที่เลือก (1080P →
+  1080x1920) ตั้ง `LTX_BASE_URL` เพื่อชี้ไป deployment ที่ self-host ได้
 - **`ImageToVideo`** ใช้ภาพในเครื่องเป็นเฟรมแรก ส่งแบบ inline (base64
   data URI) — ไม่มีขั้นตอน upload แยก
 
@@ -198,6 +213,20 @@ GUI shell **Media Studio** ที่มีมาให้ (บทที่ 26) �
 - **`FetchImages`** — ดาวน์โหลดรูปจากเน็ตทุกรูปที่อ้างในไฟล์ Markdown ลง
   โฟลเดอร์ `images/` ข้าง ๆ แล้วแก้ลิงก์ให้ (ใช้โดย agent content-extractor)
   จำกัดอยู่ใน workspace ของคุณ
+- **`FolderIndex`** — สร้าง `<folder>/index.md`: ตารางหนึ่งแถวต่อหนึ่งไฟล์
+  พร้อม **title** สั้น ๆ (ว่าเป็นเรื่องอะไร) และคำอธิบาย ทั้งคู่เขียนจาก *เนื้อหา*
+  จริงของไฟล์ ไม่ใช่จากชื่อไฟล์ ทำงานแบบ
+  deterministic — เดินโฟลเดอร์ ทำ fingerprint ทุกไฟล์ (sha256) เขียน index
+  แล้วส่งให้ agent `folder-indexer` อ่านเฉพาะไฟล์ที่เนื้อหาเปลี่ยนไปจาก
+  สรุปที่ cache ไว้ ดังนั้นการ index ซ้ำโฟลเดอร์ที่ไม่มีอะไรเปลี่ยนจะไม่อ่าน
+  ไฟล์ใหม่เลย cache ของ fingerprint อยู่ข้าง index ที่
+  `<folder>/.thclaws-index.json` — ลบทิ้งถ้าอยากเริ่มใหม่หมด ซ่อนอยู่จนกว่า
+  จะใช้ agent `folder-indexer` (คลิกขวาที่โฟลเดอร์ในแท็บ Files →
+  **Index folder…** หรือ `/index`) ใส่ `report_depth: 1` ถ้าอยากให้ index
+  เหลือระดับเดียว — ลิสต์เฉพาะไฟล์ในโฟลเดอร์นี้ บวกโฟลเดอร์ย่อยแถวละบรรทัด
+  บอกว่าข้างในมีอะไร (ของที่ลึกกว่านั้นยัง scan และสรุปครบ เพราะเป็นวัตถุดิบ
+  ของบรรทัดสรุปนั้น แค่ไม่ถูกลิสต์) ในโมดัลคือตัวเลือก **This folder + one
+  row per subfolder**
 - **`EpubCreate`** — Markdown → e-book EPUB (เข้ากับชุด document tool
   Word/Excel/PowerPoint/PDF ด้านบน)
 

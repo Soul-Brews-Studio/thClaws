@@ -560,6 +560,12 @@ fn slot() -> &'static std::sync::RwLock<Option<std::sync::Arc<Masker>>> {
 /// and the placeholder map is process-wide, so `[NAME_1]` could resolve to
 /// another member's value. Masking is a single-tenant (desktop) feature.
 pub fn configure(enabled: bool, custom: Vec<String>) {
+    // A test holding the pin owns this global; a worker booting on some other
+    // thread must not disarm it out from under an assertion.
+    #[cfg(test)]
+    if pin_owner::blocks_current_thread() {
+        return;
+    }
     let arm = enabled && !crate::workdir::is_multiuser();
     let mut g = match slot().write() {
         Ok(g) => g,
@@ -571,6 +577,85 @@ pub fn configure(enabled: bool, custom: Vec<String>) {
         (Some(m), true) if m.custom == custom => {}
         (_, true) => *g = Some(std::sync::Arc::new(Masker::new(custom))),
         (_, false) => *g = None,
+    }
+}
+
+/// Test-only exclusive hold on the masking global.
+///
+/// The masker is a process global, and `configure` is called from every
+/// surface's boot path — including the workers `shared_session::spawn_with_roots`
+/// starts on detached threads. Those threads outlive the test that created
+/// them, so a test asserting on armed state was racing a worker booting with
+/// `sensitive_enabled = false` and disarming it mid-assertion. That is how
+/// `prompts::masking_briefs_the_model_only_while_armed` came to fail under load
+/// while passing alone.
+///
+/// While a pin is held, `configure` from any *other* thread is ignored — the
+/// pinning test still drives it normally from its own thread, so the tests keep
+/// exercising the real entry point rather than a stubbed one. The pin also
+/// takes the shared test env lock, so pinning tests serialise against each
+/// other and against env-var tests without a second lock to order.
+///
+/// Compiled out entirely outside `cfg(test)`: production has no pin and pays
+/// nothing for it.
+#[cfg(test)]
+pub(crate) struct MaskingPin {
+    _env: std::sync::MutexGuard<'static, ()>,
+    prev: Option<std::sync::Arc<Masker>>,
+}
+
+#[cfg(test)]
+mod pin_owner {
+    use std::cell::Cell;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Read on every `configure` call, and `configure` runs on every worker
+    /// boot — a test spawning fifty of them turned a mutex here into a convoy
+    /// that took the suite from sub-second to forty. Unpinned is one relaxed
+    /// load and nothing else; the thread-local is only consulted once a pin
+    /// actually exists.
+    static PINNED: AtomicBool = AtomicBool::new(false);
+
+    thread_local! {
+        static IS_OWNER: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub(super) fn claim() {
+        IS_OWNER.with(|c| c.set(true));
+        PINNED.store(true, Ordering::Release);
+    }
+
+    pub(super) fn release() {
+        PINNED.store(false, Ordering::Release);
+        IS_OWNER.with(|c| c.set(false));
+    }
+
+    /// True when someone else pinned the masker — the caller's write is theirs
+    /// to lose, not ours to apply.
+    pub(super) fn blocks_current_thread() -> bool {
+        PINNED.load(Ordering::Acquire) && !IS_OWNER.with(|c| c.get())
+    }
+}
+
+/// Pin the masking global to this thread for the life of the returned guard.
+/// Restores whatever was armed before on drop.
+#[cfg(test)]
+pub(crate) fn pin_for_test() -> MaskingPin {
+    let env = crate::kms::test_env_lock();
+    pin_owner::claim();
+    MaskingPin {
+        _env: env,
+        prev: active(),
+    }
+}
+
+#[cfg(test)]
+impl Drop for MaskingPin {
+    fn drop(&mut self) {
+        let mut g = slot().write().unwrap_or_else(|e| e.into_inner());
+        *g = self.prev.take();
+        drop(g);
+        pin_owner::release();
     }
 }
 

@@ -1891,6 +1891,23 @@ pub fn parse_slash(input: &str) -> Option<SlashCommand> {
                 }
             }
         }
+        // Parse-time alias: `/index <folder>` → `/agent folder-indexer …`.
+        // The subagent drives the deterministic `FolderIndex` tool, so a
+        // re-index of an unchanged folder costs one tool call and no reads.
+        "index" => {
+            let prompt = args.trim();
+            if prompt.is_empty() {
+                SlashCommand::Unknown(
+                    "usage: /index [--language=<code>] <folder>   (alias for /agent folder-indexer …)"
+                        .into(),
+                )
+            } else {
+                SlashCommand::Agent {
+                    name: "folder-indexer".into(),
+                    prompt: prompt.to_string(),
+                }
+            }
+        }
         // Parse-time alias: `/extract xxx` → `/agent content-extractor xxx`.
         // The subagent allow-lists FetchImages, which opens the gated
         // `content-extractor` tool group for its isolated run.
@@ -4154,6 +4171,12 @@ pub fn render_help() -> &'static str {
      \x20                   Clips a URL / file / pasted page into clean markdown\n  \
      \x20                   with images downloaded local. Runs isolated (keeps the\n  \
      \x20                   raw page out of your context); fan out for batch.\n  \
+     /index [--language=<code>] FOLDER\n  \
+     \x20                   Alias for /agent folder-indexer FOLDER (GUI-only).\n  \
+     \x20                   Writes FOLDER/index.md — one row per file with a\n  \
+     \x20                   description read from its content. Incremental:\n  \
+     \x20                   only files whose bytes changed are re-read\n  \
+     \x20                   (fingerprints cached in FOLDER/.thclaws-index.json).\n  \
      /cloud status        Show the configured catalog URL + whether a\n  \
      \x20                   CLI token is stored.\n  \
      /cloud list [--mine] Browse thClaws.cloud catalog (dev-plan/34).\n  \
@@ -4335,6 +4358,30 @@ pub fn build_provider(config: &AppConfig) -> Result<Arc<dyn Provider>> {
                 OpenAIProvider::new("local-no-auth".to_string())
                     .with_base_url(url)
                     .with_strip_model_prefix(prefix),
+            ));
+        }
+        ProviderKind::LiteLlm => {
+            // Self-hosted LiteLLM proxy — OpenAI-compatible at /v1, default
+            // port 4000. Auth is optional: only a proxy started with a
+            // `master_key` (or issuing virtual keys) checks the bearer, so a
+            // missing LITELLM_API_KEY falls back to a placeholder instead of
+            // failing the build like a cloud provider would.
+            let base = std::env::var("LITELLM_BASE_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "http://localhost:4000/v1".to_string());
+            let url = if base.ends_with("/chat/completions") {
+                base
+            } else {
+                format!("{}/chat/completions", base.trim_end_matches('/'))
+            };
+            let key = config
+                .api_key_from_env()
+                .unwrap_or_else(|| "local-no-auth".to_string());
+            return Ok(Arc::new(
+                OpenAIProvider::new(key)
+                    .with_base_url(url)
+                    .with_strip_model_prefix("litellm/"),
             ));
         }
         ProviderKind::ChatGptCodex => {
@@ -4817,6 +4864,7 @@ pub fn build_provider(config: &AppConfig) -> Result<Arc<dyn Provider>> {
         | ProviderKind::LMStudio
         | ProviderKind::VLlm
         | ProviderKind::LlamaCpp
+        | ProviderKind::LiteLlm
         | ProviderKind::AgentSdk
         | ProviderKind::ChatGptCodex => {
             unreachable!("handled above")
@@ -12451,11 +12499,6 @@ pub async fn run_repl(mut config: AppConfig) -> Result<()> {
 mod tests {
     use super::*;
 
-    /// `--allowed-tools ''` parses to `Some([""])` (app.rs splits the
-    /// empty string), which must mean "nothing survives" — the case
-    /// `scripts/changelog-stub.sh` relies on to get a tool-free
-    /// one-shot generation.
-    #[test]
     /// The agent/* SDK bridge is a SECOND registry, built fresh in
     /// `build_provider`. The operator's lists were only ever applied to
     /// the agent's own registry, so a run restricted to `Read` still
@@ -12484,6 +12527,10 @@ mod tests {
         assert!(kept.iter().any(|n| *n == "Read"), "unrelated tools survive");
     }
 
+    /// `--allowed-tools ''` parses to `Some([""])` (app.rs splits the
+    /// empty string), which must mean "nothing survives" — the case
+    /// `scripts/changelog-stub.sh` relies on to get a tool-free
+    /// one-shot generation.
     #[test]
     fn tool_filters_govern_task_and_workflow_run() {
         let empty_allow = vec![String::new()];
@@ -14638,6 +14685,23 @@ mod tests {
                 prompt: "docs/page.html".into(),
             }),
         );
+    }
+
+    #[test]
+    fn parse_slash_index_routes_to_folder_indexer() {
+        assert_eq!(
+            parse_slash("/index --language=th articles"),
+            Some(SlashCommand::Agent {
+                name: "folder-indexer".into(),
+                prompt: "--language=th articles".into(),
+            }),
+        );
+        match parse_slash("/index") {
+            Some(SlashCommand::Unknown(msg)) => {
+                assert!(msg.contains("usage: /index"), "got: {msg}")
+            }
+            other => panic!("expected Unknown, got {other:?}"),
+        }
     }
 
     #[test]

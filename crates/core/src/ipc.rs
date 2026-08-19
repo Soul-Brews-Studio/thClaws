@@ -360,7 +360,7 @@ fn announce_key_stored(provider: &str, ok: bool, error: &str, storage: &str, ctx
             }
             let runtime_loaded = matches!(
                 provider,
-                "ollama" | "ollama-anthropic" | "lmstudio" | "vllm" | "llamacpp"
+                "ollama" | "ollama-anthropic" | "lmstudio" | "vllm" | "llamacpp" | "litellm"
             );
             if models.len() >= 3 && !runtime_loaded {
                 let _ = crate::providers::ProviderKind::detect(&new_cfg.model);
@@ -6910,7 +6910,7 @@ mod tests {
             on_zoom: Arc::new(|_| {}),
             workflow_approver: crate::workflow::WorkflowApprover::new(),
         };
-        handle_ipc(
+        let _ = handle_ipc(
             serde_json::json!({
                 "type": "gui_shell_approval_respond",
                 "approvalId": id,
@@ -7184,7 +7184,7 @@ mod tests {
             on_zoom: Arc::new(|_| {}),
             workflow_approver: crate::workflow::WorkflowApprover::new(),
         };
-        handle_ipc(
+        let _ = handle_ipc(
             serde_json::json!({
                 "type": "schedule_cron_preview",
                 "cron": "definitely not cron",
@@ -7218,7 +7218,7 @@ mod tests {
             on_zoom: Arc::new(|_| {}),
             workflow_approver: crate::workflow::WorkflowApprover::new(),
         };
-        handle_ipc(
+        let _ = handle_ipc(
             serde_json::json!({
                 "type": "schedule_cron_preview",
                 "cron": "  ",
@@ -7314,7 +7314,7 @@ mod tests {
             on_zoom: Arc::new(|_| {}),
             workflow_approver: crate::workflow::WorkflowApprover::new(),
         };
-        handle_ipc(
+        let _ = handle_ipc(
             serde_json::json!({
                 "type": "ask_user_response",
                 "id": 1,

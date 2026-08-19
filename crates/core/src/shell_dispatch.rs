@@ -383,21 +383,35 @@ pub async fn dispatch(
                 rows.retain(|(_, e)| e.input_per_mtok.is_some() && e.output_per_mtok.is_some());
             }
 
-            // Ollama is per-machine, so the catalogue alone can't know what
-            // the user has pulled — hit `/api/tags` too and union any new
-            // ids (without context until `/model <id>` auto-scans them).
+            // Providers whose endpoint the USER points at can't be known
+            // from a shipped catalogue: Ollama is per-machine (`/api/tags`
+            // lists what's pulled), and `openai-compat` is whatever sits at
+            // `OPENAI_COMPAT_BASE_URL` — a vLLM box, LiteLLM, an internal
+            // proxy. Ask the endpoint itself and union what it reports; the
+            // CLI has always done this, the GUI listed the catalogue alone
+            // and so showed openai-compat users nothing at all.
             let is_ollama = matches!(
                 kind,
                 crate::providers::ProviderKind::Ollama
                     | crate::providers::ProviderKind::OllamaAnthropic,
             );
+            // LiteLLM is the same case: the routable ids are the operator's
+            // own `model_name` aliases, so the catalogue can never carry them.
+            let asks_endpoint = is_ollama
+                || matches!(
+                    kind,
+                    crate::providers::ProviderKind::OpenAICompat
+                        | crate::providers::ProviderKind::LiteLlm
+                );
             let mut live_note: Option<String> = None;
-            if is_ollama {
+            let mut live_count = 0usize;
+            if asks_endpoint {
                 if let Ok(p) = crate::repl::build_provider(&state.config) {
                     match p.list_models().await {
                         Ok(live) => {
                             let have: std::collections::HashSet<String> =
                                 rows.iter().map(|(id, _)| id.clone()).collect();
+                            live_count = live.len();
                             for m in live {
                                 if !have.contains(&m.id) {
                                     rows.push((
@@ -417,9 +431,16 @@ pub async fn dispatch(
                             rows.sort_by(|a, b| a.0.cmp(&b.0));
                         }
                         Err(e) => {
-                            live_note = Some(format!(
-                                "(could not reach Ollama /api/tags: {e}; showing catalogue only)"
-                            ));
+                            // An endpoint that isn't OpenAI-shaped answers
+                            // with an HTML error page; pasting the whole
+                            // thing into the chat buries the one line that
+                            // matters.
+                            let why = one_line(&e.to_string(), 160);
+                            live_note = Some(if is_ollama {
+                                format!("(could not reach Ollama /api/tags: {why}; showing catalogue only)")
+                            } else {
+                                format!("(could not list models from your endpoint: {why}; showing catalogue only)")
+                            });
                         }
                     }
                 }
@@ -432,6 +453,23 @@ pub async fn dispatch(
                         "no free OpenRouter models in the catalogue. Turn off 'Free only' in Settings or run /models refresh."
                             .to_string(),
                     );
+                } else if asks_endpoint {
+                    // Nothing catalogued AND the endpoint gave us nothing —
+                    // for a user-pointed provider that's an endpoint problem,
+                    // not a stale catalogue, so don't send them to `refresh`.
+                    let base = crate::providers::endpoint_hint(kind);
+                    emit(
+                        events_tx,
+                        format!(
+                            "no models available from {}{}. {}",
+                            base,
+                            live_note
+                                .as_deref()
+                                .map(|n| format!(" {n}"))
+                                .unwrap_or_default(),
+                            "Check the endpoint is up and serves GET /models."
+                        ),
+                    );
                 } else {
                     emit(
                         events_tx,
@@ -441,10 +479,21 @@ pub async fn dispatch(
                 return;
             }
 
+            // Name the source honestly: openai-compat has no catalogue rows
+            // at all, so "from catalogue + N live" would credit a list that
+            // contributed nothing.
+            let catalogued = rows.len().saturating_sub(live_count);
+            let source = match (catalogued, live_count) {
+                (0, n) if n > 0 && is_ollama => "from /api/tags".to_string(),
+                (0, n) if n > 0 => "live from your endpoint".to_string(),
+                (_, n) if n > 0 && is_ollama => "from catalogue + /api/tags".to_string(),
+                (_, n) if n > 0 => format!("from catalogue + {n} live from your endpoint"),
+                _ => "from catalogue".to_string(),
+            };
             let mut out = format!(
-                "models — {provider_name} ({} entries, from catalogue{}{})\n",
+                "models — {provider_name} ({} entries, {}{})\n",
                 rows.len(),
-                if is_ollama { " + /api/tags" } else { "" },
+                source,
                 if free_only { ", free only" } else { "" },
             );
             for (id, entry) in &rows {
@@ -463,7 +512,16 @@ pub async fn dispatch(
             if let Some(note) = live_note {
                 out.push_str(&format!("\n{note}\n"));
             }
-            out.push_str("\ntype /models refresh to re-seed from openrouter/vendor lists\n");
+            // `refresh` re-downloads the shipped catalogue — pointless advice
+            // for a provider whose list came from the user's own endpoint.
+            if asks_endpoint && catalogued == 0 {
+                out.push_str(&format!(
+                    "\nlisted live from {} — /models refresh won't change this\n",
+                    crate::providers::endpoint_hint(kind)
+                ));
+            } else {
+                out.push_str("\ntype /models refresh to re-seed from openrouter/vendor lists\n");
+            }
             emit(events_tx, out);
         }
         SlashCommand::Model(arg) => {
@@ -487,7 +545,7 @@ pub async fn dispatch(
                 // real choice.) Closes #25.
                 let runtime_loaded = matches!(
                     prov,
-                    "ollama" | "ollama-anthropic" | "lmstudio" | "vllm" | "llamacpp"
+                    "ollama" | "ollama-anthropic" | "lmstudio" | "vllm" | "llamacpp" | "litellm"
                 );
                 if !runtime_loaded {
                     let cat = crate::model_catalogue::EffectiveCatalogue::load();
@@ -4060,14 +4118,83 @@ async fn switch_model(
                 ),
             }
         }
-        if !resolved_via_ollama {
+        // Same idea for `openai-compat`: the endpoint is the user's own, so
+        // the shipped catalogue can never carry its models. Ask it — LiteLLM
+        // answers `/model/info`, vLLM publishes `max_model_len` on `/models`
+        // — and cache what comes back. Without this the switch silently keeps
+        // the fallback context AND sends an uncapped `max_tokens`, which the
+        // upstream rejects when the real ceiling is lower.
+        // `litellm` is the same shape — a user-pointed endpoint whose aliases
+        // the catalogue can't know — and it is the one that actually answers
+        // `/model/info`.
+        let mut resolved_via_endpoint = false;
+        let probe_kind = match new_kind {
+            Some(k @ crate::providers::ProviderKind::OpenAICompat)
+            | Some(k @ crate::providers::ProviderKind::LiteLlm) => Some(k),
+            _ => None,
+        };
+        if let Some(probe_kind) = probe_kind {
+            let model_id = state.config.model.clone();
+            match crate::providers::openai::probe_compat_limits(probe_kind, &model_id).await {
+                Some((n, max_out, source)) => {
+                    let entry = crate::model_catalogue::ModelEntry {
+                        context: Some(n),
+                        max_output: max_out,
+                        source: Some(source.clone()),
+                        verified_at: Some(crate::model_catalogue::today_iso()),
+                        free: None,
+                        chat: None,
+                        ..Default::default()
+                    };
+                    match crate::model_catalogue::upsert_cache_entry(
+                        crate::model_catalogue::provider_kind_name(probe_kind),
+                        &model_id,
+                        entry,
+                    ) {
+                        Ok(()) => {
+                            emit(
+                                events_tx,
+                                format!(
+                                    "auto-scanned '{model_id}' via {source} → {n} tokens{}; cached for next time",
+                                    max_out
+                                        .map(|m| format!(", max output {m}"))
+                                        .unwrap_or_default()
+                                ),
+                            );
+                            resolved_via_endpoint = true;
+                        }
+                        Err(e) => emit(
+                            events_tx,
+                            format!("scanned context ({n} tokens) but cache write failed: {e}"),
+                        ),
+                    }
+                }
+                None => emit(
+                    events_tx,
+                    format!(
+                        "'{model_id}': {} publishes no model limits (tried /model/info and /models)",
+                        crate::providers::endpoint_hint(probe_kind)
+                    ),
+                ),
+            }
+        }
+        if !resolved_via_ollama && !resolved_via_endpoint {
+            // `/models refresh` re-downloads the shipped catalogue, which by
+            // definition can't learn a user-hosted endpoint's models — point
+            // those users at the override instead.
+            let remedy = if probe_kind.is_some() {
+                format!(
+                    "Set it yourself: \"modelOverrides\": {{ \"{}\": {{ \"context\": <n>, \"maxOutput\": <n> }} }} in .thclaws/settings.json.",
+                    state.config.model
+                )
+            } else {
+                "Run /models refresh to pick up newer entries.".to_string()
+            };
             emit(
                 events_tx,
                 format!(
-                    "⚠ no catalogue entry for '{}' — using {} ({} tokens). Run /models refresh to pick up newer entries.",
-                    state.config.model,
-                    provider,
-                    ctx
+                    "⚠ no catalogue entry for '{}' — using {} ({} tokens). {remedy}",
+                    state.config.model, provider, ctx
                 ),
             );
         }
@@ -4145,6 +4272,17 @@ fn doctor_report(state: &WorkerState) -> String {
         state.tool_registry.names().len(),
         state.agent.history_snapshot().len(),
     )
+}
+
+/// Squash a multi-line upstream error into one readable line, capped.
+/// Endpoints that aren't OpenAI-shaped reply with a whole HTML page.
+fn one_line(msg: &str, max: usize) -> String {
+    let flat = msg.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= max {
+        return flat;
+    }
+    let cut: String = flat.chars().take(max).collect();
+    format!("{cut}…")
 }
 
 fn emit(events_tx: &broadcast::Sender<ViewEvent>, text: String) {
@@ -5105,4 +5243,24 @@ fn mcp_server_names(name: &str) -> Option<Vec<String>> {
     let mut names: Vec<String> = manifest.mcp_servers.keys().cloned().collect();
     names.sort();
     Some(names)
+}
+
+#[cfg(test)]
+mod dispatch_helper_tests {
+    /// A box that isn't OpenAI-shaped answers `/models` with an HTML error
+    /// page. The note has to name the failure, not paste the page.
+    #[test]
+    fn one_line_flattens_and_caps_upstream_errors() {
+        let html = "http 404: <!DOCTYPE HTML>\n<html>\n  <head>\n    <title>Error response</title>\n  </head>\n</html>";
+        let out = super::one_line(html, 40);
+        assert!(!out.contains('\n'), "single line: {out}");
+        assert!(out.ends_with('…'), "truncated: {out}");
+        assert_eq!(out.chars().count(), 41, "40 chars + ellipsis");
+
+        // Short messages pass through whole, just de-wrapped.
+        assert_eq!(
+            super::one_line("connection\n  refused", 80),
+            "connection refused"
+        );
+    }
 }

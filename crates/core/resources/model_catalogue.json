@@ -7846,6 +7846,24 @@
           "source": "https://docs.ltx.video/pricing + manual:ltx-2-3-pro",
           "verified_at": "2026-07-04"
         },
+        "ltx/ltx-2-5-fast": {
+          "chat": false,
+          "kind": "video",
+          "video_price_per_second_usd": {
+            "1080P": 0.13
+          },
+          "source": "https://docs.ltx.io/pricing + manual:ltx-2-5-fast",
+          "verified_at": "2026-08-13"
+        },
+        "ltx/ltx-2-5-pro": {
+          "chat": false,
+          "kind": "video",
+          "video_price_per_second_usd": {
+            "1080P": 0.17
+          },
+          "source": "https://docs.ltx.io/pricing + manual:ltx-2-5-pro",
+          "verified_at": "2026-08-13"
+        },
         "ltx/ltx-2-3-pro-audio": {
           "chat": false,
           "kind": "video",

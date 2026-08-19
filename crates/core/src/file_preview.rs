@@ -181,6 +181,28 @@ fn normalize_rules(md: &str) -> String {
 /// frontend resolves `"system"` before sending so this function never
 /// inspects an OS signal. Default = dark for back-compat when caller
 /// passes anything else.
+/// Private-use codepoint standing in for a `<br>` while comrak runs.
+const BR_SENTINEL: &str = "\u{E000}";
+
+/// Swap literal `<br>` tags for a sentinel before rendering. Raw HTML is
+/// stripped for safety (`unsafe_ = false`), which is right for everything
+/// except this one tag: a markdown table cell has no other way to hold two
+/// lines, so `<br>` is how every editor and GitHub writes one — and stripping
+/// it turned those cells into "<!-- raw HTML omitted -->". Nothing else gets
+/// through; the sentinel is a private-use codepoint, and any that were already
+/// in the source are dropped first so a file can't smuggle one in.
+fn hide_line_breaks(md: &str) -> String {
+    let cleaned = md.replace(BR_SENTINEL, "");
+    regex::Regex::new(r"(?i)<br\s*/?>")
+        .unwrap()
+        .replace_all(&cleaned, BR_SENTINEL)
+        .into_owned()
+}
+
+fn restore_line_breaks(html: &str) -> String {
+    html.replace(BR_SENTINEL, "<br>")
+}
+
 pub fn render_markdown_to_html(md: &str, theme: &str) -> String {
     let mut opts = comrak::ComrakOptions::default();
     opts.extension.table = true;
@@ -194,7 +216,10 @@ pub fn render_markdown_to_html(md: &str, theme: &str) -> String {
     // Frontmatter is shown as a yaml block rather than dropped — the
     // Files tab is a file viewer, so hiding part of the file is worse
     // than showing it verbatim.
-    let body = comrak::markdown_to_html(&normalize_rules(md), &opts);
+    let body = restore_line_breaks(&comrak::markdown_to_html(
+        &normalize_rules(&hide_line_breaks(md)),
+        &opts,
+    ));
 
     let (fg, bg, muted, accent, code_bg, border, color_scheme) = if theme == "light" {
         (
@@ -253,10 +278,48 @@ pub fn render_markdown_to_html(md: &str, theme: &str) -> String {
 </style>
 </head><body>
 {body}
+{LINK_BRIDGE}
 </body></html>"##,
-        body = body
+        body = body,
+        LINK_BRIDGE = LINK_BRIDGE,
     )
 }
+
+/// Click bridge for links inside the rendered preview. The Files tab mounts
+/// this HTML in a sandboxed iframe and wants a link to a workspace file to
+/// open in the app rather than navigate the frame to the raw bytes.
+///
+/// In `--serve` the tab can intercept clicks from the outside (`srcdoc`
+/// inherits the page origin, so the parent may reach `contentDocument`).
+/// The desktop GUI serves the app from a custom scheme (`thclaws://`),
+/// where that inheritance doesn't hold and the parent is locked out — so
+/// the document reports its own clicks instead, via `postMessage`, which
+/// works regardless of origin. The frame is sandboxed WITHOUT
+/// `allow-same-origin` there, so this script can talk to the parent but
+/// can't touch it.
+///
+/// Inert when the sandbox withholds `allow-scripts` (the `--serve` case);
+/// the outside listener handles those clicks.
+const LINK_BRIDGE: &str = r##"<script>
+document.addEventListener("click", function (e) {
+  var el = e.target;
+  while (el && el.tagName !== "A") el = el.parentElement;
+  if (!el) return;
+  var href = el.getAttribute("href");
+  if (!href) return;
+  if (href.charAt(0) === "#") {
+    e.preventDefault();
+    var id = href.slice(1);
+    var t = document.getElementById(id) || document.getElementById(decodeURIComponent(id));
+    if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  e.preventDefault();
+  try {
+    window.parent.postMessage({ type: "thclaws-preview-link", href: href }, "*");
+  } catch (err) {}
+}, true);
+</script>"##;
 
 /// Base64-encode a binary file's bytes for the `file_content` envelope's
 /// `content` field. Pure convenience wrapper around the standard
@@ -320,6 +383,42 @@ mod tests {
         assert!(html.contains(">Hello"));
         assert!(html.contains(">world"));
         assert!(html.contains("color-scheme: light"));
+    }
+
+    /// The Files tab's desktop path can only intercept a link click if the
+    /// rendered document reports it — the preview frame is opaque there.
+    /// `<br>` is the only way a markdown table cell holds two lines (the
+    /// generated `index.md` puts a bold title above each summary that way), so
+    /// it survives the raw-HTML strip — and nothing else does.
+    #[test]
+    fn render_markdown_keeps_br_but_still_strips_other_html() {
+        let html = render_markdown_to_html(
+            "| A | B |\n|---|---|\n| x | **T**<br>body |\n\nthen <script>bad()</script> <b>bold</b>",
+            "dark",
+        );
+        assert!(html.contains("<strong>T</strong><br>body"), "{html}");
+        // The tags are gone (their text stays, escaped) — only the document's
+        // own link bridge is a live script.
+        assert!(!html.contains("<script>bad"), "script survived: {html}");
+        assert!(!html.contains("<b>bold</b>"), "raw html survived: {html}");
+    }
+
+    /// A file can't smuggle the sentinel in to forge a break.
+    #[test]
+    fn render_markdown_drops_a_planted_sentinel() {
+        let html = render_markdown_to_html(&format!("a{BR_SENTINEL}b"), "dark");
+        assert!(!html.contains(BR_SENTINEL), "{html}");
+        assert!(!html.contains("<br>"), "{html}");
+    }
+
+    #[test]
+    fn render_markdown_ships_the_link_bridge() {
+        let html = render_markdown_to_html("[a](docs/a.md)", "dark");
+        assert!(html.contains("thclaws-preview-link"), "{html}");
+        assert!(html.contains("window.parent.postMessage"), "{html}");
+        // Bridge sits after the body so it binds against a complete DOM.
+        let body = html.find("<a href=\"docs/a.md\"").expect("link rendered");
+        assert!(html.find("thclaws-preview-link").unwrap() > body);
     }
 
     #[test]

@@ -784,7 +784,7 @@ mod tests {
     /// rewrites into a sentence claiming the real number is a placeholder.
     #[test]
     fn masking_briefs_the_model_only_while_armed() {
-        let _guard = crate::kms::test_env_lock();
+        let _pin = crate::sensitive::pin_for_test();
         let tmp = tempfile::tempdir().unwrap();
         let config = crate::config::AppConfig::default();
 

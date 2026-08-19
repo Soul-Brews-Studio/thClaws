@@ -37,7 +37,7 @@ DB เก็บเป็น microcent ต่อ 1k token (`µ¢/kt`) สูต�
 
 context ที่มี **`?`** คือค่าที่ provider ไม่เคยประกาศ — เป็นค่า default ของ provider นั้นที่ใส่ไว้เพราะถ้าเว้นว่างจะทำให้ตัวเลือกโมเดลพัง ให้ถือเป็นขอบล่าง ไม่ใช่สเปกจริง
 
-605 โมเดล จาก 14 provider
+607 โมเดล จาก 14 provider
 
 ### Anthropic
 
@@ -705,6 +705,8 @@ context ที่มี **`?`** คือค่าที่ provider ไม่�
 | `ltx/ltx-2-3-fast` | 1080P | $0.07 |
 | `ltx/ltx-2-3-pro` | 1080P | $0.10 |
 | `ltx/ltx-2-3-pro-audio` | 1080P | $0.12 |
+| `ltx/ltx-2-5-fast` | 1080P | $0.16 |
+| `ltx/ltx-2-5-pro` | 1080P | $0.21 |
 
 ### ElevenLabs
 

@@ -821,7 +821,6 @@ fn open_gates_for_allowlist(def: &crate::agent_defs::AgentDef, base_tools: &Tool
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::AgentEvent;
     use crate::error::Error;
     use crate::providers::{EventStream, Provider, ProviderEvent, StreamRequest};
     use crate::tools::ToolRegistry;

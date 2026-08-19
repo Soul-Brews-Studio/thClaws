@@ -204,6 +204,7 @@ overrides the built-in.
 |---|---|---|
 | `dream` | session model | Consolidate the project's KMS by mining recent sessions, deduping pages, surfacing insights. Invoked via the `/dream` slash command. See [Chapter 9](ch09-knowledge-bases-kms.md). |
 | `translator` | session model | Translate text or files between languages while preserving structure (markdown headings, lists, code blocks, frontmatter). Invoked via `/agent translator <prompt>` or `Task(agent: "translator")`. |
+| `folder-indexer` | session model | Catalogue a folder into `<folder>/index.md` — one row per file, described from its content (text, documents, and images alike). Incremental: the `FolderIndex` tool fingerprints every file, so only what changed since the last run is re-read. Invoked via `/index <folder>`, the Files tab's folder right-click → **Index folder…**, or `Task(agent: "folder-indexer")`. |
 | `kms-linker` | session model | Fix broken page links, refresh stale pages, and patch missing index entries in a KMS. Dispatched as a side-channel by `/kms wrap-up --fix`. |
 | `kms-reconcile` | session model | Find and resolve contradictions across KMS pages — rewrites outdated pages with History sections, flags ambiguous cases as Conflict pages. Dispatched by `/kms reconcile <name> [--apply]`. |
 

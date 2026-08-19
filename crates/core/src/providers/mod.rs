@@ -103,6 +103,21 @@ pub enum ProviderKind {
     /// 8080, no auth. Serves one GGUF at a time and ignores the `model`
     /// field in the request, so any id routes correctly.
     LlamaCpp,
+    /// LiteLLM Proxy (`litellm --config config.yaml`) — the self-hosted
+    /// OpenAI-compatible router, default port 4000. Split out of
+    /// [`OpenAICompat`] so it gets its own `litellm/` namespace, base-URL
+    /// env and Settings row. Model ids are whatever `model_name` aliases
+    /// the operator declared in `model_list`, so no default can be right —
+    /// `list_models` fills the picker from the live `/models`, and
+    /// `/model/info` supplies the real context window.
+    ///
+    /// Auth is optional: a proxy started without `master_key` accepts any
+    /// bearer, one with virtual keys wants `LITELLM_API_KEY`. Unlike vLLM /
+    /// llama.cpp this is a *router*, not an inference server — the model it
+    /// resolves to usually lives at OpenAI/Anthropic/etc., so it is
+    /// deliberately absent from [`Self::is_local`] and the org-policy
+    /// gateway's local bypass.
+    LiteLlm,
     AzureAIFoundry,
     OpenAICompat,
     DeepSeek,
@@ -161,6 +176,26 @@ impl ProviderTier {
             Self::Additional => "additional",
         }
     }
+}
+
+/// Human-readable "where this provider actually points" — the env var
+/// the user set, resolved to its current value. Used when a listing
+/// comes back empty so the message names the endpoint that was asked
+/// rather than a provider label the user never typed.
+pub fn endpoint_hint(kind: ProviderKind) -> String {
+    let (var, default) = match kind {
+        ProviderKind::OpenAICompat => ("OPENAI_COMPAT_BASE_URL", "http://localhost:8000/v1"),
+        ProviderKind::LiteLlm => ("LITELLM_BASE_URL", "http://localhost:4000/v1"),
+        ProviderKind::Ollama | ProviderKind::OllamaAnthropic => {
+            ("OLLAMA_BASE_URL", "http://localhost:11434")
+        }
+        _ => return crate::model_catalogue::provider_kind_name(kind).to_string(),
+    };
+    let base = std::env::var(var)
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| default.to_string());
+    format!("{base} ({var})")
 }
 
 impl ProviderKind {
@@ -239,6 +274,7 @@ impl ProviderKind {
         Self::LMStudio,
         Self::VLlm,
         Self::LlamaCpp,
+        Self::LiteLlm,
         Self::AzureAIFoundry,
         Self::OpenAICompat,
         Self::DeepSeek,
@@ -273,6 +309,7 @@ impl ProviderKind {
             Self::LMStudio => "lmstudio",
             Self::VLlm => "vllm",
             Self::LlamaCpp => "llamacpp",
+            Self::LiteLlm => "litellm",
             Self::AzureAIFoundry => "azure",
             Self::OpenAICompat => "openai-compat",
             Self::DeepSeek => "deepseek",
@@ -343,6 +380,11 @@ impl ProviderKind {
             // llama-server ignores the request's `model` field entirely (one
             // GGUF per process), so this placeholder actually works as-is.
             Self::LlamaCpp => "llamacpp/local-model",
+            // LiteLLM routes on the operator's own `model_name` aliases, so
+            // like vLLM there is no id we can know up front. `gpt-4o-mini` is
+            // the alias LiteLLM's own quickstart config ships with; the picker
+            // replaces it with the live `/models` listing.
+            Self::LiteLlm => "litellm/gpt-4o-mini",
             // Azure AI Foundry deployments are user-specific (each subscription
             // names its own deployments), so there's no sensible default. The
             // placeholder routes to the right provider but forces the user to
@@ -414,6 +456,7 @@ impl ProviderKind {
             Self::LMStudio => Some("LMSTUDIO_BASE_URL"),
             Self::VLlm => Some("VLLM_BASE_URL"),
             Self::LlamaCpp => Some("LLAMACPP_BASE_URL"),
+            Self::LiteLlm => Some("LITELLM_BASE_URL"),
             Self::AzureAIFoundry => Some("AZURE_AI_FOUNDRY_ENDPOINT"),
             Self::OpenAICompat => Some("OPENAI_COMPAT_BASE_URL"),
             Self::DeepSeek => Some("DEEPSEEK_BASE_URL"),
@@ -441,6 +484,7 @@ impl ProviderKind {
                 | Self::LMStudio
                 | Self::VLlm
                 | Self::LlamaCpp
+                | Self::LiteLlm
                 | Self::AzureAIFoundry
                 | Self::OpenAICompat
                 // Self-hosted router: base URL / port varies per user, so the
@@ -478,6 +522,11 @@ impl ProviderKind {
             Self::VLlm => Some("http://localhost:8000/v1"),
             // `llama-server` binds 127.0.0.1:8080 and exposes /v1.
             Self::LlamaCpp => Some("http://localhost:8080/v1"),
+            // `litellm --config config.yaml` binds 0.0.0.0:4000 and exposes
+            // the OpenAI surface at the root — `/v1` is accepted too, and is
+            // what keeps the derived `/models` and `/model/info` probes on
+            // the same prefix.
+            Self::LiteLlm => Some("http://localhost:4000/v1"),
             Self::AzureAIFoundry => Some("https://{resource}.services.ai.azure.com"),
             // Generic OAI-compat: users always set their own URL; this
             // placeholder just hints at the expected shape (path ending in /v1).
@@ -515,6 +564,9 @@ impl ProviderKind {
     /// `OpenAICompat` is deliberately NOT listed even though it's usually a
     /// local runtime — its base URL is user-supplied and can point anywhere,
     /// and the safe default for a privacy gate is to treat unknown as remote.
+    /// `LiteLlm` is out for the same reason: the proxy is self-hosted, but it
+    /// is a router whose upstream is normally OpenAI/Anthropic/…, so the text
+    /// does leave the host.
     pub fn is_local(&self) -> bool {
         matches!(
             self,
@@ -531,7 +583,9 @@ impl ProviderKind {
     pub fn has_key_available(&self) -> bool {
         // OpenAI-compatible endpoints are local runtimes (vLLM / llama.cpp /
         // SGLang / Atlas) — auth optional, never require a key to be usable.
-        if matches!(self, Self::OpenAICompat) {
+        // LiteLLM the same: a proxy started without `master_key` takes any
+        // bearer, so a missing LITELLM_API_KEY must not mark it unusable.
+        if matches!(self, Self::OpenAICompat | Self::LiteLlm) {
             return true;
         }
         let Some(env_var) = self.api_key_env() else {
@@ -569,6 +623,10 @@ impl ProviderKind {
             // Self-hosted; auth only if started with --api-key, which
             // users set through the generic compat provider instead.
             Self::VLlm | Self::LlamaCpp => None,
+            // Optional — set only when the proxy runs with a master key or
+            // mints virtual keys. Absent, `build_provider` sends a
+            // placeholder bearer rather than refusing to build.
+            Self::LiteLlm => Some("LITELLM_API_KEY"),
             Self::AzureAIFoundry => Some("AZURE_AI_FOUNDRY_API_KEY"),
             Self::OpenAICompat => Some("OPENAI_COMPAT_API_KEY"),
             Self::DeepSeek => Some("DEEPSEEK_API_KEY"),
@@ -673,6 +731,7 @@ impl ProviderKind {
             | Self::LMStudio
             | Self::VLlm
             | Self::LlamaCpp
+            | Self::LiteLlm
             | Self::AzureAIFoundry
             | Self::OpenAICompat
             | Self::DeepSeek
@@ -810,6 +869,12 @@ impl ProviderKind {
             // llama.cpp's llama-server. The id after the prefix is cosmetic
             // (the server serves whichever GGUF it was started with).
             Some(Self::LlamaCpp)
+        } else if model.starts_with("litellm/") {
+            // Self-hosted LiteLLM proxy. Models look like
+            // litellm/<model_name-alias>, and an alias may itself be
+            // namespaced (litellm/azure/gpt-4o) — only the leading
+            // "litellm/" is stripped, so the rest survives to the proxy.
+            Some(Self::LiteLlm)
         } else if model.starts_with("oa/") {
             Some(Self::OllamaAnthropic)
         } else if model.starts_with("ollama/") {
@@ -1273,7 +1338,8 @@ pub fn kind_has_credentials(kind: Option<ProviderKind>) -> bool {
         | ProviderKind::LlamaCpp => true,
         // OpenAI-compatible = local runtimes (vLLM / llama.cpp / SGLang / Atlas)
         // pointed at OPENAI_COMPAT_BASE_URL; auth is optional (key sent if set).
-        ProviderKind::OpenAICompat => true,
+        // LiteLLM is self-hosted with optional auth on the same terms.
+        ProviderKind::OpenAICompat | ProviderKind::LiteLlm => true,
         // ChatGptCodex auths via a file-based OAuth token, not an env
         // var, so the generic api_key_env() probe below always misses.
         ProviderKind::ChatGptCodex => {
@@ -1488,6 +1554,26 @@ pub fn preferred_default_model(cfg: &crate::config::AppConfig) -> Option<String>
 
 #[cfg(test)]
 mod tests {
+    /// `/models` on a user-pointed provider says which endpoint it asked,
+    /// because "no models for openai-compat" tells the user nothing about
+    /// the box they actually configured.
+    #[test]
+    fn endpoint_hint_names_the_configured_url() {
+        let _g = crate::kms::test_env_lock();
+        std::env::remove_var("OPENAI_COMPAT_BASE_URL");
+        let d = super::endpoint_hint(ProviderKind::OpenAICompat);
+        assert!(d.contains("localhost:8000"), "default shown: {d}");
+        assert!(d.contains("OPENAI_COMPAT_BASE_URL"), "names the var: {d}");
+
+        std::env::set_var("OPENAI_COMPAT_BASE_URL", "http://vllm.internal:9000/v1");
+        let set = super::endpoint_hint(ProviderKind::OpenAICompat);
+        assert!(set.contains("vllm.internal:9000"), "got: {set}");
+        std::env::remove_var("OPENAI_COMPAT_BASE_URL");
+
+        // A catalogued provider has no user endpoint — fall back to its name.
+        assert_eq!(super::endpoint_hint(ProviderKind::Anthropic), "anthropic");
+    }
+
     use super::*;
 
     // `codex/` (OpenAIResponses) models are hidden from the cross-provider
@@ -1859,6 +1945,42 @@ mod tests {
         assert_eq!(
             ProviderKind::LlamaCpp.default_endpoint(),
             Some("http://localhost:8080/v1")
+        );
+    }
+
+    #[test]
+    fn litellm_is_a_self_hosted_proxy_with_optional_auth() {
+        assert_eq!(
+            ProviderKind::detect("litellm/gpt-4o-mini"),
+            Some(ProviderKind::LiteLlm)
+        );
+        assert_eq!(
+            ProviderKind::detect("litellm/azure/my-deployment"),
+            Some(ProviderKind::LiteLlm),
+            "a namespaced alias keeps its inner slashes"
+        );
+        assert_eq!(ProviderKind::LiteLlm.name(), "litellm");
+        assert_eq!(
+            ProviderKind::LiteLlm.endpoint_env(),
+            Some("LITELLM_BASE_URL")
+        );
+        assert_eq!(
+            ProviderKind::LiteLlm.default_endpoint(),
+            Some("http://localhost:4000/v1")
+        );
+        assert!(ProviderKind::LiteLlm.endpoint_user_configurable());
+        assert!(ProviderKind::ALL.contains(&ProviderKind::LiteLlm));
+        // The key is optional — usable (and buildable) with none set.
+        assert_eq!(ProviderKind::LiteLlm.api_key_env(), Some("LITELLM_API_KEY"));
+        assert!(ProviderKind::LiteLlm.has_key_available());
+        assert!(kind_has_credentials(Some(ProviderKind::LiteLlm)));
+        // A router, not local inference: masking and the org-policy gateway
+        // must keep treating its traffic as leaving the host.
+        assert!(!ProviderKind::LiteLlm.is_local());
+        assert_eq!(
+            crate::providers::thclaws_gateway::provider_segment(ProviderKind::LiteLlm),
+            None,
+            "self-hosted — never metered through the thClaws gateway"
         );
     }
 

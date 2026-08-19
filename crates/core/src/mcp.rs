@@ -2203,7 +2203,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_tools_parses_inputSchema() {
+    async fn list_tools_parses_input_schema() {
         let (client, (s_read, s_write)) = paired_streams();
 
         let server_task = tokio::spawn(async move {

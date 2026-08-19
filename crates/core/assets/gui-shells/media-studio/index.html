@@ -90,12 +90,28 @@
             </select>
           </label>
 
+          <label class="field" id="fps-field" hidden>
+            <span class="label">FPS</span>
+            <select id="fps">
+              <option value="25">25</option>
+              <option value="24">24</option>
+              <option value="48">48 — clearer speech</option>
+              <option value="50">50 — clearer speech</option>
+            </select>
+          </label>
+
           <label class="field" id="resolution-field" hidden>
             <span class="label">Resolution</span>
             <select id="resolution">
               <option value="720P">720P</option>
               <option value="1080P">1080P</option>
+              <option value="4K">4K (LTX only)</option>
             </select>
+          </label>
+
+          <label class="field checkbox-field" id="audio-field" hidden>
+            <input type="checkbox" id="generate-audio" checked />
+            <span class="label">Generate audio</span>
           </label>
         </div>
 

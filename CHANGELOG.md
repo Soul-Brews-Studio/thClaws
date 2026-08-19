@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.115.0] — 2026-08-20
+
+LTX 2.5 joins the media models, third-party agent prompts import as native thClaws packages, and LiteLLM becomes a first-class self-hosted provider. A new FolderIndex tool and a round of shell, markdown-preview and OpenAI fixes land alongside.
+
+### Added
+- **LTX 2.5 now ships alongside LTX 2.3, selectable everywhere.** The new media model id sits next to 2.3 in the catalogue and is carried through to the web copy and Appendix A.
+- **FolderIndex — a deterministic, resumable index of a folder.** The new tool builds a stable index of a folder and resumes an existing index instead of rebuilding it each run.
+- **LiteLLM as a first-class self-hosted provider.** A self-hosted LiteLLM endpoint can be selected as a provider like any built-in one.
+- **Third-party agent prompts convert into thClaws packages.** The agent importer can turn a third-party agent's prompt into a native thClaws package.
+- **Thai capability summary and the full prompt in the import manual.** Agent import now shows the agent's capabilities summarised in Thai and exposes the complete prompt it will run.
+- **`/models` asks a user-pointed endpoint and names it when it fails.** The command can be pointed at a user's endpoint, and a failure now names which endpoint failed.
+
+### Changed
+- **A workspace pull is narrated instead of going quiet for minutes.** The agent narrates the pull's progress so a long update doesn't read as a hang.
+- **A skill's model recommendation survives a retired id.** Recommendations keep working when the model id they point at has been retired.
+
+### Fixed
+- **The Shell tab's PTY is told it is a 256-colour terminal.** Colour-probing programs now see a 256-colour terminal and render correctly.
+- **Stop now kills the command, not just the process it can see.** Bash's Stop terminates the actual running command rather than only the visible process.
+- **Markdown preview keeps `<br>` in table cells, and its links resolve.** Table cells no longer drop `<br>` line breaks, and preview links resolve correctly.
+- **The audit desk paints before hydrating, and Stop unwedges the pane.** It renders before loading data, and Stop can recover a stuck pane.
+- **The GUI-shell preview no longer hangs.** It answered with the wrong key — so every call hung — and handed the bridge a URL where it wants a path; both are corrected.
+- **OpenAI usage is no longer dropped on an unexpected frame shape.** Usage is preserved even when the response frame isn't the shape expected.
+
 ## [0.114.0] — 2026-08-11
 
 Every OpenAI model in the picker now actually works: the `gpt-5.6` family accepts tools, the `-pro` tier reaches the endpoint that serves it, and nine models that OpenAI retired are gone for good.

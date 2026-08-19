@@ -52,14 +52,18 @@ fn resolve_aspect(input: &Value) -> String {
 fn resolve_resolution(input: &Value) -> String {
     match opt(input, "resolution").as_str() {
         "1080P" | "1080p" => "1080P".into(),
+        // LTX only; Veo ignores the tier and DashScope clamps to 1080P.
+        "4K" | "4k" | "2160P" | "2160p" => "4K".into(),
         _ => "720P".into(),
     }
 }
 
 const MODEL_DESC: &str = "Video model. Provider inferred from the model. Veo: `fast` \
-(default; veo-3.1-fast-generate-preview), `quality`, or `lite`. DashScope HappyHorse: \
-`happyhorse-1.0-t2v` (text→video) / `happyhorse-1.0-i2v` (image→video) — honor \
-`resolution` (720P/1080P). Default: fast.";
+(default; veo-3.1-fast-generate-preview), `quality`, or `lite`. LTX: `ltx` \
+(ltx-2-3-fast) or `ltx-pro` for 2.3, `ltx-2-5` (ltx-2-5-fast) or `ltx-2-5-pro` \
+for the newer line — native speech incl. Thai, honors `resolution` \
+(720P/1080P/4K) and `fps`. DashScope HappyHorse: `happyhorse-1.0-t2v` (text→video) / \
+`happyhorse-1.0-i2v` (image→video) — honor `resolution` (720P/1080P). Default: fast.";
 
 /// Submit a video job and persist it; returns the user-facing text.
 async fn submit_job(kind: &str, input: &Value, init_image: Option<InputImage>) -> Result<String> {
@@ -67,12 +71,23 @@ async fn submit_job(kind: &str, input: &Value, init_image: Option<InputImage>) -
     let (provider, model) = registry::resolve_video(&opt(input, "provider"), &opt(input, "model"))?;
     let aspect = resolve_aspect(input);
     let duration = resolve_duration(input);
+    let fps = input
+        .get("fps")
+        .and_then(Value::as_u64)
+        .map(|f| f as u32)
+        .filter(|f| matches!(f, 24 | 25 | 48 | 50));
+    let generate_audio = input
+        .get("generate_audio")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     let req = VideoRequest {
         model: model.clone(),
         prompt,
         init_image,
         aspect_ratio: aspect,
         duration_seconds: duration,
+        fps,
+        generate_audio,
         resolution: resolve_resolution(input),
     };
     let job_ref = provider.submit(&req).await?;
@@ -110,9 +125,12 @@ impl Tool for TextToVideoTool {
     }
     fn description(&self) -> &'static str {
         "Generate a short video clip from a text prompt. Providers: Veo \
-         (`fast`/`quality`/`lite`, needs `GEMINI_API_KEY`/`GOOGLE_API_KEY`) or \
-         DashScope `happyhorse-1.0-t2v` (needs `DASHSCOPE_API_KEY`; honors \
-         `resolution` 720P/1080P). Requires `imageToolsEnabled: true` in \
+         (`fast`/`quality`/`lite`, needs `GEMINI_API_KEY`/`GOOGLE_API_KEY`), LTX \
+         (`ltx`/`ltx-pro` for 2.3, `ltx-2-5`/`ltx-2-5-pro` for 2.5; needs \
+         `LTX_API_KEY`; native audio incl. Thai speech, \
+         `resolution` 720P/1080P/4K) or DashScope `happyhorse-1.0-t2v` (needs \
+         `DASHSCOPE_API_KEY`; honors `resolution` 720P/1080P). Requires \
+         `imageToolsEnabled: true` in \
          `.thclaws/settings.json`. Aspect ratios: 16:9 (default) or 9:16. \
          Duration: 4–8s (default 8). Video is expensive. Returns a job_id \
          immediately; poll MediaJobStatus until `done`."
@@ -123,10 +141,12 @@ impl Tool for TextToVideoTool {
             "properties": {
                 "prompt": { "type": "string", "description": "Description of the video: subject, action, camera motion, style." },
                 "model": { "type": "string", "description": MODEL_DESC },
-                "provider": { "type": "string", "description": "Optional explicit provider (`veo` | `dashscope`).", "enum": ["veo", "dashscope"] },
+                "provider": { "type": "string", "description": "Optional explicit provider (`veo` | `ltx` | `dashscope`).", "enum": ["veo", "ltx", "dashscope"] },
                 "aspect_ratio": { "type": "string", "description": "16:9 (default) or 9:16.", "enum": ["16:9", "9:16", "1:1", "3:4", "4:3"] },
                 "duration": { "type": "integer", "description": "Clip length in seconds, 4–8 (default 8).", "minimum": 4, "maximum": 8 },
-                "resolution": { "type": "string", "description": "Output resolution for providers that support it (DashScope happyhorse). Default 720P.", "enum": ["720P", "1080P"] }
+                "resolution": { "type": "string", "description": "Output resolution for providers that support it (LTX, DashScope happyhorse). Default 720P; LTX also takes 4K.", "enum": ["720P", "1080P", "4K"] },
+                "fps": { "type": "integer", "description": "Frame rate — LTX only (24/25/48/50; default 25). 48 or 50 is the lever for clean speech: it resolves the P/B/M lip closures that 24/25 smears. Veo and DashScope ignore it.", "enum": [24, 25, 48, 50] },
+                "generate_audio": { "type": "boolean", "description": "LTX only: generate the soundtrack (dialogue, ambience) with the video. Default true; set false for a silent clip. This is LTX's ONLY audio switch — the voice, language and accent come from the prompt, so quote the dialogue and name the language/accent (e.g. speaks in Thai with a natural Bangkok accent: \"…\")." }
             },
             "required": ["prompt"]
         })
@@ -150,8 +170,9 @@ impl Tool for ImageToVideoTool {
     }
     fn description(&self) -> &'static str {
         "Animate an existing image into a short video clip (the image \
-         conditions the first frame). Providers: Veo (`fast`/`quality`/`lite`) \
-         or DashScope `happyhorse-1.0-i2v` (honors `resolution`). Pass \
+         conditions the first frame). Providers: Veo (`fast`/`quality`/`lite`), \
+         LTX (`ltx`/`ltx-pro` for 2.3, `ltx-2-5`/`ltx-2-5-pro` for 2.5 — the \
+         reliable way to hold one character's face across shots) or DashScope `happyhorse-1.0-i2v` (honors `resolution`). Pass \
          `input_path` (a path under the workspace) + a `prompt` describing the \
          motion. Same gating + keys as TextToVideo. Returns a job_id; poll \
          MediaJobStatus until `done`."
@@ -163,10 +184,12 @@ impl Tool for ImageToVideoTool {
                 "input_path": { "type": "string", "description": "Path to the source image inside the workspace (the first frame). PNG/JPEG/WebP." },
                 "prompt": { "type": "string", "description": "Describe the motion/animation to apply to the image." },
                 "model": { "type": "string", "description": MODEL_DESC },
-                "provider": { "type": "string", "enum": ["veo", "dashscope"] },
+                "provider": { "type": "string", "enum": ["veo", "ltx", "dashscope"] },
                 "aspect_ratio": { "type": "string", "enum": ["16:9", "9:16", "1:1", "3:4", "4:3"] },
                 "duration": { "type": "integer", "minimum": 4, "maximum": 8 },
-                "resolution": { "type": "string", "enum": ["720P", "1080P"] }
+                "resolution": { "type": "string", "enum": ["720P", "1080P", "4K"] },
+                "fps": { "type": "integer", "description": "Frame rate — LTX only (24/25/48/50; default 25). 48 or 50 is the lever for clean speech: it resolves the P/B/M lip closures that 24/25 smears. Veo and DashScope ignore it.", "enum": [24, 25, 48, 50] },
+                "generate_audio": { "type": "boolean", "description": "LTX only: generate the soundtrack (dialogue, ambience) with the video. Default true; set false for a silent clip. This is LTX's ONLY audio switch — the voice, language and accent come from the prompt, so quote the dialogue and name the language/accent (e.g. speaks in Thai with a natural Bangkok accent: \"…\")." }
             },
             "required": ["input_path", "prompt"]
         })

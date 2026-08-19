@@ -165,6 +165,7 @@ land at `output/vid-<ts>-<hash>.mp4` once finished.
 | Google Gemini | `gemini-3.1-flash-image`, `gemini-3.1-pro-image` | `veo-3.1-fast-generate-preview`, `veo-3.1-generate-preview`, `veo-3.1-lite-generate-preview` | `GEMINI_API_KEY` / `GOOGLE_API_KEY` |
 | OpenAI | `gpt-image-2` | — | `OPENAI_API_KEY` |
 | Alibaba DashScope | `qwen-image-2.0`, `qwen-image-2.0-pro` | `happyhorse-1.0-t2v` (text→video), `happyhorse-1.0-i2v` (image→video) | `DASHSCOPE_API_KEY` |
+| LTX (Lightricks) | — | `ltx-2-3-fast` (alias `ltx`), `ltx-2-3-pro` (`ltx-pro`), `ltx-2-5-fast` (`ltx-2-5`), `ltx-2-5-pro` | `LTX_API_KEY` |
 
 - **Video is asynchronous.** `TextToVideo` / `ImageToVideo` submit the
   job and return a `job_id` immediately — the file isn't ready yet. Call
@@ -172,8 +173,25 @@ land at `output/vid-<ts>-<hash>.mp4` once finished.
   `output/…mp4` path), or `failed` (with the provider error). Job state
   is journalled to `.thclaws/media-jobs.jsonl`, so a poll survives a
   restart.
-- **Veo clips are 4–8 seconds.** Veo and HappyHorse take a `resolution`
-  of `720P` or `1080P`.
+- **Clips are 4–8 seconds.** `resolution` is honoured by LTX and
+  HappyHorse (`720P` / `1080P`, plus `4K` on LTX); Veo ignores it and
+  renders at its aspect's native size.
+- **LTX generates its own audio**, including Thai speech, and is the one
+  backend that holds a character's face across shots when you drive it
+  from a reference portrait with `ImageToVideo`. Its only audio switch is
+  `generate_audio` (default true; `false` gives a silent clip) — there is
+  no voice, language or accent parameter, so the speech is steered from
+  the **prompt**: put the line in quotation marks and name the language
+  and accent (`she says in Thai, natural Bangkok accent: "…"`). Two knobs
+  matter for how it comes out: `fps` (24/25/48/50 — 48 or 50 resolves the
+  P/B/M lip closures that 24/25 smears) and `duration`, which must be long
+  enough to say the line without rushing. LTX accepts 4, 6, 8, 10 … 20
+  seconds; anything else is snapped to the nearest of those. `ltx-2-5-*`
+  is the current generation (better speech, multi-shot scenes that keep
+  one voice across cuts) at roughly 2× the 2.3 price. It takes pixel sizes
+  rather than aspect tiers, so `aspect_ratio: 9:16` transposes the
+  chosen resolution (1080P → 1080x1920). `LTX_BASE_URL` repoints it at a
+  self-hosted deployment.
 - **`ImageToVideo`** uses a local image as the first frame, sent inline
   (base64 data URI) — no separate upload step.
 
@@ -204,6 +222,20 @@ chat.
 - **`FetchImages`** — downloads every remote image in a Markdown file into a
   sibling `images/` folder and rewrites the links (used by content-extractor
   agents). Confined to your workspace.
+- **`FolderIndex`** — builds `<folder>/index.md`: one table row per file with a
+  short **title** (what it's about) and a description, both written from the
+  file's *content*, not its name. Deterministic —
+  it walks the tree, fingerprints every file (sha256), writes the index, and
+  hands the `folder-indexer` agent only the files whose bytes changed since
+  their cached summary, so re-indexing a settled folder re-reads nothing. The
+  fingerprint cache lives beside the index in `<folder>/.thclaws-index.json`;
+  delete it to start over. Hidden until the `folder-indexer` agent is used
+  (right-click a folder in the Files tab → **Index folder…**, or `/index`).
+  `report_depth: 1` keeps the index to one level: this folder's own files plus
+  one row per immediate subfolder saying what's inside it — everything deeper is
+  still scanned and summarized (that's what those rollups are written from), it
+  just isn't listed. In the Files-tab modal that's **This folder + one row per
+  subfolder**.
 - **`EpubCreate`** — Markdown → EPUB e-book (joins the Word/Excel/PowerPoint/PDF
   document tools above).
 

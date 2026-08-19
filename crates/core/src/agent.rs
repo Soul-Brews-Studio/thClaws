@@ -860,6 +860,32 @@ pub struct Agent {
     pub(crate) injection_queue: Arc<Mutex<std::collections::VecDeque<String>>>,
 }
 
+/// Build a provider for a model that belongs to a different backend than
+/// the session's — the cross-provider half of a skill's `model:`
+/// recommendation. Returns `None` when the model routes to the same
+/// provider kind (nothing to swap), when the config can't be read, or
+/// when that provider has no usable credential — all cases where the
+/// caller should keep the session's provider and let the model string
+/// stand on its own.
+fn provider_for_model(model: &str) -> Option<Arc<dyn Provider>> {
+    let mut cfg = crate::config::AppConfig::load().ok()?;
+    let current = cfg.detect_provider_kind().ok();
+    cross_provider_kind(current, model)?;
+    cfg.model = model.to_string();
+    crate::repl::build_provider(&cfg).ok()
+}
+
+/// The backend a swapped model belongs to, when it isn't the session's
+/// own. `None` means "same family, or unrecognisable" — either way the
+/// session's provider is the right one to keep.
+fn cross_provider_kind(
+    current: Option<crate::providers::ProviderKind>,
+    model: &str,
+) -> Option<crate::providers::ProviderKind> {
+    let wanted = crate::providers::ProviderKind::detect(model)?;
+    (Some(wanted) != current).then_some(wanted)
+}
+
 impl Agent {
     pub fn new(
         provider: Arc<dyn Provider>,
@@ -1101,6 +1127,10 @@ impl Agent {
         user_content: Vec<ContentBlock>,
     ) -> impl Stream<Item = Result<AgentEvent>> + Send + 'static {
         let provider = self.provider.clone();
+        // Cache for a cross-provider skill swap, so the provider is built
+        // once per turn rather than per iteration.
+        let swapped_provider: Arc<Mutex<Option<(String, Arc<dyn Provider>)>>> =
+            Arc::new(Mutex::new(None));
         let tools = self.tools.clone();
         let model = self.model.clone();
         let model_override = self.model_override.clone();
@@ -1289,6 +1319,39 @@ impl Agent {
                     let g = model_override.lock().expect("model_override lock");
                     g.as_ref().cloned().unwrap_or_else(|| model.clone())
                 };
+                // A skill's `model:` recommendation can name a model from a
+                // DIFFERENT provider than the session's (extract-and-save
+                // asks for `gpt-4.1-nano` while the user sits on DeepSeek).
+                // Swapping only the model string sends OpenAI's model id to
+                // DeepSeek's endpoint — "model not found", with the id
+                // rendered as `deepseek/gpt-4.1-nano`. Build the matching
+                // provider for the swapped model instead, once per turn.
+                let active_provider: Arc<dyn Provider> = if active_model == model {
+                    provider.clone()
+                } else {
+                    match swapped_provider.lock() {
+                        Ok(mut slot) => {
+                            let hit = slot
+                                .as_ref()
+                                .filter(|(m, _)| *m == active_model)
+                                .map(|(_, p)| p.clone());
+                            match hit {
+                                Some(p) => p,
+                                None => match provider_for_model(&active_model) {
+                                    Some(p) => {
+                                        *slot = Some((active_model.clone(), p.clone()));
+                                        p
+                                    }
+                                    // Same provider family (or nothing usable
+                                    // to build) — the model string alone is
+                                    // the right change.
+                                    None => provider.clone(),
+                                },
+                            }
+                        }
+                        Err(_) => provider.clone(),
+                    }
+                };
                 // Long-running-feature override: read fresh every
                 // iteration so a slash dispatch that set it before
                 // run_turn carries through every retry/iteration of
@@ -1324,7 +1387,7 @@ impl Agent {
                         .unwrap_or(false)
                 });
                 let mut req = StreamRequest {
-                    model: active_model,
+                    model: active_model.clone(),
                     system: if system.is_empty() { None } else { Some(system.clone()) },
                     messages,
                     tools: tool_defs,
@@ -1351,7 +1414,7 @@ impl Agent {
                     let mut stream_result = None;
                     let mut cancelled_during_retry = false;
                     for attempt in 0..=max_retries {
-                        match provider.stream(req.clone()).await {
+                        match active_provider.stream(req.clone()).await {
                             Ok(s) => { stream_result = Some(s); break; }
                             Err(e) => {
                                 let is_config = matches!(e, Error::Config(_));
@@ -1383,7 +1446,34 @@ impl Agent {
                     }
                     match stream_result {
                         Some(s) => s,
-                        None => Err(last_err.unwrap())?,
+                        None => {
+                            // The swapped-in model is a *recommendation* — a
+                            // skill asking for something better suited. If it
+                            // won't answer (retired id, no entitlement,
+                            // history the new backend rejects — DeepSeek
+                            // refuses a thinking model whose prior turn
+                            // carries no `reasoning_content`), the turn is
+                            // still the user's to finish. Drop back to the
+                            // session's own model rather than failing it.
+                            if active_model != model {
+                                let err = last_err
+                                    .as_ref()
+                                    .map(|e| e.to_string())
+                                    .unwrap_or_default();
+                                eprintln!(
+                                    "\x1b[33m[skill model {active_model} unavailable — falling back to {model}: {err}]\x1b[0m"
+                                );
+                                if let Ok(mut g) = model_override.lock() {
+                                    *g = None;
+                                }
+                                let _ = crate::skills_state::take_swap_active();
+                                let mut retry_req = req.clone();
+                                retry_req.model = model.clone();
+                                provider.stream(retry_req).await?
+                            } else {
+                                Err(last_err.unwrap())?
+                            }
+                        }
                     }
                 };
                 let mut assembled = Box::pin(assemble(raw));
@@ -3670,6 +3760,36 @@ mod tests {
         assert_eq!(history[3].role, Role::Assistant);
     }
 
+    /// A skill's `model:` recommendation routinely names another
+    /// backend's model — `extract-and-save` asks for `gpt-4.1-nano`
+    /// while the user sits on DeepSeek. Swapping only the model string
+    /// posted OpenAI's id to DeepSeek's endpoint, which answered "model
+    /// not found" for `deepseek/gpt-4.1-nano`.
+    #[test]
+    fn a_swapped_model_from_another_backend_needs_its_own_provider() {
+        use crate::providers::ProviderKind;
+        assert_eq!(
+            cross_provider_kind(Some(ProviderKind::DeepSeek), "gpt-4.1-nano"),
+            Some(ProviderKind::OpenAI),
+            "the reported bug: DeepSeek session, OpenAI recommendation"
+        );
+        // Same backend → nothing to build; the model string alone is right.
+        assert_eq!(
+            cross_provider_kind(Some(ProviderKind::OpenAI), "gpt-4.1-nano"),
+            None
+        );
+        assert_eq!(
+            cross_provider_kind(Some(ProviderKind::DeepSeek), "deepseek-chat"),
+            None
+        );
+        // Unrecognisable model → keep the session provider rather than
+        // guessing a backend for it.
+        assert_eq!(
+            cross_provider_kind(Some(ProviderKind::DeepSeek), "some-local-thing"),
+            None
+        );
+    }
+
     #[tokio::test]
     async fn tool_error_surfaces_as_tool_result_is_error_and_loop_continues() {
         // Tool is Read with a path that doesn't exist → Tool error.
@@ -4100,7 +4220,7 @@ mod tests {
     #[tokio::test]
     async fn masking_hides_pii_from_the_provider_and_restores_it_locally() {
         use std::sync::Mutex;
-        let _guard = crate::kms::test_env_lock();
+        let _pin = crate::sensitive::pin_for_test();
 
         struct CapturingProvider {
             seen: Arc<Mutex<Vec<String>>>,
@@ -4198,7 +4318,7 @@ mod tests {
     /// than not shipping it.
     #[tokio::test]
     async fn masking_is_off_unless_configured() {
-        let _guard = crate::kms::test_env_lock();
+        let _pin = crate::sensitive::pin_for_test();
         crate::sensitive::configure(false, Vec::new());
         assert!(crate::sensitive::active().is_none());
         // Multiuser refuses to arm even when the setting says yes: one

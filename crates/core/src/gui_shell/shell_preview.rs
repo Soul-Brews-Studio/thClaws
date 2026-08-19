@@ -126,11 +126,17 @@ async fn serve_index(State(state): State<PreviewState>) -> impl IntoResponse {
         }
     };
     // Inject bridge + hot-reload client into the shell's <head>.
+    // `__thclaws_shell_ws_url` is a PATH, not a URL: gui-shell-bridge.js
+    // prefixes `proto//host` itself in connect(), and fileUrl() strips the
+    // trailing `/__ws` to derive the asset prefix. Passing a full `ws://…`
+    // here produced `ws://host` + `ws://host/__ws` and every shell that
+    // called run/callTool died on an invalid WebSocket URL in preview.
+    // `--serve` always passed a path (server.rs: `{prefix}/__ws`).
     let bootstrap = format!(
         "<script>window.__thclaws_shell_mode='ws';\
 window.__thclaws_shell_id={};\
 window.__thclaws_shell_session_id='preview';\
-window.__thclaws_shell_ws_url='ws://'+location.host+'/__ws';</script>\
+window.__thclaws_shell_ws_url='/__ws';</script>\
 <script src='/__bridge.js'></script>\
 <script>(()=>{{const ev=new EventSource('/__reload');ev.onmessage=e=>{{if(e.data==='reload')location.reload();}};}})();</script>",
         serde_json::to_string(&manifest.id).unwrap_or_else(|_| "\"preview\"".into()),
@@ -231,6 +237,8 @@ async fn handle_ws(mut socket: WebSocket, state: PreviewState) {
             Err(_) => continue,
         };
         let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        // Inbound key is `requestId` (what the bridge sends); the reply key is
+        // `replyTo` (what it waits on). They are deliberately different.
         let req_id = req.get("requestId").and_then(|v| v.as_u64());
         match method {
             "run" => {
@@ -243,7 +251,7 @@ async fn handle_ws(mut socket: WebSocket, state: PreviewState) {
                 if let Some(id) = req_id {
                     let _ = socket
                         .send(Message::Text(
-                            json!({"requestId": id, "result": {"runId": "mock-run-1"}})
+                            json!({"replyTo": id, "result": {"runId": "mock-run-1"}})
                                 .to_string()
                                 .into(),
                         ))
@@ -271,7 +279,7 @@ async fn handle_ws(mut socket: WebSocket, state: PreviewState) {
                 if let Some(id) = req_id {
                     let _ = socket
                         .send(Message::Text(
-                            json!({"requestId": id, "result": null}).to_string().into(),
+                            json!({"replyTo": id, "result": null}).to_string().into(),
                         ))
                         .await;
                 }
@@ -281,7 +289,7 @@ async fn handle_ws(mut socket: WebSocket, state: PreviewState) {
                     // Mock storage is per-process volatile; return null.
                     let _ = socket
                         .send(Message::Text(
-                            json!({"requestId": id, "result": null}).to_string().into(),
+                            json!({"replyTo": id, "result": null}).to_string().into(),
                         ))
                         .await;
                 }
@@ -290,7 +298,7 @@ async fn handle_ws(mut socket: WebSocket, state: PreviewState) {
                 if let Some(id) = req_id {
                     let _ = socket
                         .send(Message::Text(
-                            json!({"requestId": id, "result": null}).to_string().into(),
+                            json!({"replyTo": id, "result": null}).to_string().into(),
                         ))
                         .await;
                 }
@@ -300,7 +308,7 @@ async fn handle_ws(mut socket: WebSocket, state: PreviewState) {
                     let _ = socket
                         .send(Message::Text(
                             json!({
-                                "requestId": id,
+                                "replyTo": id,
                                 "error": format!("preview mock doesn't implement '{method}'")
                             })
                             .to_string()

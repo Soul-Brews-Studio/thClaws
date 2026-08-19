@@ -283,6 +283,71 @@ async fn run_shell_command(
     Ok(out)
 }
 
+/// Kills a spawned command's whole process group when dropped.
+///
+/// `Child::kill` signals only the process tokio spawned. With the confiner on
+/// that is bwrap, and the command the user typed is its grandchild: killing
+/// bwrap leaves the grandchild reparented to init, still running, while the UI
+/// says "(interrupted)". Pairing `process_group(0)` at spawn with a group kill
+/// here covers every way this function can end — cancel, timeout, an error
+/// return, or the whole future being dropped out from under us by the worker
+/// loop's cancel race. (public issue #194)
+///
+/// Disarmed on the deliberate background-server path, where outliving the call
+/// is the entire point.
+struct KillGroupOnDrop {
+    /// `None` once disarmed or already killed, and on platforms where we have
+    /// no group to kill.
+    pgid: Option<i32>,
+}
+
+impl KillGroupOnDrop {
+    #[cfg(unix)]
+    fn arm(child: &tokio::process::Child) -> Self {
+        // With `process_group(0)` the child leads its own group, so the group
+        // id is its pid.
+        Self {
+            pgid: child.id().map(|id| id as i32),
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn arm(_child: &tokio::process::Child) -> Self {
+        Self { pgid: None }
+    }
+
+    /// Let the group outlive this call.
+    fn disarm(&mut self) {
+        self.pgid = None;
+    }
+
+    /// Kill now rather than waiting for the drop, and don't kill twice.
+    fn kill_now(&mut self) {
+        if let Some(pgid) = self.pgid.take() {
+            kill_group(pgid);
+        }
+    }
+}
+
+impl Drop for KillGroupOnDrop {
+    fn drop(&mut self) {
+        self.kill_now();
+    }
+}
+
+#[cfg(unix)]
+fn kill_group(pgid: i32) {
+    // SAFETY: kill(2) with a normal signal is always safe to call; a group
+    // that has already exited returns ESRCH, which we ignore. The negative
+    // pid is what makes this address the group rather than one process.
+    unsafe {
+        libc::kill(-pgid, libc::SIGKILL);
+    }
+}
+
+#[cfg(not(unix))]
+fn kill_group(_pgid: i32) {}
+
 async fn run_shell_command_inner(
     command: &str,
     cwd: &std::path::Path,
@@ -316,9 +381,25 @@ async fn run_shell_command_inner(
     apply_noninteractive_env(&mut cmd);
     scrub_sensitive_env(&mut cmd);
 
+    // Own process group, so a kill reaches the whole tree rather than the one
+    // process tokio tracks. Under the confiner the direct child is bwrap (or
+    // sandbox-exec), and the command the user actually ran is its grandchild —
+    // killing the direct child left that grandchild reparented to init and
+    // running to completion, which is what made Stop report "(interrupted)"
+    // while a `sleep 45` kept going. (public issue #194)
+    #[cfg(unix)]
+    cmd.process_group(0);
+
     let mut child = cmd
         .spawn()
         .map_err(|e| Error::Tool(format!("spawn: {e}")))?;
+
+    // Kill the group from *any* drop, not just the cancel branch below. The
+    // worker loop races the whole turn stream against cancel with `biased`
+    // priority and returns on cancel, dropping this future before the select
+    // below is ever polled again — so the explicit kill there never runs on
+    // the path that matters. A Drop impl is the only thing that survives that.
+    let mut group = KillGroupOnDrop::arm(&child);
 
     let mut stdout_pipe = child
         .stdout
@@ -353,6 +434,9 @@ async fn run_shell_command_inner(
             tokio::select! {
                 biased;
                 _ = tok.cancelled() => {
+                    // The guard kills the group on the way out; this is the
+                    // prompt path for a cancel we actually observed.
+                    group.kill_now();
                     let _ = child.kill().await;
                     return Err(Error::Tool(format!(
                         "cancelled while running: {command}"
@@ -365,7 +449,9 @@ async fn run_shell_command_inner(
     };
     match wait_result {
         Err(_) if is_server => {
-            // Server command — timeout is expected. Server keeps running.
+            // Server command — timeout is expected. Server keeps running, so
+            // the group must survive this function returning.
+            group.disarm();
             //
             // M6.8: drain stdout/stderr with a short sub-timeout so we
             // capture boot-log output (port number, ready banner) and,
@@ -406,6 +492,7 @@ async fn run_shell_command_inner(
             Ok(parts.join(""))
         }
         Err(_) => {
+            group.kill_now();
             let _ = child.kill().await;
             Err(Error::Tool(format!(
                 "timeout after {}ms running: {command}",
@@ -2217,5 +2304,54 @@ mod tests {
         );
 
         std::env::remove_var("THCLAWS_PROJECT_ROOT");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod cancel_kills_the_tree {
+    use std::time::Duration;
+
+    /// The regression public issue #194 reported: Stop said "(interrupted)"
+    /// while the command kept running. Asserting on the tool's return value
+    /// cannot catch that — the UI was already correct. The only proof is an
+    /// independent check that the process is gone, so this greps the process
+    /// table for a uniquely-named sleep after the call returns.
+    #[tokio::test]
+    async fn cancel_leaves_no_descendant_running() {
+        // A fractional duration nobody else will be running, so `ps` can pick
+        // this exact process out.
+        let marker = format!("31.{:05}", std::process::id() % 100000);
+        let dir = tempfile::tempdir().unwrap();
+        let cancel = crate::cancel::CancelToken::new();
+
+        // The trailing `; true` matters: `sh -c` with a single command execs
+        // it and tokio ends up holding the sleep's own pid, which
+        // `Child::kill` does reach. With a second command the shell forks, the
+        // sleep is a real child, and killing the shell alone leaves it
+        // orphaned — the shape the confiner produces in the field.
+        let cmd = format!("sleep {marker} ; true");
+        let tok = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            tok.cancel();
+        });
+
+        let res =
+            super::run_shell_command_inner(&cmd, dir.path(), 30_000, false, false, Some(&cancel))
+                .await;
+        assert!(res.is_err(), "cancel should surface as an error");
+
+        // Give the signal a moment to be reaped, then look for survivors.
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let ps = std::process::Command::new("ps")
+            .args(["-eo", "command"])
+            .output()
+            .expect("ps");
+        let listing = String::from_utf8_lossy(&ps.stdout);
+        let survivors: Vec<&str> = listing.lines().filter(|l| l.contains(&marker)).collect();
+        assert!(
+            survivors.is_empty(),
+            "cancel left the command running: {survivors:?}"
+        );
     }
 }

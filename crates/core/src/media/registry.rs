@@ -8,8 +8,8 @@
 use crate::error::{Error, Result};
 use crate::media::provider::{ImageModelInfo, ImageProvider, SpeechProvider, VideoProvider};
 use crate::media::providers::{
-    DashScopeVideoProvider, GeminiImageProvider, GeminiSpeechProvider, OpenAiImageProvider,
-    QwenImageProvider, VeoVideoProvider,
+    DashScopeVideoProvider, GeminiImageProvider, GeminiSpeechProvider, LtxVideoProvider,
+    OpenAiImageProvider, QwenImageProvider, VeoVideoProvider,
 };
 use std::sync::Arc;
 
@@ -24,7 +24,11 @@ pub fn all() -> Vec<Arc<dyn ImageProvider>> {
 
 /// All registered video providers, in resolution priority order.
 pub fn video_all() -> Vec<Arc<dyn VideoProvider>> {
-    vec![Arc::new(VeoVideoProvider), Arc::new(DashScopeVideoProvider)]
+    vec![
+        Arc::new(VeoVideoProvider),
+        Arc::new(LtxVideoProvider),
+        Arc::new(DashScopeVideoProvider),
+    ]
 }
 
 /// All registered speech (text→speech) providers, in resolution priority

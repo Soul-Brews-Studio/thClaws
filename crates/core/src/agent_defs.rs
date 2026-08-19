@@ -266,6 +266,10 @@ impl AgentDefsConfig {
                 "content-extractor",
                 include_str!("default_prompts/content-extractor.md"),
             ),
+            (
+                "folder-indexer",
+                include_str!("default_prompts/folder-indexer.md"),
+            ),
             ("kms-linker", include_str!("default_prompts/kms-linker.md")),
             (
                 "kms-reconcile",
@@ -979,6 +983,26 @@ plugin-only reviewer
         // No override + no frontmatter `model:` → None (inherits
         // session model at build time).
         assert_eq!(translator.model.as_deref(), None);
+    }
+
+    #[test]
+    fn seed_builtins_includes_folder_indexer() {
+        let mut config = AgentDefsConfig::default();
+        config.seed_builtins();
+        let indexer = config
+            .get("folder-indexer")
+            .expect("built-in folder-indexer agent should be seeded");
+        assert_eq!(indexer.name, "folder-indexer");
+        assert!(!indexer.instructions.is_empty());
+        // Reads + the deterministic index writer. No Write/Edit: index.md and
+        // the fingerprint cache are FolderIndex's alone to write, and the
+        // indexed files must come back unchanged.
+        assert!(indexer.tools.iter().any(|t| t == "FolderIndex"));
+        assert!(indexer.tools.iter().any(|t| t == "Read"));
+        assert!(indexer.tools.iter().any(|t| t == "PdfRead"));
+        assert!(!indexer.tools.iter().any(|t| t == "Write"));
+        assert!(!indexer.tools.iter().any(|t| t == "Edit"));
+        assert!(!indexer.tools.iter().any(|t| t == "Bash"));
     }
 
     #[test]

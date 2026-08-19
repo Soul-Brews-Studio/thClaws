@@ -21,6 +21,7 @@ pub mod edit;
 pub mod epub_create;
 pub mod fetch_images;
 pub mod filmscript;
+pub mod folder_index;
 pub mod glob;
 pub mod grep;
 pub mod gui_shell;
@@ -64,6 +65,7 @@ pub use docx_read::DocxReadTool;
 pub use edit::EditTool;
 pub use epub_create::EpubCreateTool;
 pub use fetch_images::FetchImagesTool;
+pub use folder_index::FolderIndexTool;
 pub use glob::GlobTool;
 pub use grep::GrepTool;
 pub use hal::{WebScrapeTool, YouTubeTranscriptTool};
@@ -360,6 +362,7 @@ impl ToolRegistry {
         r.register(Arc::new(PdfReadTool));
         r.register(Arc::new(WebFetchTool::new()));
         r.register(Arc::new(FetchImagesTool::new()));
+        r.register(Arc::new(FolderIndexTool));
         r.register(Arc::new(WebSearchTool::default()));
         // HAL Public API tools (YouTubeTranscript, WebScrape) are NOT
         // registered here — they're opt-in via `hal_enabled` (Settings →

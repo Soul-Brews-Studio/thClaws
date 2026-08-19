@@ -118,7 +118,8 @@ hosted runtime ให้เช่า — ดู bullet ด้านล่าง�
   Alibaba DashScope (Qwen), DeepSeek, Z.ai (GLM Coding Plan), NVIDIA
   NIM, NSTDA Thai LLM (OpenThaiGPT, Typhoon, Pathumma, THaLLE),
   OpenRouter, Moonshot, xAI, Groq, Azure AI Foundry, Ollama (local +
-  Anthropic-compat + Cloud), LMStudio และ slot OpenAI-compatible
+  Anthropic-compat + Cloud), LMStudio, vLLM / llama.cpp / LiteLLM ที่
+  self-host เอง และ slot OpenAI-compatible
   ทั่วไป (`oai/*`) — สลับกลางคันด้วย `/model` หรือ `/provider` ได้
   ([บทที่ 6](ch06-providers-models-api-keys.md))
 - **API พร้อมใช้กับเครื่องมือมาตรฐาน** — `--serve` เปิดทั้ง

@@ -17,6 +17,7 @@ import {
   FileText,
   Code2,
   Type,
+  ListTree,
 } from "lucide-react";
 import { send, subscribe } from "../hooks/useIPC";
 import { assetUrl, workspacePrefix } from "../lib/assetUrl";
@@ -228,6 +229,53 @@ function isMarkdownPath(path: string): boolean {
 // .md file's sibling assets. Without this the srcDoc iframe has an
 // opaque base URL and relative paths fail silently. The asset handler
 // already enforces the sandbox check, so security is unchanged.
+// Resolve a markdown link (`docs/spec.md`, `../notes.md`, `images/a%20b.png`,
+// `docs/` for a folder) against the file it was written in, into a workspace
+// path the file IPC understands. Percent-escapes are decoded per segment —
+// generated indexes encode spaces and parens so the links stay valid markdown.
+// Returns null when the link resolves to nothing usable.
+// Desktop GUI (wry) vs `--serve` in a browser. wry injects `window.ipc`;
+// the hosted webapp has no such bridge. The two differ in how a sandboxed
+// preview frame can talk to the app — see the iframe's sandbox attribute.
+const isDesktopShell = typeof window !== "undefined" && !!window.ipc;
+
+function resolveWorkspaceLink(
+  fromFile: string,
+  href: string,
+): { path: string; isDir: boolean } | null {
+  const clean = href.split(/[?#]/)[0];
+  if (!clean) return null;
+  const isDir = clean.endsWith("/");
+  const decode = (seg: string) => {
+    try {
+      return decodeURIComponent(seg);
+    } catch {
+      return seg;
+    }
+  };
+  // An absolute link starts from the filesystem root; anything else starts
+  // from the previewed file's directory.
+  const fromDir = clean.startsWith("/")
+    ? ""
+    : fromFile.replace(/\\/g, "/").replace(/\/[^/]*$/, "");
+  const parts = clean.startsWith("/")
+    ? [""]
+    : fromDir && fromDir !== fromFile
+      ? fromDir.split("/")
+      : [];
+  for (const seg of clean.split("/")) {
+    if (!seg || seg === ".") continue;
+    if (seg === "..") {
+      if (parts.length > 1 || (parts.length === 1 && parts[0] !== "")) parts.pop();
+      continue;
+    }
+    parts.push(decode(seg));
+  }
+  const path = parts.join("/");
+  if (!path || path === "/") return isDir ? { path: ".", isDir } : null;
+  return { path, isDir };
+}
+
 function injectBaseHref(html: string, filePath: string): string {
   const normalized = filePath.replace(/\\/g, "/");
   const lastSlash = normalized.lastIndexOf("/");
@@ -287,6 +335,21 @@ export function FilesView({ active }: Props) {
     name: string;
   } | null>(null);
   const [langCode, setLangCode] = useState("th");
+  // Folder-index modal. null = closed; otherwise the folder being indexed.
+  // `recursive` / `force` mirror the FolderIndex tool's own options.
+  const [indexAction, setIndexAction] = useState<{
+    path: string;
+    name: string;
+  } | null>(null);
+  const [indexLang, setIndexLang] = useState("th");
+  // How much of the tree the index *lists*. "all" = every file grouped by
+  // folder; "one-level" = this folder's files + one summarizing row per
+  // subfolder (everything deeper is still scanned, it just isn't listed);
+  // "flat" = don't descend at all.
+  const [indexScope, setIndexScope] = useState<"all" | "one-level" | "flat">(
+    "all",
+  );
+  const [indexForce, setIndexForce] = useState(false);
   const { resolved: themeMode } = useTheme();
 
   // The file being displayed. `content` is what the backend returned —
@@ -333,6 +396,17 @@ export function FilesView({ active }: Props) {
   // True while files are being dragged over the tree panel (drop-to-upload).
   const [dragActive, setDragActive] = useState(false);
   const pendingNavigation = useRef<{ path: string } | null>(null);
+  // The file the preview pane is *supposed* to be showing — set the moment a
+  // file is requested, before its content comes back. `file_content`
+  // responses for anything else are dropped.
+  //
+  // Without this the pane bounces: opening a file from a link in another
+  // file's preview also walks the tree to the new folder, and that
+  // `currentPath` change re-runs the 2s auto-refresh effect, which re-reads
+  // whatever `preview.path` still holds — the file we just left. The stale
+  // response lands after the requested one and snaps the pane back, so the
+  // link looks like it flips between the two files.
+  const requestedPathRef = useRef<string>("");
 
   useEffect(() => {
     const unsub = subscribe((msg) => {
@@ -363,6 +437,11 @@ export function FilesView({ active }: Props) {
             // iframe was torn down between request and response —
             // benign.
           }
+          return;
+        }
+        // Late response for a file the pane has already navigated away
+        // from — drop it instead of letting it overwrite the current one.
+        if (requestedPathRef.current && incomingPath !== requestedPathRef.current) {
           return;
         }
         const incomingReadMode: ReadMode =
@@ -416,8 +495,12 @@ export function FilesView({ active }: Props) {
     // and a fresh charge — before the first one answers.
     const refresh = () => {
       send({ type: "file_list", path: currentPath, show_hidden: showHidden });
-      if (preview && mode === "preview" && !renderPending) {
-        send({ type: "file_read", path: preview.path, mode: "preview", theme: themeMode });
+      // Poll the file the pane was last *asked* for, not the one whose
+      // content happens to be rendered — between a click and its response
+      // those differ, and re-reading the old one flips the pane back to it.
+      const target = requestedPathRef.current || preview?.path;
+      if (target && mode === "preview" && !renderPending) {
+        send({ type: "file_read", path: target, mode: "preview", theme: themeMode });
       }
     };
     refresh();
@@ -428,7 +511,6 @@ export function FilesView({ active }: Props) {
   // reference each time), resetting the interval unnecessarily.
   // `showHidden` triggers an immediate refresh when toggled so the
   // listing flips without waiting for the next 2s tick.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, currentPath, preview?.path, mode, themeMode, showHidden, renderPending]);
 
   // Drag-and-drop upload into the directory currently shown in the tree.
@@ -608,6 +690,44 @@ export function FilesView({ active }: Props) {
     [langAction, langCode],
   );
 
+  // Index a folder: write `<folder>/index.md` — one row per file with a
+  // description read from its content. Same hand-off shape as translate /
+  // summarize (a `/agent` side-channel prompt), routed to the built-in
+  // `folder-indexer` subagent. The heavy lifting is the deterministic
+  // `FolderIndex` tool: it fingerprints every file and only hands the agent
+  // what actually changed since the last run, so re-indexing a settled folder
+  // reads nothing. `force` bypasses those cached fingerprints.
+  const submitIndexAction = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!indexAction) return;
+      const { path, name } = indexAction;
+      const lang =
+        TRANSLATE_LANGUAGES.find((l) => l.code === indexLang) ??
+        TRANSLATE_LANGUAGES[0];
+      const opts = [
+        `recursive: ${indexScope !== "flat"}`,
+        ...(indexScope === "one-level" ? ["report_depth: 1"] : []),
+        ...(indexForce ? ["force: true"] : []),
+      ].join(", ");
+      const shape =
+        indexScope === "one-level"
+          ? " List only this folder's own files, with one summarizing row per " +
+            "immediate subfolder (scan everything underneath to write those rollups)."
+          : "";
+      const prompt =
+        `/agent folder-indexer --language=${lang.code} Index the folder ` +
+        `\`${path}\` into \`${path}/index.md\`, writing the summaries in ` +
+        `${lang.label}.${shape} Call FolderIndex with { path: "${path}", ${opts} } ` +
+        `on every call, and loop plan → read → commit until nothing is pending.`;
+      send({ type: "shell_input", text: prompt });
+      setSaveToast(`indexing ${name}…`);
+      setTimeout(() => setSaveToast(null), 3500);
+      setIndexAction(null);
+    },
+    [indexAction, indexLang, indexScope, indexForce],
+  );
+
   // Delete a file or folder from the tree context menu. Confirms first
   // with the native dialog, then `file_delete` (sandbox-checked; recursive
   // for folders). On success the listing refreshes and the preview clears
@@ -636,6 +756,7 @@ export function FilesView({ active }: Props) {
             (preview.path === path || preview.path.startsWith(`${path}/`))
           ) {
             setPreview(null);
+            requestedPathRef.current = "";
           }
           send({ type: "file_list", path: currentPath, show_hidden: showHidden });
         } else {
@@ -782,6 +903,7 @@ export function FilesView({ active }: Props) {
             preview.path.startsWith(`${target.path}/`))
         ) {
           setPreview(null);
+            requestedPathRef.current = "";
         }
         setRenameTarget(null);
         setRenameName("");
@@ -797,6 +919,7 @@ export function FilesView({ active }: Props) {
 
   const openFile = useCallback((path: string) => {
     setMode("preview");
+    requestedPathRef.current = path;
     send({ type: "file_read", path, mode: "preview", theme: themeMode });
   }, [themeMode]);
 
@@ -815,6 +938,157 @@ export function FilesView({ active }: Props) {
     openFile(path);
   };
 
+  // Open a file the user clicked *inside* a rendered markdown preview (an
+  // `index.md` row, a relative link between chapters). Same unsaved-edit
+  // guard as clicking the tree, plus it walks the tree to the file's folder
+  // so the sidebar shows where you landed.
+  const openLinkedFile = useCallback(
+    async (path: string) => {
+      if (mode === "edit" && editorDirty) {
+        const ok = await platformConfirm({
+          title: "Unsaved changes",
+          message: `You have unsaved edits to ${preview?.path ?? "this file"}. Discard them and open the linked file?`,
+          yesLabel: "Discard",
+          noLabel: "Cancel",
+        });
+        if (!ok) return;
+        setEditorDirty(false);
+      }
+      const slash = path.lastIndexOf("/");
+      const dir = slash > 0 ? path.slice(0, slash) : ".";
+      if (dir !== currentPath) {
+        send({ type: "file_list", path: dir, show_hidden: showHidden });
+      }
+      openFile(path);
+    },
+    [mode, editorDirty, preview, currentPath, showHidden, openFile],
+  );
+
+  // The click handler is attached to the *iframe's* document from out here,
+  // so it must not close over stale state: the iframe is bound once per
+  // load, while these change with the tab's state.
+  const openLinkedFileRef = useRef(openLinkedFile);
+  const showHiddenRef = useRef(showHidden);
+  const previewPathRef = useRef("");
+  // The markdown preview frame, so the postMessage bridge below can check
+  // that a link message really came from it.
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
+  useEffect(() => {
+    openLinkedFileRef.current = openLinkedFile;
+    showHiddenRef.current = showHidden;
+    previewPathRef.current = preview?.path ?? "";
+  }, [openLinkedFile, showHidden, preview?.path]);
+
+  // Act on a link clicked inside a rendered markdown preview: a workspace
+  // file opens in this tab (that's what makes `index.md`'s file rows
+  // clickable), a folder link walks the tree, http(s) goes to the OS
+  // browser. Shared by both delivery paths below — the href is whatever the
+  // markdown actually said, already stripped of any `#anchor` handling.
+  const followPreviewLink = useCallback((raw: string) => {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+      if (/^https?:/i.test(raw)) {
+        // The wry webview is single-document — navigating it would blow
+        // away the app. Hand external links to the OS browser.
+        send({ type: "open_external", url: raw });
+      }
+      // mailto:, custom schemes: ignored.
+      return;
+    }
+    // Resolve against the previewed file's own directory rather than reading
+    // the anchor's resolved URL: the injected <base> maps an absolute
+    // workspace path to `/file-asset/private/…`, and parsing that back loses
+    // the leading slash (the backend then reads a nonexistent relative path).
+    // Path arithmetic on what the markdown said can't get that wrong.
+    const target = resolveWorkspaceLink(previewPathRef.current, raw);
+    if (!target) return;
+    // A trailing slash means a folder (index.md's section headings link one)
+    // — walk the tree there instead of asking the backend to read a
+    // directory as a file.
+    if (target.isDir) {
+      send({
+        type: "file_list",
+        path: target.path || ".",
+        show_hidden: showHiddenRef.current,
+      });
+      return;
+    }
+    void openLinkedFileRef.current(target.path);
+  }, []);
+  const followPreviewLinkRef = useRef(followPreviewLink);
+  followPreviewLinkRef.current = followPreviewLink;
+
+  // Delivery path 1 — `--serve` (browser). The page and the `srcdoc` frame
+  // share an http(s) origin, so the frame can keep `allow-same-origin` (its
+  // <img> subresources must carry the session cookie or the cloud
+  // ForwardAuth gate 302s them to login) and the parent reaches into
+  // `contentDocument` to handle clicks. No `allow-scripts`: nothing runs
+  // inside the frame.
+  //
+  // Left alone, every link resolves through the injected `<base>` to a
+  // `/file-asset/` URL and the frame navigates to the raw bytes, replacing
+  // the preview with a naked file and no way back.
+  const bindPreviewLinks = useCallback(
+    (e: React.SyntheticEvent<HTMLIFrameElement>) => {
+      let doc: Document | null = null;
+      try {
+        doc = e.currentTarget.contentDocument;
+      } catch {
+        // Cross-origin (shouldn't happen with allow-same-origin): leave the
+        // frame's default link behaviour alone rather than break.
+        return;
+      }
+      if (!doc) return;
+      const marker = doc as Document & { __thclawsLinksBound?: boolean };
+      if (marker.__thclawsLinksBound) return;
+      marker.__thclawsLinksBound = true;
+      doc.addEventListener("click", (ev) => {
+        const anchor = (ev.target as HTMLElement | null)?.closest?.(
+          "a",
+        ) as HTMLAnchorElement | null;
+        const raw = anchor?.getAttribute("href");
+        if (!anchor || !raw) return;
+        // In-document anchor: the injected <base> would send this to a
+        // different URL, so scroll to the target ourselves.
+        if (raw.startsWith("#")) {
+          ev.preventDefault();
+          const id = raw.slice(1);
+          const target =
+            doc.getElementById(id) ??
+            doc.getElementById(decodeURIComponent(id)) ??
+            doc.querySelector(`a[name="${CSS.escape(decodeURIComponent(id))}"]`);
+          target?.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        ev.preventDefault();
+        followPreviewLinkRef.current(raw);
+      });
+    },
+    [],
+  );
+
+  // Delivery path 2 — desktop GUI. The app is served from a custom scheme
+  // (`thclaws://localhost`), where a `srcdoc` frame does NOT hand the parent
+  // access to its document, so path 1 silently binds nothing and clicks go
+  // nowhere. There the frame is sandboxed with `allow-scripts` instead
+  // (deliberately WITHOUT `allow-same-origin`, so it stays opaque and can't
+  // reach back into the app), and the bridge script the backend appends to
+  // every rendered preview reports the click by `postMessage` — which works
+  // regardless of origin. Desktop assets come from the custom protocol and
+  // need no cookie, so nothing is lost by dropping same-origin there.
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      const d = e.data as { type?: string; href?: string } | null;
+      if (!d || d.type !== "thclaws-preview-link" || typeof d.href !== "string")
+        return;
+      // Only the preview frame may drive the pane — an MCP-App widget or a
+      // GUI Shell posting this shape must not move the user's files around.
+      if (e.source !== previewFrameRef.current?.contentWindow) return;
+      followPreviewLinkRef.current(d.href);
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
   const closePreview = async () => {
     setRenderPending(null);
     if (mode === "edit" && editorDirty) {
@@ -827,6 +1101,7 @@ export function FilesView({ active }: Props) {
       if (!ok) return;
     }
     setPreview(null);
+            requestedPathRef.current = "";
     setMode("preview");
     setEditorDirty(false);
   };
@@ -1395,20 +1670,32 @@ export function FilesView({ active }: Props) {
                 // the document so relative `![alt](img/foo.png)` refs
                 // resolve via /file-asset/ instead of failing against
                 // srcDoc's opaque base URL.
-                // sandbox: `allow-same-origin` WITHOUT `allow-scripts`.
+                // sandbox: exactly one of the two grants, never both —
+                // together they'd let the frame script its way back into
+                // the app.
+                //
+                // `--serve`: `allow-same-origin` WITHOUT `allow-scripts`.
                 // The rendered markdown is static HTML — no JS needed —
                 // but its <img> subresources must carry the session
                 // cookie or the cloud ForwardAuth gate 302s them to
                 // login (sandboxed opaque origins send no credentials,
-                // so chapter figures showed as broken images). Without
-                // allow-scripts the same-origin grant is inert: nothing
-                // executes inside the frame.
+                // so chapter figures showed as broken images). Nothing
+                // executes inside the frame; the parent handles link
+                // clicks through `contentDocument` (bindPreviewLinks).
+                //
+                // Desktop: `allow-scripts` WITHOUT `allow-same-origin`.
+                // The custom `thclaws://` scheme doesn't give the parent
+                // that document access, so the frame stays opaque and
+                // reports link clicks by postMessage instead. Its assets
+                // come from the custom protocol, which needs no cookie.
                 <iframe
+                  ref={previewFrameRef}
                   key={`md-${preview.path}-${previewVersion}`}
                   srcDoc={injectBaseHref(preview.content, preview.path)}
+                  onLoad={bindPreviewLinks}
                   className="w-full flex-1 min-h-0 rounded border"
                   style={{ borderColor: "var(--border)", background: "var(--bg-primary)" }}
-                  sandbox="allow-same-origin"
+                  sandbox={isDesktopShell ? "allow-scripts" : "allow-same-origin"}
                   title={preview.path}
                 />
               ) : (
@@ -1551,6 +1838,21 @@ export function FilesView({ active }: Props) {
                   }}
                 />
               </>
+            )}
+            {/* Folders-only: catalogue the folder into `index.md`. */}
+            {entryMenu.isDir && (
+              <MenuItem
+                icon={<ListTree size={13} />}
+                label="Index folder…"
+                onClick={() => {
+                  const m = entryMenu;
+                  setEntryMenu(null);
+                  setIndexLang("th");
+                  setIndexScope("all");
+                  setIndexForce(false);
+                  setIndexAction({ path: m.path, name: m.name });
+                }}
+              />
             )}
             <MenuItem
               icon={<Pencil size={13} />}
@@ -1858,6 +2160,141 @@ export function FilesView({ active }: Props) {
                 }}
               >
                 {langAction.mode === "summarize" ? "Summarize" : "Translate"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {indexAction && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center"
+          style={{ background: "var(--modal-backdrop, rgba(0,0,0,0.55))" }}
+          onClick={() => setIndexAction(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setIndexAction(null);
+          }}
+        >
+          <form
+            className="rounded-lg border shadow-xl w-[420px] max-w-[92vw]"
+            style={{
+              background: "var(--bg-primary)",
+              borderColor: "var(--border)",
+              color: "var(--text-primary)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={submitIndexAction}
+          >
+            <div
+              className="px-4 py-2 border-b text-sm font-semibold flex items-center gap-2"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <ListTree size={14} style={{ color: "var(--accent)" }} />
+              <span>Index folder</span>
+            </div>
+            <div className="px-4 py-3 space-y-3 text-xs">
+              <div style={{ color: "var(--text-secondary)" }}>
+                Catalogue{" "}
+                <span className="font-mono" style={{ color: "var(--text-primary)" }}>
+                  {indexAction.name}
+                </span>{" "}
+                into{" "}
+                <span className="font-mono" style={{ color: "var(--text-primary)" }}>
+                  {indexAction.name}/index.md
+                </span>
+                , describing each file in:
+              </div>
+              <select
+                autoFocus
+                value={indexLang}
+                onChange={(e) => setIndexLang(e.target.value)}
+                className="w-full px-2 py-1.5 rounded border text-xs"
+                style={{
+                  background: "var(--bg-secondary)",
+                  borderColor: "var(--border)",
+                  color: "var(--text-primary)",
+                }}
+              >
+                {TRANSLATE_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+              <div className="space-y-1.5">
+                <div style={{ color: "var(--text-secondary)" }}>Listing:</div>
+                {(
+                  [
+                    ["all", "Every file, grouped by subfolder"],
+                    ["one-level", "This folder + one row per subfolder"],
+                    ["flat", "This folder only"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <label
+                    key={value}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    <input
+                      type="radio"
+                      name="index-scope"
+                      checked={indexScope === value}
+                      onChange={() => setIndexScope(value)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+                {indexScope === "one-level" && (
+                  <div
+                    className="pl-6"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    Subfolders are still scanned in full — each one gets a
+                    sentence describing what's inside, not a file list.
+                  </div>
+                )}
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={indexForce}
+                  onChange={(e) => setIndexForce(e.target.checked)}
+                />
+                <span>Re-read every file (ignore cache)</span>
+              </label>
+              <div style={{ color: "var(--text-secondary)" }}>
+                Only files whose content changed since the last run are re-read —
+                fingerprints live in{" "}
+                <span className="font-mono" style={{ color: "var(--text-primary)" }}>
+                  .thclaws-index.json
+                </span>
+                .
+              </div>
+            </div>
+            <div
+              className="px-4 py-2.5 border-t flex justify-end gap-2"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <button
+                type="button"
+                onClick={() => setIndexAction(null)}
+                className="px-3 py-1.5 rounded border text-xs"
+                style={{
+                  background: "var(--bg-secondary)",
+                  borderColor: "var(--border)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-3 py-1.5 rounded text-xs font-medium"
+                style={{
+                  background: "var(--accent)",
+                  color: "var(--accent-fg, #fff)",
+                }}
+              >
+                Index
               </button>
             </div>
           </form>

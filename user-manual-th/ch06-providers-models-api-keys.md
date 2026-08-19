@@ -1,6 +1,6 @@
 # บทที่ 6 — provider, model และ API key
 
-thClaws คุยกับ **provider ได้ทั้งหมดยี่สิบห้าราย** โดยตรวจจับให้อัตโนมัติ
+thClaws คุยกับ **provider ได้ทั้งหมดสามสิบเอ็ดราย** โดยตรวจจับให้อัตโนมัติ
 จากชื่อ model และสลับได้ตลอดเวลาด้วย `/model`, `/provider` หรือ
 คลิกที่แถบ provider/model ใน sidebar (Desktop GUI, v0.7.2+)
 
@@ -30,6 +30,9 @@ thClaws คุยกับ **provider ได้ทั้งหมดยี่ส
 | Ollama Cloud | `ollama-cloud/*` | `OLLAMA_CLOUD_API_KEY` | Catalog Ollama แบบ hosted (Kimi, GPT-OSS, DeepSeek, Llama ฯลฯ) เป็น OpenAI-compatible ที่ `ollama.com/v1` |
 | NVIDIA NIM | `nvidia/*` | `NVIDIA_API_KEY` (+ `NVIDIA_BASE_URL`) | NVIDIA hosted inference ที่ `integrate.api.nvidia.com/v1` ครอบคลุม Nemotron, Llama, DeepSeek, GLM และอื่น ๆ — prefix `nvidia/` route ทุกตัว ระบบจะตัด prefix ก่อนยิง wire ใช้ env var override สำหรับ on-prem NIM |
 | LMStudio | `lmstudio/*` | — (local) | LMStudio server บน local ที่ `localhost:1234/v1` (OpenAI-compatible) ไม่ต้อง auth model ตามที่โหลดไว้ในแอป LMStudio |
+| vLLM | `vllm/*` | — (self-hosted, + `VLLM_BASE_URL`) | `vllm serve` ที่ `localhost:8000/v1` ไม่ต้อง auth เว้นแต่สั่งด้วย `--api-key` ส่วนหลัง prefix คือ served id (มักเป็น path ของ HF เช่น `vllm/Qwen/Qwen3-8B`) `/models` จะดึงรายการที่เสิร์ฟอยู่จริงมาแสดง |
+| llama.cpp | `llamacpp/*` | — (self-hosted, + `LLAMACPP_BASE_URL`) | `llama-server` ที่ `localhost:8080/v1` ไม่ต้อง auth เสิร์ฟ GGUF ได้ทีละไฟล์และไม่สนใจฟิลด์ `model` ในคำขอ ดังนั้นใส่ id อะไรหลัง prefix ก็ทำงาน |
+| LiteLLM | `litellm/*` | `LITELLM_API_KEY` (ไม่บังคับ) (+ `LITELLM_BASE_URL`) | LiteLLM proxy ที่ self-host เองที่ `localhost:4000/v1` id คือ alias `model_name` ที่ตั้งไว้ใน `config.yaml` ของคุณเอง (`litellm/gpt-4o-mini`, `litellm/azure/prod-gpt4`) `/models` ดึงรายการสดมาแสดง และ `/model/info` ให้ context window จริง ส่วน key ต้องใส่เฉพาะตอนที่ proxy เปิด `master_key` หรือใช้ virtual key |
 | Azure AI Foundry | `azure/<deployment>` | `AZURE_AI_FOUNDRY_API_KEY` (+ `AZURE_AI_FOUNDRY_ENDPOINT`) | Deployment Azure แบบ Anthropic-Messages-shaped ใส่ `<deployment>` ตามชื่อใน Azure ไม่มี default (ตั้งต่อ subscription) |
 
 ค่าเริ่มต้นครั้งแรกคือ `claude-sonnet-4-6` เปลี่ยนได้ด้วย
@@ -478,6 +481,41 @@ Auth เป็น header `Authorization: Bearer $OPENAI_COMPAT_API_KEY`
 ถ้า endpoint ของคุณ implement `/v1/models` ด้วย คำสั่ง
 `/models refresh` จะดึง catalogue มาให้อัตโนมัติ ถ้าไม่มี
 endpoint นั้น refresh จะ fail เงียบ ๆ และ chat ยังทำงานต่อได้ปกติ
+
+## ใช้ LiteLLM proxy ที่ self-host เอง (`litellm/*`)
+
+LiteLLM มีช่องของตัวเองแทนที่จะไปเบียด `oai/` จึงเก็บ base URL และ key
+แยกจาก endpoint อื่นที่คุณชี้ `oai/` ไว้ได้:
+
+```sh
+LITELLM_BASE_URL=http://localhost:4000/v1   # ค่า default แก้ใน Settings ได้เช่นกัน
+LITELLM_API_KEY=sk-...                      # ใส่เฉพาะตอน proxy ตั้ง master_key
+```
+
+id ของ model คือ alias `model_name` ใน `config.yaml` ของคุณเอง โดย prefix
+`litellm/` จะถูกตัดออกก่อนส่งขึ้น upstream:
+
+```yaml
+model_list:
+  - model_name: gpt-4o-mini            # → /model litellm/gpt-4o-mini
+    litellm_params: { model: openai/gpt-4o-mini }
+  - model_name: azure/prod-gpt4        # → /model litellm/azure/prod-gpt4
+    litellm_params: { model: azure/my-deployment }
+```
+
+เพราะ alias เหล่านี้เป็นของคุณเอง catalogue ที่ ship มากับตัวโปรแกรมจึง
+ไม่มีทางรู้จัก — `/models` จะยิงถาม `/models` ของ proxy สด ๆ แทน และตอน
+สลับ model จะอ่าน context window จริงจาก `/model/info` ของ LiteLLM
+(ลองทั้งที่ root และใต้ `/v1`) แล้ว cache ไว้
+
+Auth ไม่บังคับ: proxy ที่รันโดยไม่ตั้ง `master_key` รับ bearer อะไรก็ได้
+thClaws จึงส่งค่า placeholder ไปแทนการปฏิเสธที่จะเริ่มทำงาน
+
+ข้อควรระวัง — LiteLLM เป็น **router** ไม่ใช่ local inference ถึงคุณจะ
+host เอง แต่ model ปลายทางมักอยู่ที่ OpenAI / Anthropic / Azure thClaws
+จึงถือว่า traffic ออกนอกเครื่อง: การ mask PII ภาษาไทยยังทำงานอยู่ (ต่างจาก
+`ollama/*`, `vllm/*` หรือ `llamacpp/*`) และ org-policy gateway จะไม่ยกเว้น
+ให้แบบ local model
 
 ## ใช้ Codex ผ่าน subscription ChatGPT (`chatgpt-codex/*`)
 

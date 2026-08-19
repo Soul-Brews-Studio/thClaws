@@ -817,6 +817,23 @@ pub fn effective_context_window(model: &str) -> u32 {
 /// `max_tokens` against this so we don't hit per-model 400 errors
 /// (e.g. gpt-4.1 = 32768). `None` means no documented limit was
 /// found — caller picks a safe default.
+/// Whether the catalogue knows this model at all (alias + vendor-prefix
+/// resolution included). Used before switching onto a *recommended*
+/// model — a skill's `model:` field ages out when the vendor retires
+/// the id, and swapping onto a dead model turns a working turn into a
+/// provider 400.
+pub fn is_known_model(model: &str) -> bool {
+    let cat = EffectiveCatalogue::load();
+    if cat.overrides.contains_key(model) {
+        return true;
+    }
+    cat.cache
+        .as_ref()
+        .and_then(|c| c.find_entry(model))
+        .or_else(|| cat.baseline.find_entry(model))
+        .is_some()
+}
+
 pub fn effective_max_output(model: &str) -> Option<u32> {
     let cat = EffectiveCatalogue::load();
     cat.lookup_max_output_override(model)
@@ -1046,6 +1063,7 @@ pub fn provider_kind_name(k: crate::providers::ProviderKind) -> &'static str {
         ProviderKind::LMStudio => "lmstudio",
         ProviderKind::VLlm => "vllm",
         ProviderKind::LlamaCpp => "llamacpp",
+        ProviderKind::LiteLlm => "litellm",
         ProviderKind::AzureAIFoundry => "azure",
         ProviderKind::OpenAICompat => "openai-compat",
         ProviderKind::DeepSeek => "deepseek",
@@ -1280,7 +1298,6 @@ mod canonical_id_tests {
 mod tests {
     use super::*;
 
-    #[test]
     /// The marker is the only signal that separates a guessed window from a
     /// sourced one — the number can't, since a guess can coincide with a real
     /// value. Asserted against the shipped catalogue rather than a fixture so
@@ -2113,6 +2130,39 @@ mod tests {
         assert!(
             Catalogue::from_json_str(v3).is_none(),
             "v3 must not load against v4 binary — falls through to compiled-in baseline"
+        );
+    }
+}
+
+#[cfg(test)]
+mod known_model_tests {
+    use super::is_known_model;
+
+    /// A skill's `model:` ages out — the vendor retires the id while the
+    /// frontmatter still names it — and switching onto an id the catalogue no
+    /// longer carries turns a working turn into a provider 400. Callers gate
+    /// on this, so it has to recognise the id in the shapes people actually
+    /// write: bare, and vendor-prefixed.
+    #[test]
+    fn known_ids_are_recognised_bare_and_vendor_prefixed() {
+        assert!(is_known_model("deepseek-v4-flash"));
+        assert!(is_known_model("deepseek/deepseek-v4-flash"));
+        assert!(is_known_model("gpt-4.1-mini"));
+        assert!(is_known_model("openai/gpt-4.1-mini"));
+        assert!(!is_known_model("gpt-4o-mini-2024-07-18-retired"));
+        assert!(!is_known_model(""));
+    }
+
+    /// The fallback is appended to the candidate list and then runs the same
+    /// gauntlet as every other candidate — so a fallback the catalogue does
+    /// not know is silently skipped, and the feature quietly does nothing.
+    #[test]
+    fn the_configured_fallback_survives_its_own_known_model_check() {
+        assert!(
+            is_known_model(crate::config::DEFAULT_SKILL_MODEL_FALLBACK),
+            "DEFAULT_SKILL_MODEL_FALLBACK ({}) is not in the catalogue, so the \
+             skill-model fallback would be skipped by is_known_model",
+            crate::config::DEFAULT_SKILL_MODEL_FALLBACK
         );
     }
 }

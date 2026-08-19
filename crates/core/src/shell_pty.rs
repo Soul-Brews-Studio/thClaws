@@ -63,6 +63,13 @@ impl PtySession {
         if let Some(cwd) = cwd {
             builder.cwd(cwd);
         }
+        // The Shell tab renders through xterm.js, which speaks 256 colours —
+        // but portable_pty inherits whatever TERM the host handed the app, and
+        // on a GUI launch that is often plain `xterm` or unset, so tools like
+        // ls/grep/bat fall back to 8 colours or none. Naming the terminal we
+        // actually are is what makes their colour output correct.
+        // (public issue #196)
+        builder.env("TERM", "xterm-256color");
 
         let child = pair
             .slave

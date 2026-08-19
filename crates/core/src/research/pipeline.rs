@@ -778,9 +778,6 @@ mod tests {
                 calls: Mutex::new(0),
             }
         }
-        fn call_count(&self) -> u32 {
-            *self.calls.lock().unwrap()
-        }
     }
 
     #[async_trait]
